@@ -126,6 +126,7 @@ class CircleChallengeParticipant {
     required this.role,
     required this.status,
     required this.progress,
+    this.completedAt,
   });
 
   factory CircleChallengeParticipant.fromSnapshot(
@@ -138,6 +139,7 @@ class CircleChallengeParticipant {
       role: data['role'] as String? ?? 'participant',
       status: data['status'] as String? ?? 'pending',
       progress: (data['progress'] as num?)?.toInt() ?? 0,
+      completedAt: (data['completedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -146,6 +148,9 @@ class CircleChallengeParticipant {
   final String role;
   final String status;
   final int progress;
+
+  /// When they reached the goal.
+  final DateTime? completedAt;
 }
 
 class CircleChallengeContribution {
@@ -302,15 +307,25 @@ class CircleChallengeService {
     });
   }
 
-  static Future<CircleChallengeDetails> loadDetails(String challengeId) async {
+  /// Participants plus the 20 latest contributions, or every contribution
+  /// by [contributorUid] when given.
+  static Future<CircleChallengeDetails> loadDetails(
+    String challengeId, {
+    String? contributorUid,
+  }) async {
     final challenge = _firestore.collection('challenges').doc(challengeId);
+    final contributionsRef = challenge.collection('contributions');
     final results = await Future.wait([
       challenge.collection('participants').get(),
-      challenge
-          .collection('contributions')
-          .orderBy('updatedAt', descending: true)
-          .limit(20)
-          .get(),
+      contributorUid == null
+          ? contributionsRef
+                .orderBy('updatedAt', descending: true)
+                .limit(20)
+                .get()
+          // ponytail: reads every contribution and filters here, because the
+          // uid index is collection-group only; add a collection-scope index
+          // if challenges grow past a few hundred contributions.
+          : contributionsRef.get(),
     ]);
     final participantSnapshot = results[0];
     final contributionSnapshot = results[1];
@@ -319,6 +334,10 @@ class CircleChallengeService {
         .toList(growable: false);
     final contributions = contributionSnapshot.docs
         .map(CircleChallengeContribution.fromSnapshot)
+        .where(
+          (contribution) =>
+              contributorUid == null || contribution.uid == contributorUid,
+        )
         .toList(growable: false);
     return CircleChallengeDetails(
       participants: participants,

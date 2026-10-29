@@ -896,6 +896,8 @@ async function applyContribution({
     );
     const now = admin.firestore.Timestamp.now();
     const participantData = participantSnapshot.data();
+    // Later contributions keep the first completion time.
+    const participantCompletedAt = participantData?.completedAt || now;
     const existingCompletedUids = Array.isArray(challenge.completedUids) ?
       challenge.completedUids : [];
     const wasCompleted = existingCompletedUids.includes(uid) ||
@@ -915,7 +917,7 @@ async function applyContribution({
     transaction.set(participantReference, {
       progress: participantProgress,
       status: participantCompleted ? "completed" : "active",
-      completedAt: participantCompleted ? now : null,
+      completedAt: participantCompleted ? participantCompletedAt : null,
       updatedAt: now,
     }, {merge: true});
     if (nextValue === 0) {
@@ -937,7 +939,7 @@ async function applyContribution({
       totalProgress,
       completedUids,
       status: allCompleted ? "completed" : "active",
-      completedAt: allCompleted ? now : null,
+      completedAt: allCompleted ? challenge.completedAt || now : null,
       updatedAt: now,
     });
     for (const participantUid of activeParticipantUids) {
@@ -949,7 +951,8 @@ async function applyContribution({
       };
       if (participantUid === uid) {
         membershipUpdate.progress = participantProgress;
-        membershipUpdate.completedAt = participantCompleted ? now : null;
+        membershipUpdate.completedAt = participantCompleted ?
+          participantCompletedAt : null;
       } else if (!membershipCompleted) {
         membershipUpdate.completedAt = null;
       }

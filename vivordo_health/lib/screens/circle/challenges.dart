@@ -205,7 +205,14 @@ class _ChallengesTab extends StatelessWidget {
                   for (var index = 0; index < finished.length; index++) ...[
                     if (index > 0)
                       Divider(height: 1, color: context.vivordoColors.border),
-                    _FinishedChallengeRow(membership: finished[index]),
+                    _FinishedChallengeRow(
+                      membership: finished[index],
+                      onTap: () => _openChallengeDetail(
+                        context,
+                        finished[index],
+                        challenges,
+                      ),
+                    ),
                   ],
                 ],
               ),
@@ -439,70 +446,76 @@ class _ChallengeSummaryCard extends StatelessWidget {
 }
 
 class _FinishedChallengeRow extends StatelessWidget {
-  const _FinishedChallengeRow({required this.membership});
+  const _FinishedChallengeRow({required this.membership, required this.onTap});
 
   final CircleChallengeMembership membership;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final completed = membership.status == 'completed';
     final palette = context.circle;
     final end = membership.endAt ?? membership.createdAt;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: context.vivordoColors.cardMuted,
-              border: Border.all(
-                color: completed
-                    ? const Color(0xFFD9A92A)
-                    : context.vivordoColors.border,
-                width: 3,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: context.vivordoColors.cardMuted,
+                border: Border.all(
+                  color: completed
+                      ? const Color(0xFFD9A92A)
+                      : context.vivordoColors.border,
+                  width: 3,
+                ),
+              ),
+              child: Icon(
+                completed
+                    ? Icons.emoji_events_rounded
+                    : _challengeVisual(context, membership.type).icon,
+                size: 19,
+                color: completed ? palette.gold : context.muted,
               ),
             ),
-            child: Icon(
-              completed
-                  ? Icons.emoji_events_rounded
-                  : _challengeVisual(context, membership.type).icon,
-              size: 19,
-              color: completed ? palette.gold : context.muted,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  membership.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.vivordoColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    membership.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.vivordoColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${completed ? 'Completed' : 'Ended at ${_progressLabel(membership, membership.progress)}'} · ${DateFormat.MMMd().format(end)}',
-                  style: TextStyle(color: context.muted, fontSize: 12),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    '${completed ? 'Completed' : 'Ended at ${_progressLabel(membership, membership.progress)}'} · ${DateFormat.MMMd().format(end)}',
+                    style: TextStyle(color: context.muted, fontSize: 12),
+                  ),
+                ],
+              ),
             ),
-          ),
-          if (completed)
-            _Pill(
-              label: 'Medal',
-              color: palette.gold,
-              background: palette.goldTint,
-            ),
-        ],
+            if (completed)
+              _Pill(
+                label: 'Medal',
+                color: palette.gold,
+                background: palette.goldTint,
+              ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: context.muted),
+          ],
+        ),
       ),
     );
   }
@@ -531,8 +544,15 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
   CircleChallengeMembership get membership => widget.membership;
   _ChallengeData get challenges => widget.challenges;
 
-  Future<CircleChallengeDetails> _load() =>
-      CircleChallengeService.loadDetails(membership.challengeId);
+  /// Completed or expired: the page is the challenge's summary.
+  bool get _finished =>
+      membership.status == 'completed' || membership.status == 'expired';
+
+  Future<CircleChallengeDetails> _load() => CircleChallengeService.loadDetails(
+    membership.challengeId,
+    // The summary counts your active days from all of your contributions.
+    contributorUid: _finished ? challenges.me.uid : null,
+  );
 
   @override
   void dispose() {
@@ -603,7 +623,9 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
                       children: [
-                        _buildHero(context, participants),
+                        _finished
+                            ? _buildResult(context, participants, details)
+                            : _buildHero(context, participants),
                         if (membership.message.isNotEmpty) ...[
                           const SizedBox(height: 14),
                           _CreatorNoteCard(
@@ -630,8 +652,14 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                           )
                         else ...[
                           _buildStandings(context, participants),
-                          const SizedBox(height: 14),
-                          _buildRecentProgress(context, details, participants),
+                          if (!_finished) ...[
+                            const SizedBox(height: 14),
+                            _buildRecentProgress(
+                              context,
+                              details,
+                              participants,
+                            ),
+                          ],
                         ],
                         const SizedBox(height: 14),
                         // Keyed: the rows above change count while
@@ -780,31 +808,170 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
     );
   }
 
+  /// You finished early and the others still have time.
+  bool _openForOthers(List<CircleChallengeParticipant> participants) =>
+      membership.status == 'completed' &&
+      (membership.endAt?.isAfter(DateTime.now()) ?? false) &&
+      participants.any((participant) => participant.status != 'completed');
+
+  /// The summary hero: medal or final total, dates, and three stats.
+  Widget _buildResult(
+    BuildContext context,
+    List<CircleChallengeParticipant> participants,
+    CircleChallengeDetails? details,
+  ) {
+    final colors = context.vivordoColors;
+    final palette = context.circle;
+    final completed = membership.status == 'completed';
+    final me = participants
+        .where((participant) => participant.uid == challenges.me.uid)
+        .firstOrNull;
+    final progress = me?.progress ?? membership.progress;
+    final start = membership.startAt ?? membership.createdAt;
+    final end =
+        membership.endAt ?? start.add(Duration(days: membership.durationDays));
+    final completedAt = me?.completedAt;
+    final daysTaken = completedAt == null
+        ? null
+        : math.max(1, (completedAt.difference(start).inHours + 23) ~/ 24);
+    // Day contributions carry a day key; workouts carry when they happened.
+    final activeDays = details?.contributions
+        .map(
+          (contribution) => contribution.occurredAt == null
+              ? contribution.sourceId
+              : DateFormat('yyyy-MM-dd').format(contribution.occurredAt!),
+        )
+        .toSet()
+        .length;
+    final finishers = participants
+        .where((participant) => participant.status == 'completed')
+        .length;
+    final dates = _openForOthers(participants)
+        ? 'Still open for others until ${DateFormat.MMMd().format(end)}'
+        : '${DateFormat.MMMd().format(start)} – ${DateFormat.MMMd().format(end)}';
+    return _CircleCard(
+      padding: const EdgeInsets.fromLTRB(18, 24, 18, 18),
+      child: Column(
+        children: [
+          Container(
+            width: 104,
+            height: 104,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: completed ? palette.goldTint : colors.cardMuted,
+              border: Border.all(
+                color: completed ? const Color(0xFFD9A92A) : colors.border,
+                width: 5,
+              ),
+            ),
+            child: Icon(
+              completed
+                  ? Icons.emoji_events_rounded
+                  : _challengeVisual(context, membership.type).icon,
+              size: 48,
+              color: completed ? palette.gold : context.muted,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            completed ? 'Challenge complete' : 'Challenge ended',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            completed
+                ? 'You reached ${_goalLabel(membership)}'
+                : 'You reached ${_progressLabel(membership, progress)}',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.muted, fontSize: 15),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              if (completed)
+                _Pill(
+                  label: 'Medal earned',
+                  color: palette.gold,
+                  background: palette.goldTint,
+                ),
+              _Pill(
+                label: dates,
+                color: colors.textPrimary,
+                background: colors.cardMuted,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              daysTaken == null
+                  ? _InfoCell(
+                      value: '${membership.durationDays}',
+                      label: 'days',
+                    )
+                  : _InfoCell(
+                      value: '$daysTaken',
+                      label: daysTaken == 1
+                          ? 'day to finish'
+                          : 'days to finish',
+                    ),
+              const SizedBox(width: 8),
+              _InfoCell(
+                value: activeDays == null ? '–' : '$activeDays',
+                label: activeDays == 1 ? 'active day' : 'active days',
+              ),
+              const SizedBox(width: 8),
+              _InfoCell(
+                value: details == null
+                    ? '–'
+                    : '$finishers/${participants.length}',
+                label: 'finished',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStandings(
     BuildContext context,
     List<CircleChallengeParticipant> participants,
-  ) => _CircleCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionHeader('Standings'),
-        for (var index = 0; index < participants.length; index++) ...[
-          const SizedBox(height: 14),
-          _StandingRow(
-            rank: index + 1,
-            participant: participants[index],
-            person: _personFor(participants[index].uid),
-            goal: membership.goal,
-            isMe: participants[index].uid == challenges.me.uid,
-            leading:
-                index == 0 &&
-                participants.length > 1 &&
-                participants[index].progress > 0,
-          ),
+  ) {
+    final over = _finished && !_openForOthers(participants);
+    return _CircleCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(over ? 'Final standings' : 'Standings'),
+          for (var index = 0; index < participants.length; index++) ...[
+            const SizedBox(height: 14),
+            _StandingRow(
+              rank: index + 1,
+              participant: participants[index],
+              person: _personFor(participants[index].uid),
+              goal: membership.goal,
+              isMe: participants[index].uid == challenges.me.uid,
+              done: participants[index].status == 'completed',
+              leadLabel: over ? 'Winner' : 'Leading',
+              leading:
+                  index == 0 &&
+                  participants.length > 1 &&
+                  participants[index].progress > 0,
+            ),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   Widget _buildRecentProgress(
     BuildContext context,
@@ -1095,6 +1262,8 @@ class _StandingRow extends StatelessWidget {
     required this.goal,
     required this.isMe,
     required this.leading,
+    this.done = false,
+    this.leadLabel = 'Leading',
   });
 
   final int rank;
@@ -1103,6 +1272,10 @@ class _StandingRow extends StatelessWidget {
   final int goal;
   final bool isMe;
   final bool leading;
+
+  /// Reached the goal.
+  final bool done;
+  final String leadLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1145,9 +1318,17 @@ class _StandingRow extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (done) ...[
+                    const SizedBox(width: 5),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      size: 16,
+                      color: context.circle.success,
+                    ),
+                  ],
                   if (leading) ...[
                     const SizedBox(width: 6),
-                    const _Pill(label: 'Leading'),
+                    _Pill(label: leadLabel),
                   ],
                 ],
               ),
