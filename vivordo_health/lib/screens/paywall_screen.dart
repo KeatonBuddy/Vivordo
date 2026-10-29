@@ -4,6 +4,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/subscription_service.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/launch_splash.dart';
 import '../widgets/privacy_support_links.dart';
 import 'onboarding_flow_screen.dart' show onboardingLight;
 import 'profile_screen.dart' show SettingsScreen;
@@ -75,14 +76,14 @@ class _PremiumGateState extends State<PremiumGate> {
     builder: (context, config) {
       // Unreadable settings fail open: the server still gates paid features.
       if (config.hasError) return widget.child;
-      if (!config.hasData) return const _Loading();
+      if (!config.hasData) return const LaunchSplash();
       if (config.data!.data()?['required'] != true) return widget.child;
       return StreamBuilder(
         stream: _subscription,
         builder: (context, subscription) {
           if (subscription.hasError) return widget.child;
           final snapshot = subscription.data;
-          if (snapshot == null) return const _Loading();
+          if (snapshot == null) return const LaunchSplash();
           final data = snapshot.data();
           final locked = premiumLocked(
             config: config.data!.data(),

@@ -27,6 +27,7 @@ import 'package:vivordo_health/src/services/subscription_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/launch_splash.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
@@ -134,21 +135,20 @@ void main() async {
               (controller ?? ThemeController())..bindUser(user),
         ),
       ],
-      // VersionGate checks Remote Config before anything else renders, then
-      // falls through to MyApp — kept as the provider's child (not wrapping
-      // the providers) so VersionGate's descendants still have User?/
-      // ThemeController available via context.
+      // VersionGate checks Remote Config alongside MyApp — kept as the
+      // provider's child (not wrapping the providers) so VersionGate's
+      // descendants still have User?/ThemeController available via context.
       child: const VersionGate(),
     ),
   );
 }
 
-/// Checks the installed app version against Remote Config exactly once per
-/// app launch, before any real screen (including LoginScreen) is reachable.
+/// Checks the installed app version against Remote Config once per app
+/// launch, without holding up the first screen.
 /// Deliberately NOT built as part of the '/' route inside MyApp — AuthGate
 /// is reached via pushNamedAndRemoveUntil('/', ...) repeatedly during normal
-/// use (after login, signup, email verification), and re-running this check
-/// on every one of those would flash a loading spinner each time.
+/// use (after login, signup, email verification), and the check should run
+/// once, not on every one of those.
 class VersionGate extends StatefulWidget {
   const VersionGate({super.key});
 
@@ -157,30 +157,16 @@ class VersionGate extends StatefulWidget {
 }
 
 class _VersionGateState extends State<VersionGate> {
-  late final Future<VersionCheckResult> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = VersionGateService.check();
-  }
+  // Created once so rebuilds don't re-run the check.
+  final _results = VersionGateService.watch();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<VersionCheckResult>(
-      future: _future,
+    // The app shows at once; the gate only closes if the config on the
+    // device, or the fetch that follows, says this version is too old.
+    return StreamBuilder<VersionCheckResult>(
+      stream: _results,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: VivordoTheme.light,
-            darkTheme: VivordoTheme.dark,
-            themeMode: ThemeMode.system,
-            home: const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            ),
-          );
-        }
         final result = snapshot.data;
         if (result != null && result.updateRequired) {
           return MaterialApp(
@@ -321,19 +307,27 @@ class _MyAppState extends State<MyApp> {
         );
         return true;
       }
+      // Switch the open app's tab instead of rebuilding it under a new
+      // route, which replayed the launch splash and dropped the account
+      // gates below it.
+      void openTab(int index) {
+        navigator!.popUntil((route) => route.isFirst);
+        MainNavigationScreen.requestedTab.value = index;
+      }
+
       // The Capacity widget opens My Day, where Capacity lives.
       if (destination == 'myday' || destination == 'capacity') {
-        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        openTab(1);
         return true;
       }
 
       if (destination == 'fitness') {
-        navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
+        openTab(3);
         return true;
       }
 
       if (destination == 'calendar') {
-        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        openTab(1);
         await WidgetsBinding.instance.endOfFrame;
         if (mounted && navigator.mounted) {
           unawaited(navigator.pushNamed('/full-calendar'));
@@ -341,7 +335,7 @@ class _MyAppState extends State<MyApp> {
         return mounted && navigator.mounted;
       }
 
-      navigator.pushNamedAndRemoveUntil('/home', (_) => false);
+      openTab(0);
       final detailRoute = switch (destination) {
         'stress' => '/stress',
         'sleep' => '/sleep',
@@ -443,6 +437,21 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() => _locallyDismissedWhatsNewUid = uid);
     unawaited(_persistWhatsNewSeen(uid));
+  }
+
+  /// The copy saved on the phone first, so launch doesn't wait on the
+  /// network. The server is asked when there is no copy, or when the copy
+  /// says onboarding isn't done (it may have been finished on another
+  /// device).
+  static Future<DocumentSnapshot> _readUserDoc(String uid) async {
+    final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+    try {
+      final saved = await ref.get(const GetOptions(source: Source.cache));
+      if (saved.exists && !needsOnboarding(saved.data())) return saved;
+    } on FirebaseException {
+      // Nothing saved yet.
+    }
+    return ref.get();
   }
 
   Future<void> _persistWhatsNewSeen(String uid) async {
@@ -582,19 +591,14 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
     if (_userDocUid != user.uid) {
       _userDocUid = user.uid;
-      _userDocFuture = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      _userDocFuture = _readUserDoc(user.uid);
     }
 
     return FutureBuilder<DocumentSnapshot>(
       future: _userDocFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const LaunchSplash();
         }
 
         if (snapshot.hasError) {

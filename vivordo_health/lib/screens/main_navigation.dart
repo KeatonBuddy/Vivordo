@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../widgets/app_tour.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
 
@@ -39,6 +40,11 @@ class MainNavigationScreen extends StatefulWidget {
     this.openMoodCheckIn = false,
     this.seenTours,
   });
+
+  /// A tab asked for from outside the app (a widget link): the open screen
+  /// switches to it, or the next one to open starts on it. Switching keeps
+  /// the app as it is; rebuilding it would replay the launch splash.
+  static final requestedTab = ValueNotifier<int?>(null);
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -100,7 +106,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final GlobalKey _metricsInsightsKey = GlobalKey();
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
-  Future<void>? _circlePreload;
   AchievementMonitor? _achievementMonitor;
   final Set<int> _loadedTabs = {};
   late final List<ValueNotifier<bool>> _tabActivity;
@@ -128,6 +133,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _selectedIndex = widget.initialIndex == 5
         ? 0
         : widget.initialIndex.clamp(0, 4);
+    if (MainNavigationScreen.requestedTab.value case final tab?) {
+      _selectedIndex = tab;
+      MainNavigationScreen.requestedTab.value = null;
+    }
+    MainNavigationScreen.requestedTab.addListener(_openRequestedTab);
     _loadedTabs.add(_selectedIndex);
     if (widget.seenTours case final seen?) {
       _seenTours = {...seen};
@@ -188,7 +198,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _refreshTodayFromHealth();
     // Yesterday too, in case the app was last opened before it ended.
     unawaited(DayRecordService.syncOnOpen());
-    _circlePreload = CircleProfileService.preload();
+    // Warms Circle's data so the tab opens filled; launch doesn't wait.
+    unawaited(CircleProfileService.preload());
     _achievementMonitor = AchievementMonitor.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
@@ -203,7 +214,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (widget.initialIndex == 5) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _preloadTabs());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _finishLaunch());
     AppTour.replayRequested.addListener(_replayTour);
   }
 
@@ -433,6 +444,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   @override
   void dispose() {
+    MainNavigationScreen.requestedTab.removeListener(_openRequestedTab);
     _healthRefreshTimer?.cancel();
     unawaited(_achievementMonitor?.dispose() ?? Future<void>.value());
     for (final timer in _tabPreloadTimers) {
@@ -528,6 +540,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (mounted) setState(() {});
   }
 
+  void _openRequestedTab() {
+    final tab = MainNavigationScreen.requestedTab.value;
+    if (tab == null) return;
+    MainNavigationScreen.requestedTab.value = null;
+    _selectTab(tab);
+  }
+
   /// Switches to [index] and records the screen view. All tab changes route
   /// through here so analytics stay in sync with what's on screen.
   void _selectTab(int index) {
@@ -545,32 +564,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (!_startupSplashMounted) _maybeStartTour(_screenNames[index]);
   }
 
-  void _preloadTabs() {
-    var delay = 150;
-    for (var index = 0; index < _tabPages.length; index++) {
-      if (_loadedTabs.contains(index)) continue;
-      _tabPreloadTimers.add(
-        Timer(Duration(milliseconds: delay), () {
-          if (!mounted || _loadedTabs.contains(index)) return;
-          setState(() => _loadedTabs.add(index));
-        }),
-      );
-      delay += 150;
-    }
+  // Launch tuning: how long the selected tab gets to paint its saved data
+  // before the splash lifts, then when the other tabs start mounting. They
+  // mount after the splash so their build work never holds it up.
+  static const _firstDataGrace = Duration(milliseconds: 250);
+  static const _preloadStart = Duration(milliseconds: 600);
+  static const _preloadGap = Duration(milliseconds: 200);
+
+  void _finishLaunch() {
     _tabPreloadTimers.add(
-      // Give the newly mounted Firebase-backed screens time to receive their
-      // first snapshots before starting the transition. This prevents their
-      // initial layout work from competing with the fade animation.
-      Timer(Duration(milliseconds: delay + 1200), () async {
-        await _circlePreload?.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {},
-        );
+      Timer(_firstDataGrace, () async {
         await WidgetsBinding.instance.endOfFrame;
-        if (mounted) {
-          _homeStressReveal.value = true;
-          setState(() => _startupSplashMounted = false);
-          _maybeStartTour(_screenNames[_selectedIndex]);
+        if (!mounted) return;
+        _homeStressReveal.value = true;
+        setState(() => _startupSplashMounted = false);
+        _maybeStartTour(_screenNames[_selectedIndex]);
+        var delay = _preloadStart;
+        for (var index = 0; index < _tabPages.length; index++) {
+          if (_loadedTabs.contains(index)) continue;
+          _tabPreloadTimers.add(
+            Timer(delay, () {
+              if (!mounted || _loadedTabs.contains(index)) return;
+              setState(() => _loadedTabs.add(index));
+            }),
+          );
+          delay += _preloadGap;
         }
       }),
     );
@@ -818,20 +836,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               ),
             if (_startupSplashMounted)
               Positioned.fill(
-                child: AbsorbPointer(
-                  child: RepaintBoundary(
-                    child: ColoredBox(
-                      color: context.vivordoColors.page,
-                      child: Center(
-                        child: Image.asset(
-                          'assets/vivordo_splash_logo_full.png',
-                          width: 220,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                        ),
-                      ),
-                    ),
-                  ),
+                child: const AbsorbPointer(
+                  child: RepaintBoundary(child: LaunchSplash()),
                 ),
               ),
           ],
