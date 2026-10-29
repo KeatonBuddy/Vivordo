@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -47,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (success) {
+      TextInput.finishAutofillContext();
       // Route through AuthGate ('/') rather than straight to
       // MainNavigationScreen — AuthGate is what checks emailVerified and
       // redirects to EmailVerificationScreen when it's false. Pushing
@@ -134,6 +136,8 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: resetEmailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                autocorrect: false,
                 autofocus: true,
                 style: TextStyle(color: colors.textPrimary),
                 decoration:
@@ -296,46 +300,68 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    // Email
-                    _FieldLabel('Email'),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(fontSize: 15),
-                      decoration: _inputDecoration(
-                        hintText: 'you@example.com',
-                        icon: Icons.mail_outline_rounded,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // Password
-                    _FieldLabel('Password'),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _passCtrl,
-                      obscureText: _obscurePassword,
-                      style: const TextStyle(fontSize: 15),
-                      onSubmitted: (_) => _login(),
-                      decoration:
-                          _inputDecoration(
-                            hintText: '••••••••',
-                            icon: Icons.lock_outline_rounded,
-                          ).copyWith(
-                            suffixIcon: GestureDetector(
-                              onTap: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                              child: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                                color: textGrey,
-                                size: 20,
-                              ),
+                    // Grouped so iOS offers saved logins and, on success, to
+                    // save the password.
+                    AutofillGroup(
+                      onDisposeAction: AutofillContextAction.cancel,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Email
+                          _FieldLabel('Email'),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [
+                              AutofillHints.username,
+                              AutofillHints.email,
+                            ],
+                            autocorrect: false,
+                            textInputAction: TextInputAction.next,
+                            style: const TextStyle(fontSize: 15),
+                            decoration: _inputDecoration(
+                              hintText: 'you@example.com',
+                              icon: Icons.mail_outline_rounded,
                             ),
                           ),
+                          const SizedBox(height: 18),
+
+                          // Password
+                          _FieldLabel('Password'),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _passCtrl,
+                            obscureText: _obscurePassword,
+                            autofillHints: const [AutofillHints.password],
+                            textInputAction: TextInputAction.go,
+                            style: const TextStyle(fontSize: 15),
+                            onSubmitted: (_) => _login(),
+                            decoration:
+                                _inputDecoration(
+                                  hintText: '••••••••',
+                                  icon: Icons.lock_outline_rounded,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    tooltip: _obscurePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    onPressed: () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      color: textGrey,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 10),

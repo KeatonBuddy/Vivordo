@@ -242,6 +242,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       controller: passwordController,
                       placeholder: 'Current password',
                       obscureText: true,
+                      autofillHints: const [AutofillHints.password],
                       onChanged: (value) => setDialogState(
                         () => passwordReady = value.isNotEmpty,
                       ),
@@ -2158,7 +2159,7 @@ class _AppleHealthSettingsPage extends StatefulWidget {
 class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _userDocStream;
   bool _isConnectingAll = false;
-  String? _togglingMetric;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -2190,29 +2191,29 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
     }
   }
 
-  Future<void> _toggleMetric(HealthMetricDef metric, bool enable) async {
-    if (_togglingMetric != null) return;
-    setState(() => _togglingMetric = metric.key);
+  Future<void> _deleteSaved() async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete saved Health data?',
+      message:
+          'Vivordo stops reading Apple Health and deletes the Health data it '
+          'has saved. Scores that use it stay empty until you request access '
+          'again. Apple Health itself isn’t changed.',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _isDeleting = true);
     try {
-      if (enable) {
-        final granted = await HealthService().enableMetric(metric.key);
-        if (!granted) {
-          _showMessage(
-            '${metric.label} wasn’t turned on. Check Vivordo’s permissions in '
-            'Apple Health.',
-          );
-        }
-      } else {
-        await HealthService().disableMetric(metric.key);
-      }
+      await HealthService().disableAll();
+      _showMessage('Saved Health data deleted.');
     } catch (e) {
-      debugPrint('Apple Health ${metric.key} toggle failed: $e');
+      debugPrint('Apple Health delete failed: $e');
       _showMessage(
-        'Couldn’t update ${metric.label}. Try again.',
+        'Couldn’t delete the data. Try again.',
         kind: ToastKind.error,
       );
     } finally {
-      if (mounted) setState(() => _togglingMetric = null);
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 
@@ -2246,17 +2247,36 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                         selected > 0,
                         selected > 0
                             ? '$selected of ${kHealthMetrics.length} metrics'
-                            : 'No metrics selected',
+                            : 'Not connected',
                       ),
+                    ),
+                    // Access is Apple's to manage (HIG HealthKit), so this
+                    // sends people to the Health app instead of mirroring
+                    // its switches here.
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.tune_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Manage access',
+                      subtitle:
+                          'In the Health app: your profile, then Apps, then '
+                          'Vivordo.',
+                      trailing: Icon(
+                        Icons.open_in_new_rounded,
+                        size: 18,
+                        color: colors.textSecondary,
+                      ),
+                      onTap: () =>
+                          unawaited(launchUrl(Uri.parse('x-apple-health://'))),
                     ),
                   ],
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
                   child: Text(
-                    'Apple controls access. Vivordo only reads the metrics you '
-                    'approve. Turning a metric off removes its saved data from '
-                    'Vivordo but does not change Apple Health permissions.',
+                    'Apple controls which data Vivordo can read. Vivordo only '
+                    'reads it and never writes to Apple Health.',
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.4,
@@ -2281,14 +2301,14 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                           onPressed: _enableAll,
                           style: TextButton.styleFrom(
                             foregroundColor: VivordoTheme.brand,
-                            minimumSize: const Size(0, 32),
+                            minimumSize: const Size(0, 44),
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             textStyle: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          child: const Text('Turn all on'),
+                          child: const Text('Request access'),
                         ),
                 ),
                 _SettingsCard(
@@ -2297,6 +2317,24 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       _metricRow(metric, enabled: consent[metric.key] == true),
                   ],
                 ),
+                if (selected > 0) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: _isDeleting ? null : _deleteSaved,
+                      style: TextButton.styleFrom(
+                        foregroundColor: _SettingsScreenState._red,
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: Text(
+                        _isDeleting ? 'Deleting…' : 'Delete saved Health data',
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2306,33 +2344,18 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
   }
 
   Widget _metricRow(HealthMetricDef metric, {required bool enabled}) {
-    final toggling = _togglingMetric == metric.key;
+    final colors = context.vivordoColors;
     return _SettingsRow(
       leading: _IconBadge(
         _metricIcon(metric.key),
-        enabled ? VivordoTheme.brand : context.vivordoColors.textSecondary,
+        enabled ? VivordoTheme.brand : colors.textSecondary,
       ),
       title: metric.label,
-      subtitle: toggling
-          ? (enabled
-                ? 'Removing saved Vivordo data…'
-                : 'Requesting Apple Health access…')
-          : metric.description,
-      trailing: toggling
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: VivordoTheme.brand,
-              ),
-            )
-          : AppSwitch(
-              value: enabled,
-              onChanged: _togglingMetric == null
-                  ? (value) => _toggleMetric(metric, value)
-                  : null,
-            ),
+      subtitle: metric.description,
+      trailing: Text(
+        enabled ? 'Reading' : 'Off',
+        style: TextStyle(fontSize: 14, color: colors.textSecondary),
+      ),
     );
   }
 }

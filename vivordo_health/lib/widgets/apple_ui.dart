@@ -260,12 +260,14 @@ class AppleAlertField extends StatelessWidget {
     this.autofocus = true,
     this.enabled = true,
     this.keyboardType,
+    this.autofillHints,
     this.onChanged,
   });
 
   final TextEditingController controller;
   final String? placeholder;
   final bool obscureText;
+  final Iterable<String>? autofillHints;
   final bool autofocus;
   final bool enabled;
   final TextInputType? keyboardType;
@@ -280,6 +282,7 @@ class AppleAlertField extends StatelessWidget {
       enabled: enabled,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      autofillHints: autofillHints,
       onChanged: onChanged,
       style: TextStyle(fontSize: 14, color: colors.textPrimary),
       decoration: InputDecoration(

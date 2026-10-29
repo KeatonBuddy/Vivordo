@@ -509,12 +509,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       body:
           'Your scores come from this. Vivordo only reads your data; it never '
           'writes to $_healthName.',
-      primary: _healthConnected ? 'Continue' : 'Connect $_healthName',
+      // One "Continue" that opens the system sheet, where people can also
+      // decline (HIG pre-alert screens).
+      primary: 'Continue',
       onPrimary: _busy
           ? null
           : () => _next(_healthConnected ? null : _connectHealth),
-      secondary: _healthConnected ? null : 'Not now',
-      onSecondary: _busy ? null : () => _next(),
       children: [
         if (_healthConnected) const _Connected('Connected'),
         const _Bullet(
@@ -696,10 +696,8 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       body:
           'Morning check-in reminders, burnout warnings and updates from your '
           'Circle. Choose which ones in Settings.',
-      primary: 'Allow notifications',
+      primary: 'Continue',
       onPrimary: _busy ? null : () => _next(_allowNotifications),
-      secondary: 'Not now',
-      onSecondary: _busy ? null : () => _next(),
       // Existing users already have these scores, and with Health connected
       // the next step reads them from the history.
       children: [

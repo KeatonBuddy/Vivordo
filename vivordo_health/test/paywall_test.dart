@@ -84,7 +84,12 @@ void main() {
     await show(tester, [yearly, monthly]);
     expect(find.text('Try Vivordo free for a month'), findsOneWidget);
     expect(find.textContaining('Save 42%'), findsOneWidget);
-    expect(find.text(r'$69.99/year ($5.83/month)'), findsOneWidget);
+    // The billed amount leads the tile; savings and the free month follow.
+    expect(find.text(r'$69.99/year'), findsOneWidget);
+    expect(
+      find.text('Yearly · \$5.83/month · Save 42% · 1\u00A0month\u00A0free'),
+      findsOneWidget,
+    );
     expect(find.text('Start free month'), findsOneWidget);
     expect(
       find.textContaining(r'Free for 1 month, then $69.99 a year.'),
@@ -92,11 +97,11 @@ void main() {
     );
 
     await tester.scrollUntilVisible(
-      find.text('Monthly', findRichText: true),
+      find.text(r'$9.99/month'),
       100,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('Monthly', findRichText: true));
+    await tester.tap(find.text(r'$9.99/month'));
     await tester.pumpAndSettle();
     expect(
       find.textContaining(r'Free for 1 month, then $9.99 a month.'),

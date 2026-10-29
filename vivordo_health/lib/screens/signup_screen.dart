@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -98,7 +99,9 @@ class _SignupScreenState extends State<SignupScreen> {
     );
     if (!mounted) return;
     setState(() => _emailLoading = false);
-    if (success) _toAuthGate();
+    if (!success) return;
+    TextInput.finishAutofillContext();
+    _toAuthGate();
   }
 
   Future<void> _social(
@@ -124,146 +127,155 @@ class _SignupScreenState extends State<SignupScreen> {
       ),
       body: SafeArea(
         top: false,
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            children: [
-              const Text(
-                'ACCOUNT',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .9,
-                  color: _purple,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Create your account',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
-                ),
-              ),
-              const SizedBox(height: 22),
-              _field(
-                controller: _name,
-                hint: 'First name',
-                icon: Icons.person_outline_rounded,
-                capitalization: TextCapitalization.words,
-                validator: (v) =>
-                    (v ?? '').trim().isEmpty ? 'Enter your first name' : null,
-              ),
-              _field(
-                controller: _email,
-                hint: 'you@email.com',
-                icon: Icons.mail_outline_rounded,
-                keyboard: TextInputType.emailAddress,
-                validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
-                    ? null
-                    : 'Enter a valid email',
-              ),
-              _field(
-                controller: _password,
-                hint: 'Password',
-                icon: Icons.lock_outline_rounded,
-                obscure: !_showPassword,
-                suffix: IconButton(
-                  tooltip: _showPassword ? 'Hide password' : 'Show password',
-                  icon: Icon(
-                    _showPassword
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: _grey,
+        // Cancelled on dispose so backing out never offers to save a
+        // password for an account that wasn't created.
+        child: AutofillGroup(
+          onDisposeAction: AutofillContextAction.cancel,
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              children: [
+                const Text(
+                  'ACCOUNT',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .9,
+                    color: _purple,
                   ),
-                  onPressed: () =>
-                      setState(() => _showPassword = !_showPassword),
                 ),
-              ),
-              if (_password.text.isNotEmpty || _passwordError != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
+                const SizedBox(height: 6),
+                const Text(
+                  'Create your account',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: _ink,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                _field(
+                  controller: _name,
+                  hint: 'First name',
+                  icon: Icons.person_outline_rounded,
+                  capitalization: TextCapitalization.words,
+                  autofill: AutofillHints.givenName,
+                  validator: (v) =>
+                      (v ?? '').trim().isEmpty ? 'Enter your first name' : null,
+                ),
+                _field(
+                  controller: _email,
+                  hint: 'you@email.com',
+                  icon: Icons.mail_outline_rounded,
+                  keyboard: TextInputType.emailAddress,
+                  autofill: AutofillHints.email,
+                  validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
+                      ? null
+                      : 'Enter a valid email',
+                ),
+                _field(
+                  controller: _password,
+                  hint: 'Password',
+                  icon: Icons.lock_outline_rounded,
+                  obscure: !_showPassword,
+                  autofill: AutofillHints.newPassword,
+                  action: TextInputAction.done,
+                  suffix: IconButton(
+                    tooltip: _showPassword ? 'Hide password' : 'Show password',
+                    icon: Icon(
+                      _showPassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: _grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => _showPassword = !_showPassword),
+                  ),
+                ),
+                if (_password.text.isNotEmpty || _passwordError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        for (final r in _passwordRequirements)
+                          _Requirement(r.label, r.isMet(_password.text)),
+                      ],
+                    ),
+                  ),
+                if (_passwordError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Text(
+                      _passwordError!,
+                      style: const TextStyle(
+                        color: Color(0xFFFF3B30),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                _button(
+                  label: 'Create account',
+                  loading: _emailLoading,
+                  color: _purple,
+                  onPressed: _createWithEmail,
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Row(
                     children: [
-                      for (final r in _passwordRequirements)
-                        _Requirement(r.label, r.isMet(_password.text)),
+                      Expanded(child: Divider(color: Color(0xFFD1D1D6))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('or', style: TextStyle(color: _grey)),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFFD1D1D6))),
                     ],
                   ),
                 ),
-              if (_passwordError != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                  child: Text(
-                    _passwordError!,
-                    style: const TextStyle(
-                      color: Color(0xFFFF3B30),
-                      fontSize: 13,
+                if (_showApple) ...[
+                  _button(
+                    label: 'Continue with Apple',
+                    loading: _appleLoading,
+                    color: Colors.black,
+                    leading: const Icon(Icons.apple, size: 25),
+                    onPressed: () => _social(
+                      AuthService.signInWithApple,
+                      (v) => _appleLoading = v,
                     ),
                   ),
-                ),
-              const SizedBox(height: 8),
-              _button(
-                label: 'Create account',
-                loading: _emailLoading,
-                color: _purple,
-                onPressed: _createWithEmail,
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Row(
-                  children: [
-                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('or', style: TextStyle(color: _grey)),
-                    ),
-                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
-                  ],
-                ),
-              ),
-              if (_showApple) ...[
+                  const SizedBox(height: 12),
+                ],
                 _button(
-                  label: 'Continue with Apple',
-                  loading: _appleLoading,
-                  color: Colors.black,
-                  leading: const Icon(Icons.apple, size: 25),
+                  label: 'Continue with Google',
+                  loading: _googleLoading,
+                  color: const Color(0xFF4285F4),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/google_g_logo.svg',
+                      width: 20,
+                      height: 20,
+                    ),
+                  ),
                   onPressed: () => _social(
-                    AuthService.signInWithApple,
-                    (v) => _appleLoading = v,
+                    AuthService.signInWithGoogle,
+                    (v) => _googleLoading = v,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
+                const TermsAgreement(),
               ],
-              _button(
-                label: 'Continue with Google',
-                loading: _googleLoading,
-                color: const Color(0xFF4285F4),
-                leading: Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SvgPicture.asset(
-                    'assets/google_g_logo.svg',
-                    width: 20,
-                    height: 20,
-                  ),
-                ),
-                onPressed: () => _social(
-                  AuthService.signInWithGoogle,
-                  (v) => _googleLoading = v,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const TermsAgreement(),
-            ],
+            ),
           ),
         ),
       ),
@@ -277,6 +289,8 @@ class _SignupScreenState extends State<SignupScreen> {
     TextInputType? keyboard,
     TextCapitalization capitalization = TextCapitalization.none,
     bool obscure = false,
+    String? autofill,
+    TextInputAction action = TextInputAction.next,
     Widget? suffix,
     String? Function(String?)? validator,
   }) => Padding(
@@ -286,6 +300,8 @@ class _SignupScreenState extends State<SignupScreen> {
       keyboardType: keyboard,
       textCapitalization: capitalization,
       obscureText: obscure,
+      autofillHints: autofill == null ? null : [autofill],
+      textInputAction: action,
       autocorrect: false,
       validator: validator,
       style: const TextStyle(color: _ink),

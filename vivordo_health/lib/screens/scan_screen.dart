@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
@@ -55,6 +56,9 @@ class _ScanScreenState extends State<ScanScreen>
   bool _showTutorial = false;
   String _errorTitle = 'Camera unavailable';
   String _errorBody = 'Please allow camera access in Settings\nand try again.';
+  // Set when iOS refused camera access, so the error offers Settings rather
+  // than a retry that can only fail again.
+  bool _cameraDenied = false;
 
   // ── Animations ────────────────────────────────────────────────────────────
   late AnimationController _pulseController;
@@ -247,10 +251,20 @@ class _ScanScreenState extends State<ScanScreen>
     } catch (e) {
       await controller?.dispose().catchError((_) {});
       debugPrint('[PPG] Camera init failed: $e');
+      final denied =
+          e is CameraException &&
+          const {
+            'CameraAccessDenied',
+            'CameraAccessDeniedWithoutPrompt',
+            'CameraAccessRestricted',
+          }.contains(e.code);
       if (mounted) {
         setState(() {
-          _errorTitle = 'Camera unavailable';
-          _errorBody = 'Please allow camera access in Settings\nand try again.';
+          _cameraDenied = denied;
+          _errorTitle = denied ? 'Camera access is off' : 'Camera unavailable';
+          _errorBody = denied
+              ? 'Turn on Camera for Vivordo in Settings\nto scan your heart rate.'
+              : "The camera couldn't start. Close any other\napp using it and try again.";
           _scanState = ScanState.error;
         });
       }
@@ -666,6 +680,7 @@ class _ScanScreenState extends State<ScanScreen>
       _fingerDetectedFrames = 0;
       _errorTitle = 'Camera unavailable';
       _errorBody = 'Please allow camera access in Settings\nand try again.';
+      _cameraDenied = false;
     });
   }
 
@@ -1632,7 +1647,10 @@ class _ScanScreenState extends State<ScanScreen>
           height: 52,
           child: ElevatedButton(
             onPressed: () {
-              if (_cameraController != null &&
+              if (_cameraDenied) {
+                // Opens Vivordo's page in iOS Settings.
+                unawaited(launchUrl(Uri.parse('app-settings:')));
+              } else if (_cameraController != null &&
                   _cameraController!.value.isInitialized) {
                 _reset();
               } else {
@@ -1647,9 +1665,9 @@ class _ScanScreenState extends State<ScanScreen>
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
-            child: const Text(
-              'Try Again',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            child: Text(
+              _cameraDenied ? 'Open Settings' : 'Try Again',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
         ),

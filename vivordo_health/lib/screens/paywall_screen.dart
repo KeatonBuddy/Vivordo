@@ -12,7 +12,8 @@ import 'profile_screen.dart' show SettingsScreen;
 const _purple = VivordoTheme.brand;
 const _page = Color(0xFFF2F2F7);
 const _ink = Color(0xFF1C1C1E);
-const _grey = Color(0xFF8E8E93);
+// iOS secondary label grey, dark enough for 4.5:1 on the page.
+const _grey = Color(0xFF6C6C70);
 const _line = Color(0xFFE5E5EA);
 const _green = Color(0xFF0F6E56);
 
@@ -365,7 +366,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
             Text(
               terms,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, height: 1.4, color: _grey),
+              style: const TextStyle(fontSize: 12, height: 1.4, color: _grey),
             ),
           ],
           Wrap(
@@ -444,9 +445,17 @@ class _PlanTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final price = plan.yearly
-        ? '${plan.price}/year${plan.perMonth == null ? '' : ' (${plan.perMonth}/month)'}'
-        : '${plan.price}/month';
+    // The billed amount leads (App Review 3.1.2); savings, the monthly
+    // equivalent and the free period follow in smaller type.
+    final trial = plan.freeTrial;
+    final details = [
+      plan.yearly ? 'Yearly' : 'Monthly',
+      if (plan.yearly && plan.perMonth != null) '${plan.perMonth}/month',
+      if (saving != null) 'Save $saving%',
+      // Non-breaking spaces keep "1 month free" on one line.
+      if (trial != null)
+        '${_trialLength(trial)} free'.replaceAll(' ', '\u00A0'),
+    ].join(' · ');
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Semantics(
@@ -472,30 +481,17 @@ class _PlanTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: plan.yearly ? 'Yearly' : 'Monthly',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            if (saving != null)
-                              TextSpan(
-                                text: ' · Save $saving%',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: _purple,
-                                ),
-                              ),
-                          ],
+                      Text(
+                        '${plan.price}/${plan.yearly ? 'year' : 'month'}',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: _ink,
                         ),
-                        style: const TextStyle(fontSize: 16, color: _ink),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        price,
+                        details,
                         style: const TextStyle(fontSize: 13, color: _grey),
                       ),
                     ],
