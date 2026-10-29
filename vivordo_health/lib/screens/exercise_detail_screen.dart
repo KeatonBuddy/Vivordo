@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
@@ -83,7 +84,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         builder: (context, metricsSnapshot) {
           if (!metricsSnapshot.hasData &&
               metricsSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           return StreamBuilder<List<SavedWorkout>>(
             stream: _workouts,

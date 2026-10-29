@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../src/services/daily_priority_service.dart';
@@ -199,7 +200,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 else if (!snapshot.hasData)
                   const Padding(
                     padding: EdgeInsets.all(40),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(child: CupertinoActivityIndicator()),
                   )
                 else if (_tab == _Tab.plan)
                   ..._planView(plan)

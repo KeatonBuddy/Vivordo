@@ -1021,7 +1021,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: VivordoTheme.brand),
+              child: CupertinoActivityIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -1084,7 +1084,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (authUser != null) UserService.createUser(authUser);
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: VivordoTheme.brand),
+              child: CupertinoActivityIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -1690,9 +1690,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                           const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: CupertinoActivityIndicator(
                               color: _red,
+                              radius: 8,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1946,9 +1946,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         ? const SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
+            child: CupertinoActivityIndicator(
               color: VivordoTheme.brand,
+              radius: 10,
             ),
           )
         : connected
@@ -2292,9 +2292,9 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                          child: CupertinoActivityIndicator(
                             color: VivordoTheme.brand,
+                            radius: 9,
                           ),
                         )
                       : TextButton(

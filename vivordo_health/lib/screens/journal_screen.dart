@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -158,7 +159,7 @@ class _JournalScreenState extends State<JournalScreen> {
                       else if (loading)
                         const Padding(
                           padding: EdgeInsets.all(34),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: Center(child: CupertinoActivityIndicator()),
                         )
                       else
                         ..._buildList(items),
@@ -830,7 +831,7 @@ class _JournalScreenState extends State<JournalScreen> {
             ),
             const SizedBox(height: 24),
             if (!_accessChecked || _authenticating)
-              const CircularProgressIndicator(color: _purple)
+              const CupertinoActivityIndicator(color: _purple)
             else
               FilledButton.icon(
                 onPressed: _unlockJournal,
@@ -1269,7 +1270,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
                             'This entry was deleted.',
                             style: TextStyle(color: colors.textSecondary),
                           )
-                        : const CircularProgressIndicator(),
+                        : const CupertinoActivityIndicator(),
                   )
                 : _body(context, item),
           ),
@@ -1401,7 +1402,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
           icon: _deleting
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(color: _red, strokeWidth: 2),
+                  child: CupertinoActivityIndicator(color: _red, radius: 9),
                 )
               : const Icon(Icons.delete_outline_rounded),
           label: Text(

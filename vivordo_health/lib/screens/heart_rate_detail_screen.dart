@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
@@ -170,7 +171,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final all = allDays(snapshot.data);
           final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -557,7 +558,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             const SizedBox(
                               width: 28,
                               height: 28,
-                              child: CircularProgressIndicator(strokeWidth: 3),
+                              child: CupertinoActivityIndicator(radius: 14),
                             )
                           else
                             Icon(

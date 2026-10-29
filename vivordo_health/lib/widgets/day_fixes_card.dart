@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -541,7 +542,7 @@ class _DayPickerState extends State<_DayPicker> {
                       "Couldn't load the next few days.",
                       style: TextStyle(color: colors.textSecondary),
                     )
-                  : const CircularProgressIndicator(),
+                  : const CupertinoActivityIndicator(),
             ),
           )
         else

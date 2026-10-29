@@ -243,7 +243,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           return _content(snapshot.data);
         },

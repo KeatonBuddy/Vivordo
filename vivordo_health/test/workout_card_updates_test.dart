@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -71,10 +72,10 @@ void main() {
     distance.value = (km: 1.25, loading: true);
     await tester.pump();
     expect(find.text('1.25 km'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
     distance.value = (km: 1.25, loading: false);
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
     expect(find.text('75'), findsOneWidget);
     expect(parentBuilds, initialBuilds);
     await tester.pumpWidget(const SizedBox.shrink());

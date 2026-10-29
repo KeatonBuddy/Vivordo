@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/screens/onboarding_flow_screen.dart';
@@ -188,6 +189,6 @@ void main() {
     expect(find.text('Light'), findsOneWidget);
     expect(find.text('62'), findsNothing);
     expect(find.text('30'), findsNothing);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
   });
 }

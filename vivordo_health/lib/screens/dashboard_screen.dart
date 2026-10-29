@@ -2,6 +2,7 @@ import 'dart:async';
 import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:provider/provider.dart';
@@ -550,7 +551,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(48),
-          child: CircularProgressIndicator(),
+          child: CupertinoActivityIndicator(),
         ),
       );
     }

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
@@ -1000,10 +1001,7 @@ class _ScanScreenState extends State<ScanScreen>
               shape: BoxShape.circle,
             ),
             child: const Center(
-              child: CircularProgressIndicator(
-                color: accentPurple,
-                strokeWidth: 3,
-              ),
+              child: CupertinoActivityIndicator(color: accentPurple),
             ),
           ),
         ),
@@ -1108,9 +1106,9 @@ class _ScanScreenState extends State<ScanScreen>
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: CupertinoActivityIndicator(
                               color: Colors.white,
+                              radius: 9,
                             ),
                           )
                         : const Icon(Icons.flashlight_on_rounded),
@@ -1369,10 +1367,7 @@ class _ScanScreenState extends State<ScanScreen>
               shape: BoxShape.circle,
             ),
             child: const Center(
-              child: CircularProgressIndicator(
-                color: accentPurple,
-                strokeWidth: 3,
-              ),
+              child: CupertinoActivityIndicator(color: accentPurple),
             ),
           ),
         ),

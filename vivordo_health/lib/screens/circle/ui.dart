@@ -492,7 +492,7 @@ class _Loading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     height: height,
-    child: const Center(child: CircularProgressIndicator(color: _brand)),
+    child: const Center(child: CupertinoActivityIndicator(color: _brand)),
   );
 }
 

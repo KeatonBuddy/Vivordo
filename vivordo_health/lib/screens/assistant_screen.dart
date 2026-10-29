@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -982,7 +983,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     if (!_ready) {
       return const Padding(
         padding: EdgeInsets.only(top: 80),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: CupertinoActivityIndicator()),
       );
     }
     return Padding(

@@ -136,6 +136,11 @@ abstract final class VivordoTheme {
       cardColor: colors.card,
       dividerColor: colors.border,
       shadowColor: colors.shadow,
+      // iOS has no ripple: a pressed row just shades until the finger lifts.
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: brightness == Brightness.dark
+          ? Colors.white.withValues(alpha: .08)
+          : Colors.black.withValues(alpha: .06),
       extensions: <ThemeExtension<dynamic>>[colors],
       cardTheme: CardThemeData(
         color: colors.card,

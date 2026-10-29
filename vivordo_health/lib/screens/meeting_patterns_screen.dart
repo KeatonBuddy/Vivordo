@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 
 import '../src/services/meeting_patterns_service.dart';
@@ -42,7 +43,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
         builder: (context, snapshot) {
           final data = snapshot.data;
           if (data == null) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final p = data.patterns;
           return ListView(

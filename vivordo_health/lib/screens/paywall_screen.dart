@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -120,7 +121,7 @@ class _Loading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
+      const Scaffold(body: Center(child: CupertinoActivityIndicator()));
 }
 
 /// What ran out, for someone who was subscribed before.
@@ -228,7 +229,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                       else if (!snapshot.hasData)
                         const Padding(
                           padding: EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: Center(child: CupertinoActivityIndicator()),
                         )
                       else
                         for (final plan in plans)
@@ -341,9 +342,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
               child: _busy
                   ? const SizedBox.square(
                       dimension: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
+                      child: CupertinoActivityIndicator(
                         color: Colors.white,
+                        radius: 11,
                       ),
                     )
                   : Text(

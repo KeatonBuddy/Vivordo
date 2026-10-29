@@ -162,7 +162,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final days = [
             for (final doc in snapshot.data?.docs ?? const [])

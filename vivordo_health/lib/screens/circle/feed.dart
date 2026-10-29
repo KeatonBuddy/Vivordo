@@ -715,9 +715,9 @@ class _AcceptDeclineButtons extends StatelessWidget {
         child: busy
             ? const SizedBox.square(
                 dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
+                child: CupertinoActivityIndicator(
                   color: Colors.white,
+                  radius: 8,
                 ),
               )
             : const Text('Accept'),
@@ -1136,7 +1136,7 @@ class _EngagementButton extends StatelessWidget {
                 if (busy)
                   const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CupertinoActivityIndicator(radius: 9),
                   )
                 else
                   Icon(icon, size: 21, color: color),
@@ -1810,7 +1810,7 @@ class _CommentComposer extends StatelessWidget {
                 dimension: 44,
                 child: Padding(
                   padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CupertinoActivityIndicator(),
                 ),
               )
             : _IconCircleButton(

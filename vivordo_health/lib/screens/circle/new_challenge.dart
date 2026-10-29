@@ -141,7 +141,7 @@ Future<void> _startNewChallenge(
         children: [
           SizedBox.square(
             dimension: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CupertinoActivityIndicator(radius: 9),
           ),
           SizedBox(width: 12),
           Text('Sending challenge…'),

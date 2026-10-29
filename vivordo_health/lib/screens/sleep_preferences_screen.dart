@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 
 import '../src/services/wind_down_reminder.dart';
@@ -138,7 +139,7 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CupertinoActivityIndicator())
           : ListView(
               // Clears the floating Vivordo AI button.
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),

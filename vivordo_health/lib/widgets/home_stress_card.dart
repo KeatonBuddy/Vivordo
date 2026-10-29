@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/stress_view.dart';
@@ -276,10 +277,7 @@ class _HomeStressCardState extends State<HomeStressCard>
         ? const SizedBox(
             width: 26,
             height: 26,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: Colors.white,
-            ),
+            child: CupertinoActivityIndicator(color: Colors.white, radius: 13),
           )
         : _noReading
         ? const Column(
@@ -332,10 +330,7 @@ class _HomeStressCardState extends State<HomeStressCard>
         const SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.5,
-            color: Colors.white,
-          ),
+          child: CupertinoActivityIndicator(color: Colors.white, radius: 11),
         )
       else
         Text(
@@ -460,11 +455,9 @@ class _HomeStressCardState extends State<HomeStressCard>
         SizedBox(
           width: 12,
           height: 12,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.7,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Colors.white.withValues(alpha: 0.72),
-            ),
+          child: CupertinoActivityIndicator(
+            color: Colors.white.withValues(alpha: 0.72),
+            radius: 6,
           ),
         ),
         const SizedBox(width: 6),

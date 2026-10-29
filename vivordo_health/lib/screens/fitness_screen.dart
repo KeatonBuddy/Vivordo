@@ -8,7 +8,8 @@ import '../src/utils/training_load_view.dart';
 import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/vivordo_time_picker.dart';
-import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
+import 'package:flutter/cupertino.dart'
+    show CupertinoIcons, CupertinoSwitch, CupertinoActivityIndicator;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
@@ -1382,7 +1383,7 @@ class _RecentFeedState extends State<_RecentFeed> {
                   (activities.connectionState == ConnectionState.waiting &&
                       !activities.hasData)) {
                 return const _Card(
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(child: CupertinoActivityIndicator()),
                 );
               }
               final entries = <({DateTime at, Widget row})>[
@@ -2638,7 +2639,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CupertinoActivityIndicator(radius: 9),
               ),
             )
           else
@@ -2742,7 +2743,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CupertinoActivityIndicator(radius: 9),
                         )
                       : const Text(
                           'Finish',
@@ -3035,7 +3036,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                       const Padding(
                         padding: EdgeInsets.all(40),
                         child: Center(
-                          child: CircularProgressIndicator(color: _purple),
+                          child: CupertinoActivityIndicator(color: _purple),
                         ),
                       )
                     else if (templates.isEmpty)
@@ -3222,7 +3223,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
               const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CupertinoActivityIndicator(radius: 12),
               )
             else ...[
               IconButton(
@@ -3527,7 +3528,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                     const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CupertinoActivityIndicator(radius: 10),
                     )
                   else
                     const Icon(Icons.route_rounded, color: _purple, size: 20),

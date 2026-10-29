@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -422,9 +423,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     ? const SizedBox(
                         width: 22,
                         height: 22,
-                        child: CircularProgressIndicator(
+                        child: CupertinoActivityIndicator(
                           color: Colors.white,
-                          strokeWidth: 2.5,
+                          radius: 11,
                         ),
                       )
                     : Text(
@@ -556,7 +557,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   Widget? _usernameSuffix() => switch (usernameStatus) {
     _UsernameStatus.checking => const Padding(
       padding: EdgeInsets.all(14),
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: CupertinoActivityIndicator(),
     ),
     _UsernameStatus.available => const Icon(
       Icons.check_rounded,

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 
 import '../theme/vivordo_theme.dart';
@@ -61,9 +62,9 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: CupertinoActivityIndicator(
                               color: Colors.white,
+                              radius: 10,
                             ),
                           )
                         : Column(

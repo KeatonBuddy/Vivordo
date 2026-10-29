@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -188,9 +189,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(
+                          child: CupertinoActivityIndicator(
                             color: Colors.white,
-                            strokeWidth: 2,
+                            radius: 10,
                           ),
                         )
                       : const Text(
@@ -402,9 +403,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
-                                  strokeWidth: 2.5,
+                                  radius: 11,
                                 ),
                               )
                             : const Text(
@@ -469,9 +470,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(
+                                  child: CupertinoActivityIndicator(
                                     color: dark ? Colors.black : Colors.white,
-                                    strokeWidth: 2.5,
+                                    radius: 11,
                                   ),
                                 )
                               : const Row(
@@ -518,9 +519,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
-                                  strokeWidth: 2.5,
+                                  radius: 11,
                                 ),
                               )
                             : Row(

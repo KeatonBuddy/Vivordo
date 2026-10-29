@@ -1408,10 +1408,7 @@ class _HistoryRow extends StatelessWidget {
             ),
             _HistoryState.running => const Padding(
               padding: EdgeInsets.all(2),
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: _purple,
-              ),
+              child: CupertinoActivityIndicator(color: _purple),
             ),
             _HistoryState.waiting => const Icon(
               Icons.circle_outlined,

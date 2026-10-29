@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -75,7 +76,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
           if (view == null) {
             return Center(
               child: snapshot.connectionState == ConnectionState.waiting
-                  ? const CircularProgressIndicator()
+                  ? const CupertinoActivityIndicator()
                   : Padding(
                       padding: const EdgeInsets.all(32),
                       child: Text(

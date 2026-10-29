@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -186,7 +187,7 @@ class _EventTypeSectionState extends State<EventTypeSection> {
                   if (score == null || _busy)
                     const SizedBox.square(
                       dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CupertinoActivityIndicator(radius: 8),
                     )
                   else
                     Icon(

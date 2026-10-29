@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -545,7 +546,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     if (_loading && events.isEmpty) {
       body = const Padding(
         padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: CupertinoActivityIndicator()),
       );
     } else if (earlier.isEmpty && agenda.isEmpty) {
       body = Padding(

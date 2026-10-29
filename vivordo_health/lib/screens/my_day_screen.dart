@@ -2920,7 +2920,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           !snapshot.hasData) {
         body = const SizedBox(
           height: 72,
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: CupertinoActivityIndicator()),
         );
       } else if (snapshot.hasError) {
         body = Padding(

@@ -2123,9 +2123,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
+              child: CupertinoActivityIndicator(
                 color: accentPurple,
+                radius: 10,
               ),
             ),
             const SizedBox(width: 14),
