@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,72 @@ class VivordoRobot extends StatelessWidget {
     width: size,
     height: size,
   );
+}
+
+/// The 3D robot from Vivordo's marketing renders, standing. Each time [waves]
+/// goes up it waves once (36 frames rendered from the same model, in
+/// assets/robot_wave); with Reduce Motion on it just stands. [size] is the
+/// height.
+class VivordoRobot3D extends StatefulWidget {
+  const VivordoRobot3D({super.key, this.size = 46, this.waves = 0});
+  final double size;
+  final int waves;
+
+  static const _frames = 36;
+  static String _frame(int i) =>
+      'assets/robot_wave/${i.toString().padLeft(2, '0')}.png';
+
+  @override
+  State<VivordoRobot3D> createState() => _VivordoRobot3DState();
+}
+
+class _VivordoRobot3DState extends State<VivordoRobot3D>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _wave = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..addListener(() => setState(() {}));
+  bool _cached = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_cached) return;
+    _cached = true;
+    // Decoded up front so the first wave doesn't stutter.
+    for (var i = 0; i < VivordoRobot3D._frames; i++) {
+      unawaited(precacheImage(AssetImage(VivordoRobot3D._frame(i)), context));
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant VivordoRobot3D oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.waves > oldWidget.waves &&
+        !MediaQuery.disableAnimationsOf(context)) {
+      unawaited(_wave.forward(from: 0));
+    }
+  }
+
+  @override
+  void dispose() {
+    _wave.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final frame = _wave.isAnimating
+        ? (_wave.value * (VivordoRobot3D._frames - 1)).round()
+        : 0;
+    return Image.asset(
+      VivordoRobot3D._frame(frame),
+      height: widget.size,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.medium,
+      excludeFromSemantics: true,
+    );
+  }
 }
 
 enum RobotPose { idle, wave, pointLeft, pointRight, celebrate }

@@ -152,10 +152,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final Color primaryPurple = VivordoTheme.brand;
   LiquidGlassSettings? _cachedGlassSettings;
   bool? _cachedGlassSettingsIsDark;
+  // How far the AI button has risen above the tab bar (0 to 1); the bar
+  // widens into its space as it goes.
+  final _insightLift = ValueNotifier<double>(0);
+
+  /// The floating tab bar's size and its gap to the screen's sides and
+  /// bottom, as in Apple's apps.
+  static const double _navBarHeight = 62;
+  static const double _navBarInset = 21;
 
   /// How far up from the bottom edge the floating tab bar reaches, plus a
   /// small gap: pushed screens keep their content above it.
-  static const double _navBarClearance = 112;
+  static const double _navBarClearance = _navBarInset + _navBarHeight + 8;
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
   static const List<String> _screenNames = [
@@ -508,6 +516,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       activity.dispose();
     }
     _homeStressReveal.dispose();
+    _insightLift.dispose();
     _insights.dispose();
     _contextPrompt.dispose();
     _chatSheet.dispose();
@@ -865,17 +874,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               ),
             ),
             if (showNavBar)
-              Positioned(
-                bottom: 30,
-                left: 24,
-                right: 24,
+              ValueListenableBuilder<double>(
+                valueListenable: _insightLift,
+                builder: (context, lift, bar) => Positioned(
+                  bottom: _navBarInset,
+                  left: _navBarInset,
+                  // Leaves room for the AI button beside it, and takes that
+                  // room back while the button is raised or hidden.
+                  right: hideAssistant
+                      ? _navBarInset
+                      : _navBarInset +
+                            (1 - lift) * (ContextualInsightBar.buttonSize + 8),
+                  child: bar!,
+                ),
                 child: _buildFloatingNavBar(),
               ),
             Positioned(
               key: const ValueKey('ai-chat-bubble-layer'),
-              right: 30,
-              left: 20,
-              bottom: 116,
+              right: _navBarInset,
+              left: _navBarInset,
+              bottom: _navBarInset,
               child: IgnorePointer(
                 key: _chatLayerKey,
                 ignoring: hideAssistant,
@@ -892,7 +910,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       suppressed:
                           hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
-                      collapsed: _buildChatBubble(),
+                      button: (context, waves) => _buildChatButton(waves),
+                      onButtonTap: (from) => _openChat(from: from),
+                      lift: _insightLift,
                       onAsk: (_) => _askAbout(_insights.current),
                     ),
                   ),
@@ -978,25 +998,51 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   // No GlobalKey here: the insight bar crossfades this button, so two copies
   // can briefly coexist, which a GlobalKey forbids.
-  Widget _buildChatBubble() => Material(
-    color: primaryPurple,
-    elevation: 10,
-    shadowColor: primaryPurple.withValues(alpha: .38),
-    shape: const CircleBorder(),
-    clipBehavior: Clip.antiAlias,
-    child: Builder(
-      builder: (bubbleContext) => InkWell(
-        onTap: () => _openChat(from: bubbleContext),
-        child: const SizedBox(
-          width: 64,
-          height: 64,
-          child: Center(child: VivordoRobot(size: 30, faceOnly: true)),
+  // No GlobalKey here: the insight bar crossfades this button, so two copies
+  // can briefly coexist, which a GlobalKey forbids.
+  /// The Vivordo AI button: a glass circle like the tab bar, with the 3D
+  /// robot standing in it.
+  Widget _buildChatButton(int waves) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: context.vivordoColors.shadow,
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: LiquidGlassLayer(
+        settings: _glassSettings(),
+        child: LiquidGlass(
+          shape: const LiquidRoundedSuperellipse(
+            borderRadius: ContextualInsightBar.buttonSize / 2,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? .10 : .6),
+              ),
+            ),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: VivordoRobot3D(size: 46, waves: waves),
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _buildFloatingNavBar() {
+  /// Liquid glass for the tab bar and the AI button, cached per brightness.
+  LiquidGlassSettings _glassSettings() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_cachedGlassSettingsIsDark != isDark) {
@@ -1015,13 +1061,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             : Colors.white.withValues(alpha: .42),
       );
     }
-    final glassSettings = _cachedGlassSettings!;
+    return _cachedGlassSettings!;
+  }
 
+  Widget _buildFloatingNavBar() {
+    final colors = context.vivordoColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glassSettings = _glassSettings();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    const items = [
+      (Icons.home_rounded, 'Home'),
+      (Icons.calendar_month_rounded, 'My Day'),
+      (Icons.fingerprint_rounded, 'Scan'),
+      (Icons.fitness_center_rounded, 'Fitness'),
+      (Icons.bar_chart_rounded, 'Metrics'),
+    ];
+
+    // Apple's iOS 26 tab bar shape and size, measured from Files: a 62pt
+    // capsule whose selected tab sits in a capsule inset 4pt. Colours stay
+    // Vivordo's: a purple pill behind the selected tab.
     return RepaintBoundary(
       key: _navBarKey,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(_navBarHeight / 2),
           boxShadow: [
             BoxShadow(
               color: colors.shadow,
@@ -1033,29 +1096,51 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         child: LiquidGlassLayer(
           settings: glassSettings,
           child: LiquidGlass(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
+            shape: const LiquidRoundedSuperellipse(
+              borderRadius: _navBarHeight / 2,
+            ),
             clipBehavior: Clip.antiAlias,
             child: Material(
               color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
+                height: _navBarHeight,
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(_navBarHeight / 2),
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+                    color: Colors.white.withValues(alpha: isDark ? .10 : .6),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                child: Stack(
                   children: [
-                    _navItem(Icons.home_rounded, "Home", 0),
-                    _navItem(Icons.calendar_month_rounded, "My Day", 1),
-                    _navItem(Icons.fingerprint_rounded, "Scan", 2),
-                    _navItem(Icons.fitness_center_rounded, "Fitness", 3),
-                    _navItem(Icons.bar_chart_rounded, "Metrics", 4),
+                    // The selection lens slides to the chosen tab. Placed
+                    // by fraction, so it keeps up while the bar widens.
+                    AnimatedAlign(
+                      duration: reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment(
+                        -1 + 2 * _selectedIndex / (items.length - 1),
+                        0,
+                      ),
+                      child: FractionallySizedBox(
+                        widthFactor: 1 / items.length,
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          decoration: ShapeDecoration(
+                            shape: const StadiumBorder(),
+                            color: primaryPurple,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        for (final (index, (icon, label)) in items.indexed)
+                          Expanded(child: _navItem(icon, label, index)),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -1086,6 +1171,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     bool isActive,
     bool isWorkoutPulse,
   ) {
+    final color = isActive
+        ? Colors.white
+        : index == 2
+        ? primaryPurple
+        : context.vivordoColors.textSecondary;
+    final iconWidget = Icon(icon, color: color, size: 24);
     return InkWell(
       onTap: () {
         if (index == _selectedIndex) {
@@ -1096,76 +1187,62 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         unawaited(HapticFeedback.selectionClick());
         _selectTab(index);
       },
-      borderRadius: BorderRadius.circular(18),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive ? primaryPurple : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isWorkoutPulse)
-              // Without this boundary the pulse repaints the whole liquid
-              // glass nav bar every frame.
-              RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _fitnessPulseController,
-                  child: Icon(
-                    icon,
-                    color: isActive ? Colors.white : primaryPurple,
-                    size: 23,
-                  ),
-                  builder: (context, child) {
-                    final pulse = _fitnessPulseController.value;
-                    return Transform.scale(
-                      scale: 1 + (pulse * .18),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: primaryPurple.withValues(
-                                alpha: .16 + (pulse * .34),
-                              ),
-                              blurRadius: 5 + (pulse * 10),
-                              spreadRadius: pulse * 2,
-                            ),
-                          ],
-                        ),
-                        child: child,
-                      ),
-                    );
-                  },
+      customBorder: const StadiumBorder(),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (isWorkoutPulse)
+            // Without this boundary the pulse repaints the whole liquid
+            // glass nav bar every frame.
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _fitnessPulseController,
+                // Purple while a workout runs, as before.
+                child: Icon(
+                  icon,
+                  color: isActive ? Colors.white : primaryPurple,
+                  size: 24,
                 ),
-              )
-            else
-              Icon(
-                icon,
-                color: isActive
-                    ? Colors.white
-                    : index == 2
-                    ? primaryPurple
-                    : context.vivordoColors.textSecondary,
-                size: 23,
+                builder: (context, child) {
+                  final pulse = _fitnessPulseController.value;
+                  return Transform.scale(
+                    scale: 1 + (pulse * .18),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryPurple.withValues(
+                              alpha: .16 + (pulse * .34),
+                            ),
+                            blurRadius: 5 + (pulse * 10),
+                            spreadRadius: pulse * 2,
+                          ),
+                        ],
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
               ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive
-                    ? Colors.white
-                    : index == 2
-                    ? primaryPurple
-                    : context.vivordoColors.textSecondary,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-              ),
+            )
+          else
+            iconWidget,
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            // The bar keeps its height; iOS tab labels stop growing early too.
+            textScaler: MediaQuery.textScalerOf(
+              context,
+            ).clamp(maxScaleFactor: 1.15),
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

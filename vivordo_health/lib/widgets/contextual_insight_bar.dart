@@ -1,5 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../theme/vivordo_theme.dart';
 
 @immutable
@@ -164,34 +168,117 @@ class _InsightSourceState extends State<_InsightSource> {
   Widget build(BuildContext context) => widget.child;
 }
 
+/// Which insight each screen last showed and whether the robot has waved
+/// about it, so an insight opens by itself only once: later visits show a
+/// dot on the button instead. Kept on the device with [persist].
+class InsightMemory {
+  InsightMemory({this.persist = false});
+
+  /// The app's memory, saved between launches.
+  static final shared = InsightMemory(persist: true);
+
+  final bool persist;
+  static const _storage = FlutterSecureStorage();
+  static const _key = 'seen_insights_v1';
+  Map<String, dynamic> _seen = {};
+  Future<void>? _loading;
+
+  Future<void> load() => _loading ??= () async {
+    if (!persist) return;
+    try {
+      final saved = await _storage.read(key: _key);
+      if (saved != null) _seen = {...jsonDecode(saved) as Map, ..._seen};
+    } catch (error) {
+      debugPrint('InsightMemory: load failed: $error');
+    }
+  }();
+
+  bool seen(ScreenInsight insight) =>
+      (_seen[insight.screen] as Map?)?['message'] == insight.message;
+
+  bool waved(ScreenInsight insight) =>
+      seen(insight) && (_seen[insight.screen] as Map)['waved'] == true;
+
+  void markSeen(ScreenInsight insight) =>
+      _write(insight.screen, {'message': insight.message, 'waved': false});
+
+  void markWaved(ScreenInsight insight) =>
+      _write(insight.screen, {'message': insight.message, 'waved': true});
+
+  void _write(String screen, Map<String, Object> value) {
+    _seen[screen] = value;
+    if (!persist) return;
+    unawaited(
+      _storage.write(key: _key, value: jsonEncode(_seen)).catchError((
+        Object error,
+      ) {
+        debugPrint('InsightMemory: save failed: $error');
+      }),
+    );
+  }
+}
+
+/// The Vivordo AI button beside the tab bar, and the screen's insight.
+/// A new insight plays once by itself: the button rises above the tab bar
+/// (reporting how far through [lift], so the bar can widen into the space),
+/// then opens into a pill. An insight already seen leaves a dot on the
+/// button, the robot waves the first time that happens, and tapping the
+/// button opens it. Without an insight the button calls [onButtonTap].
 class ContextualInsightBar extends StatefulWidget {
   const ContextualInsightBar({
     super.key,
     required this.insight,
-    required this.collapsed,
+    required this.button,
+    required this.onButtonTap,
     required this.onAsk,
     this.suppressed = false,
+    this.lift,
+    this.memory,
   });
   final ScreenInsight? insight;
-  final Widget collapsed;
+
+  /// The round button; [waves] counts up each time the robot should wave.
+  final Widget Function(BuildContext context, int waves) button;
+  final ValueChanged<BuildContext> onButtonTap;
   final ValueChanged<String> onAsk;
   final bool suppressed;
+  final ValueNotifier<double>? lift;
+  final InsightMemory? memory;
+
+  /// The button's size, matching the tab bar's height.
+  static const buttonSize = 62.0;
+
+  /// How far the button rises: above the tab bar, with a gap.
+  static const rise = buttonSize + 10;
+
   @override
   State<ContextualInsightBar> createState() => _ContextualInsightBarState();
 }
 
 class _ContextualInsightBarState extends State<ContextualInsightBar>
-    with SingleTickerProviderStateMixin {
-  /// Width of the collapsed robot button, which the pill grows out of.
-  static const _buttonSize = 64.0;
+    with TickerProviderStateMixin {
+  static const _buttonSize = ContextualInsightBar.buttonSize;
 
-  bool _dismissed = false;
+  late final InsightMemory _memory = widget.memory ?? InsightMemory.shared;
   Timer? _delay;
-  bool _ready = false;
+  bool _wantOpen = false;
   bool _expanded = false;
+  int _waves = 0;
+  // Touches on screen; the button waits for none before it moves, so the
+  // tab bar never shifts under a finger.
+  final Set<int> _pointers = {};
   // Kept while the pill closes, so its content can shrink back into the
   // button after the insight itself has gone.
   ScreenInsight? _shown;
+  late final AnimationController _lift = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  )..addListener(() => widget.lift?.value = _liftCurve.value);
+  late final Animation<double> _liftCurve = CurvedAnimation(
+    parent: _lift,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
   late final AnimationController _reveal = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 340),
@@ -208,58 +295,106 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     reverseCurve: const Interval(.55, 1, curve: Curves.easeIn),
   );
 
-  bool get _open =>
-      _ready && widget.insight != null && !widget.suppressed && !_dismissed;
+  bool get _open => _wantOpen && widget.insight != null && !widget.suppressed;
+
+  /// Only for an insight already seen; a new one opens by itself instead.
+  bool get _dot {
+    final insight = widget.insight;
+    return insight != null &&
+        !widget.suppressed &&
+        !_wantOpen &&
+        _memory.seen(insight);
+  }
 
   @override
   void initState() {
     super.initState();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_trackPointer);
+    unawaited(_memory.load().then((_) => mounted ? setState(() {}) : null));
     _schedule();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _reveal.duration = MediaQuery.disableAnimationsOf(context)
+    final still = MediaQuery.disableAnimationsOf(context);
+    _reveal.duration = still
         ? Duration.zero
         : const Duration(milliseconds: 340);
+    _lift.duration = still ? Duration.zero : const Duration(milliseconds: 300);
   }
 
+  void _trackPointer(PointerEvent event) {
+    if (event is PointerDownEvent) _pointers.add(event.pointer);
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _pointers.remove(event.pointer);
+    }
+  }
+
+  /// Arriving on a screen: a new insight opens by itself after a moment;
+  /// a seen one gets a wave the first time its dot shows.
   void _schedule() {
     _delay?.cancel();
-    _ready = false;
+    _wantOpen = false;
     _expanded = false;
     _sync();
-    if (widget.insight == null || widget.suppressed) return;
-    _delay = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() => _ready = true);
-      _sync();
+    final insight = widget.insight;
+    if (insight == null || widget.suppressed) return;
+    _delay = Timer(const Duration(seconds: 2), () async {
+      await _memory.load();
+      // Not while a finger is down.
+      while (mounted && _pointers.isNotEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      if (!mounted || widget.insight != insight || widget.suppressed) return;
+      if (!_memory.seen(insight)) {
+        _memory.markSeen(insight);
+        setState(() => _wantOpen = true);
+        _sync();
+      } else if (!_memory.waved(insight)) {
+        _memory.markWaved(insight);
+        setState(() => _waves++);
+      }
     });
   }
 
-  /// Drives the morph toward the current open/closed state.
+  /// Drives the motion toward the current open/closed state: rise, then
+  /// open; close, then settle back beside the tab bar.
   void _sync() {
     if (_open) {
       _shown = widget.insight;
-      _reveal.forward();
+      unawaited(
+        _lift.forward().orCancel.then((_) {
+          if (mounted && _open) unawaited(_reveal.forward());
+        }, onError: (_) {}),
+      );
     } else {
       _expanded = false;
-      _reveal.reverse();
+      unawaited(
+        _reveal.reverse().orCancel.then((_) {
+          if (mounted && !_open) unawaited(_lift.reverse());
+        }, onError: (_) {}),
+      );
     }
   }
 
   void _dismiss() {
-    setState(() => _dismissed = true);
+    setState(() => _wantOpen = false);
     _sync();
+  }
+
+  void _tapButton(BuildContext buttonContext) {
+    if (_dot) {
+      setState(() => _wantOpen = true);
+      _sync();
+      return;
+    }
+    widget.onButtonTap(buttonContext);
   }
 
   @override
   void didUpdateWidget(covariant ContextualInsightBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.insight?.screen != widget.insight?.screen) {
-      _dismissed = false;
-    }
     if (oldWidget.insight?.screen != widget.insight?.screen ||
         oldWidget.suppressed != widget.suppressed) {
       _schedule();
@@ -270,7 +405,9 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_trackPointer);
     _delay?.cancel();
+    _lift.dispose();
     _reveal.dispose();
     super.dispose();
   }
@@ -284,76 +421,79 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         return Align(
           alignment: Alignment.bottomRight,
           child: AnimatedBuilder(
-            animation: _reveal,
+            animation: Listenable.merge([_reveal, _lift]),
             builder: (context, _) {
               final t = _width.value;
               final insight = _shown;
               final showContent = _reveal.value > 0 && insight != null;
-              return SizedBox(
-                width: _buttonSize + (fullWidth - _buttonSize) * t,
-                child: Material(
-                  // The pill is the button stretched open: same spot, same
-                  // corner radius, taking on the card colour as it widens.
-                  color: Color.lerp(VivordoTheme.brand, colors.card, t),
-                  // Collapsed, the pill carries the button's purple glow,
-                  // which its clip would otherwise cut off.
-                  elevation: 10 - 2 * t,
-                  shadowColor: Color.lerp(
-                    VivordoTheme.brand.withValues(alpha: .38),
-                    Colors.black,
-                    t,
-                  ),
-                  animationDuration: Duration.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(_buttonSize / 2),
-                    side: BorderSide(
-                      color: VivordoTheme.brand.withValues(alpha: t),
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: AnimatedSize(
-                    duration: _reveal.duration!,
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment.bottomCenter,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * .45,
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: ContextualInsightBar.rise * _liftCurve.value,
+                ),
+                child: SizedBox(
+                  width: _buttonSize + (fullWidth - _buttonSize) * t,
+                  child: Material(
+                    // The pill is the button stretched open: same spot, same
+                    // corner radius, taking on the card colour as it widens.
+                    color: colors.card.withValues(alpha: t),
+                    elevation: 8 * t,
+                    shadowColor: Colors.black,
+                    animationDuration: Duration.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(_buttonSize / 2),
+                      side: BorderSide(
+                        color: VivordoTheme.brand.withValues(alpha: t),
                       ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              height: _buttonSize,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: showContent
-                                        ? ClipRect(
-                                            // Laid out at full width and
-                                            // uncovered as the pill widens,
-                                            // so nothing reflows mid-motion.
-                                            child: OverflowBox(
-                                              alignment: Alignment.centerRight,
-                                              minWidth: fullWidth - _buttonSize,
-                                              maxWidth: fullWidth - _buttonSize,
-                                              child: FadeTransition(
-                                                opacity: _content,
-                                                child: _header(insight),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: AnimatedSize(
+                      duration: _reveal.duration!,
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.bottomCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * .45,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                height: _buttonSize,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: showContent
+                                          ? ClipRect(
+                                              // Laid out at full width and
+                                              // uncovered as the pill widens,
+                                              // so nothing reflows mid-motion.
+                                              child: OverflowBox(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                minWidth:
+                                                    fullWidth - _buttonSize,
+                                                maxWidth:
+                                                    fullWidth - _buttonSize,
+                                                child: FadeTransition(
+                                                  opacity: _content,
+                                                  child: _header(insight),
+                                                ),
                                               ),
-                                            ),
-                                          )
-                                        : const SizedBox.shrink(),
-                                  ),
-                                  SizedBox.square(
-                                    dimension: _buttonSize,
-                                    child: Center(child: widget.collapsed),
-                                  ),
-                                ],
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                    SizedBox.square(
+                                      dimension: _buttonSize,
+                                      child: _buttonWithDot(),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            if (_expanded && insight != null) _details(insight),
-                          ],
+                              if (_expanded && insight != null)
+                                _details(insight),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -366,6 +506,37 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
       },
     );
   }
+
+  Widget _buttonWithDot() => Builder(
+    builder: (buttonContext) => Semantics(
+      button: true,
+      label: _dot ? 'Vivordo AI, insight available' : 'Vivordo AI',
+      child: GestureDetector(
+        onTap: () => _tapButton(buttonContext),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(child: widget.button(buttonContext, _waves)),
+            if (_dot)
+              // Inside the round button's edge, which clips.
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: VivordoTheme.brand,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Widget _header(ScreenInsight insight) {
     final colors = context.vivordoColors;
