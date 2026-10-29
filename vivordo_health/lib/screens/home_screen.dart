@@ -208,7 +208,6 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onMyDayTap;
   final bool revealStress;
   final bool isActive;
-  final bool openMoodCheckIn;
 
   /// Spotlight targets for the Home tour.
   final Key? rightNowKey;
@@ -223,7 +222,6 @@ class HomeScreen extends StatefulWidget {
     this.onMyDayTap,
     this.revealStress = true,
     this.isActive = true,
-    this.openMoodCheckIn = false,
     this.rightNowKey,
     this.vitalsKey,
     this.circleKey,
@@ -233,6 +231,10 @@ class HomeScreen extends StatefulWidget {
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+
+  /// Set by the Mood widget: Home opens the mood check-in when it next
+  /// shows, or now if it's open.
+  static final moodCheckInRequested = ValueNotifier<bool>(false);
 }
 
 class _HomeWidgetSnapshot {
@@ -291,6 +293,19 @@ class _HomeWidgetSnapshot {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _hourlyHeartKey = GlobalKey<HourlyHeartInsightCardState>();
+
+  /// Opened for the Mood widget: the morning check-in pop-up stays away.
+  bool _openedForMoodCheckIn = false;
+
+  void _openRequestedMoodCheckIn() {
+    if (!HomeScreen.moodCheckInRequested.value) return;
+    HomeScreen.moodCheckInRequested.value = false;
+    _openedForMoodCheckIn = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_showMoodCheck());
+    });
+  }
+
   String _currentMood = 'Good';
   double _currentMoodScore = 75;
   String? _pendingMoodSync;
@@ -362,11 +377,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _connectMetricStreams();
     // Events added or moved anywhere (My Day, Vivordo AI) reload Your Day.
     CalendarService.eventsChanged.addListener(_refreshHomeCalendarCards);
-    if (widget.openMoodCheckIn) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_showMoodCheck());
-      });
-    }
+    _openRequestedMoodCheckIn();
+    HomeScreen.moodCheckInRequested.addListener(_openRequestedMoodCheckIn);
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _friendsSnapshot.connectFactory(CircleProfileService.watchFriends);
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(
@@ -435,6 +447,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    HomeScreen.moodCheckInRequested.removeListener(_openRequestedMoodCheckIn);
     _sleepHoursLive.dispose();
     CalendarService.eventsChanged.removeListener(_refreshHomeCalendarCards);
     _sleepRefreshTimer?.cancel();
@@ -638,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final now = DateTime.now();
     final day = localDayKey(now);
     if (_checkInPopupDay == day ||
-        widget.openMoodCheckIn ||
+        _openedForMoodCheckIn ||
         !widget.isActive ||
         !checkInPopupDue(checkIn, now, 0)) {
       return;

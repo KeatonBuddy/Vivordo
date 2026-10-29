@@ -127,7 +127,7 @@ void main() {
     );
   });
   test('reminders open My Day and labels explain the offset', () {
-    expect(notificationRouteStack('calendar'), ['/home', '/calendar']);
+    expect(notificationDestination('calendar'), (tab: 1, push: null));
     expect(priorityReminderLabel(0), 'At start time');
     expect(priorityReminderLabel(60), '1 hr before');
     expect(priorityReminderLabel(95), '95 min before');

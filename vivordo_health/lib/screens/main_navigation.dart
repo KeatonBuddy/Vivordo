@@ -30,21 +30,26 @@ import '../theme/vivordo_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
-  final bool openMoodCheckIn;
 
   /// `tours` from the user document: which screen tours have been seen.
   final Map<String, dynamic>? seenTours;
   const MainNavigationScreen({
     super.key,
     this.initialIndex = 0,
-    this.openMoodCheckIn = false,
     this.seenTours,
   });
 
-  /// A tab asked for from outside the app (a widget link): the open screen
-  /// switches to it, or the next one to open starts on it. Switching keeps
-  /// the app as it is; rebuilding it would replay the launch splash.
+  /// A tab asked for from outside the app (a widget link, a notification);
+  /// 5 opens Vivordo AI, as [initialIndex] does. The open screen switches
+  /// to it, or the next one to open starts on it. Switching keeps the app
+  /// as it is; rebuilding it would replay the launch splash.
   static final requestedTab = ValueNotifier<int?>(null);
+
+  /// Shows [tab] in the running app: closes whatever is pushed over it.
+  static void openTab(NavigatorState navigator, int tab) {
+    navigator.popUntil((route) => route.isFirst);
+    requestedTab.value = tab;
+  }
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -130,13 +135,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _selectedIndex = widget.initialIndex == 5
-        ? 0
-        : widget.initialIndex.clamp(0, 4);
+    var startTab = widget.initialIndex;
     if (MainNavigationScreen.requestedTab.value case final tab?) {
-      _selectedIndex = tab;
+      startTab = tab;
       MainNavigationScreen.requestedTab.value = null;
     }
+    final startInChat = startTab == 5;
+    _selectedIndex = startInChat ? 0 : startTab.clamp(0, 4);
     MainNavigationScreen.requestedTab.addListener(_openRequestedTab);
     _loadedTabs.add(_selectedIndex);
     if (widget.seenTours case final seen?) {
@@ -154,9 +159,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     }
     _tabActivity = List.generate(
       5,
-      (index) => ValueNotifier<bool>(
-        widget.initialIndex != 5 && index == _selectedIndex,
-      ),
+      (index) => ValueNotifier<bool>(!startInChat && index == _selectedIndex),
     );
     _homeStressReveal = ValueNotifier<bool>(false);
     _contentNavigatorObserver = _ContentNavigatorObserver(
@@ -176,7 +179,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       unawaited(_openFromAssistant(screen));
     };
-    _pandaHasBeenOpened = widget.initialIndex == 5;
+    _pandaHasBeenOpened = startInChat;
     _chatRevealController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 480),
@@ -211,7 +214,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       }
       _refreshTodayFromHealth();
     });
-    if (widget.initialIndex == 5) {
+    if (startInChat) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _finishLaunch());
@@ -481,7 +484,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 yourDayKey: _homeYourDayKey,
                 insightsKey: _homeInsightsKey,
                 isActive: isActive,
-                openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
                 onFitnessTap: () => _selectTab(3),
                 onMyDayTap: () => _selectTab(1),
@@ -540,11 +542,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (mounted) setState(() {});
   }
 
-  void _openRequestedTab() {
+  Future<void> _openRequestedTab() async {
     final tab = MainNavigationScreen.requestedTab.value;
     if (tab == null) return;
     MainNavigationScreen.requestedTab.value = null;
-    _selectTab(tab);
+    if (tab == 5) {
+      _openChat();
+      return;
+    }
+    // Back to the tab itself, as a fresh screen would open.
+    _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+    if (_chatOpen) await _closeChat();
+    if (mounted) _selectTab(tab);
   }
 
   /// Switches to [index] and records the screen view. All tab changes route

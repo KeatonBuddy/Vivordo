@@ -2,25 +2,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 
 void main() {
-  test('Circle notifications retain the main app as a back destination', () {
-    expect(notificationRouteStack('circle'), ['/home', '/circle']);
+  test('tab notifications open that tab of the running app', () {
+    expect(notificationDestination('scan'), (tab: 2, push: null));
+    expect(notificationDestination('ai_chat'), (tab: 5, push: null));
+    expect(notificationDestination('fitness'), (tab: 3, push: null));
+    expect(notificationDestination('calendar'), (tab: 1, push: null));
   });
 
-  test('scan notifications retain the main app as a back destination', () {
-    expect(notificationRouteStack('scan'), ['/home', '/scan']);
+  test('unknown notification destinations safely open Home', () {
+    expect(notificationDestination('unknown'), (tab: 0, push: null));
+    expect(notificationDestination(null), (tab: 0, push: null));
   });
 
-  test('AI chat notifications retain the main app as a back destination', () {
-    expect(notificationRouteStack('ai_chat'), ['/home', '/ai-chat']);
-  });
-
-  test('fitness notifications retain the main app as a back destination', () {
-    expect(notificationRouteStack('fitness'), ['/home', '/fitness']);
-  });
-
-  test('unknown notification destinations safely open the main app', () {
-    expect(notificationRouteStack('unknown'), ['/home']);
-    expect(notificationRouteStack(null), ['/home']);
+  test('Circle opens over Home, so back has somewhere to go', () {
+    expect(notificationDestination('circle'), (tab: 0, push: '/circle'));
   });
 
   test('challenge and achievement pushes open Circle at Challenges', () {
@@ -30,16 +25,16 @@ void main() {
       'challenge_completed',
       'achievement_unlocked',
     ]) {
-      expect(notificationRouteStack('circle', type: type), [
-        '/home',
-        '/circle/challenges',
-      ], reason: type);
+      expect(notificationDestination('circle', type: type), (
+        tab: 0,
+        push: '/circle/challenges',
+      ), reason: type);
     }
     // Likes, comments and friend requests land on the feed, where requests
     // are listed first.
-    expect(notificationRouteStack('circle', type: 'circle_friend_request'), [
-      '/home',
-      '/circle',
-    ]);
+    expect(notificationDestination('circle', type: 'circle_friend_request'), (
+      tab: 0,
+      push: '/circle',
+    ));
   });
 }

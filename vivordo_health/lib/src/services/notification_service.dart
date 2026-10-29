@@ -18,6 +18,7 @@ import 'package:vivordo_health/main.dart'
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
+import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
@@ -649,14 +650,17 @@ class NotificationService {
     }
     if (navigator == null) return;
 
-    final routes = notificationRouteStack(screen, type: type);
-    navigator.pushNamedAndRemoveUntil(routes.first, (_) => false);
-    if (routes.length == 1) return;
+    // Switch the running app's tab rather than rebuilding it, which
+    // replayed the launch splash and dropped the account gates.
+    final destination = notificationDestination(screen, type: type);
+    MainNavigationScreen.openTab(navigator, destination.tab);
+    final push = destination.push;
+    if (push == null) return;
 
-    // Keep the main app beneath notification destinations so the AppBar back
-    // button and iOS swipe-back gesture always have somewhere useful to go.
+    // Pushed over the main app, so the AppBar back button and iOS
+    // swipe-back gesture always have somewhere useful to go.
     await WidgetsBinding.instance.endOfFrame;
-    navigatorKey.currentState?.pushNamed(routes.last);
+    navigatorKey.currentState?.pushNamed(push);
   }
 
   Future<void> _persistCurrentFcmToken() async {

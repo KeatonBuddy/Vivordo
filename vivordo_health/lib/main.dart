@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
+import 'package:vivordo_health/screens/home_screen.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/src/services/calendar_service.dart';
@@ -298,21 +299,16 @@ class _MyAppState extends State<MyApp> {
         await openActiveWorkoutFromExternal(createIfMissing: true);
         return true;
       }
-      if (destination == 'mood') {
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-            builder: (_) => const MainNavigationScreen(openMoodCheckIn: true),
-          ),
-          (_) => false,
-        );
-        return true;
-      }
       // Switch the open app's tab instead of rebuilding it under a new
       // route, which replayed the launch splash and dropped the account
       // gates below it.
-      void openTab(int index) {
-        navigator!.popUntil((route) => route.isFirst);
-        MainNavigationScreen.requestedTab.value = index;
+      void openTab(int index) =>
+          MainNavigationScreen.openTab(navigator!, index);
+
+      if (destination == 'mood') {
+        HomeScreen.moodCheckInRequested.value = true;
+        openTab(0);
+        return true;
       }
 
       // The Capacity widget opens My Day, where Capacity lives.
