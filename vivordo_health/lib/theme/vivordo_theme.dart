@@ -24,6 +24,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     required this.textSecondary,
     required this.border,
     required this.shadow,
+    required this.success,
+    required this.warning,
+    required this.danger,
   });
 
   final Color page;
@@ -35,15 +38,40 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
   final Color border;
   final Color shadow;
 
+  /// Status colours for text: dark enough in light mode to read at 4.5:1,
+  /// the bright system tones in dark mode. Fills and chart marks can keep
+  /// the bright tones in both.
+  final Color success;
+  final Color warning;
+  final Color danger;
+
   static const light = VivordoColors(
     page: Color(0xFFFBFAFF),
     card: Color(0xFFFFFFFF),
     cardMuted: Color(0xFFF4F2FA),
     input: Color(0xFFF2F2F7),
     textPrimary: Color(0xFF1C1C1E),
-    textSecondary: Color(0xFF747486),
+    textSecondary: Color(0xFF66667A),
     border: Color(0xFFE1E1E8),
     shadow: Color(0x1A000000),
+    success: Color(0xFF15803D),
+    warning: Color(0xFFA15C00),
+    danger: Color(0xFFC0392B),
+  );
+
+  /// For Increase Contrast: darker secondary text and borders.
+  static const lightHighContrast = VivordoColors(
+    page: Color(0xFFFFFFFF),
+    card: Color(0xFFFFFFFF),
+    cardMuted: Color(0xFFEDEBF5),
+    input: Color(0xFFEBEBF0),
+    textPrimary: Color(0xFF000000),
+    textSecondary: Color(0xFF3F3F4E),
+    border: Color(0xFF8E8E9C),
+    shadow: Color(0x26000000),
+    success: Color(0xFF0F5F2E),
+    warning: Color(0xFF7A4500),
+    danger: Color(0xFF9B1C1C),
   );
 
   static const dark = VivordoColors(
@@ -51,12 +79,30 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     card: Color(0xFF1B1B21),
     cardMuted: Color(0xFF25242D),
     input: Color(0xFF292830),
-    // A light Vivordo purple keeps primary copy legible without reverting to
-    // stark white and clearly distinguishes the dark appearance.
-    textPrimary: Color(0xFFB8AEFF),
+    // Near-white like iOS's label colour; purple is kept for what can be
+    // tapped, so plain text doesn't look like a link.
+    textPrimary: Color(0xFFF2F2F7),
     textSecondary: Color(0xFFAAA7B5),
     border: Color(0xFF383640),
     shadow: Color(0x66000000),
+    success: Color(0xFF30D158),
+    warning: Color(0xFFFFB340),
+    danger: Color(0xFFFF6961),
+  );
+
+  /// For Increase Contrast.
+  static const darkHighContrast = VivordoColors(
+    page: Color(0xFF000000),
+    card: Color(0xFF16161B),
+    cardMuted: Color(0xFF222128),
+    input: Color(0xFF2A2931),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFD4D2DC),
+    border: Color(0xFF6E6C78),
+    shadow: Color(0x80000000),
+    success: Color(0xFF5BE584),
+    warning: Color(0xFFFFC870),
+    danger: Color(0xFFFF8A80),
   );
 
   @override
@@ -69,6 +115,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     Color? textSecondary,
     Color? border,
     Color? shadow,
+    Color? success,
+    Color? warning,
+    Color? danger,
   }) => VivordoColors(
     page: page ?? this.page,
     card: card ?? this.card,
@@ -78,6 +127,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     textSecondary: textSecondary ?? this.textSecondary,
     border: border ?? this.border,
     shadow: shadow ?? this.shadow,
+    success: success ?? this.success,
+    warning: warning ?? this.warning,
+    danger: danger ?? this.danger,
   );
 
   @override
@@ -92,6 +144,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       border: Color.lerp(border, other.border, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
     );
   }
 }
@@ -106,6 +161,10 @@ abstract final class VivordoTheme {
 
   static ThemeData get light => _build(Brightness.light, VivordoColors.light);
   static ThemeData get dark => _build(Brightness.dark, VivordoColors.dark);
+  static ThemeData get lightHighContrast =>
+      _build(Brightness.light, VivordoColors.lightHighContrast);
+  static ThemeData get darkHighContrast =>
+      _build(Brightness.dark, VivordoColors.darkHighContrast);
 
   static ThemeData _build(Brightness brightness, VivordoColors colors) {
     final scheme =

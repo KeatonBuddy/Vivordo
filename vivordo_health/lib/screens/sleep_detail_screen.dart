@@ -70,7 +70,7 @@ class SleepDetailScreen extends StatefulWidget {
 }
 
 class _SleepDetailScreenState extends State<SleepDetailScreen> {
-  static const _purple = Color(0xFF5420DE);
+  static const _purple = Color(0xFF5B42F3);
   int _rangeIndex = 0;
   DateTime? _lastRefreshAt;
   bool _refreshingSleep = false;
@@ -220,6 +220,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
         ),
@@ -570,8 +571,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                           color: changeMinutes == 0
                               ? context.vivordoColors.textSecondary
                               : changeMinutes > 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -593,8 +594,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: switch (needBar.tone) {
-                      SleepNeedTone.met => const Color(0xFF20B26B),
-                      SleepNeedTone.short => const Color(0xFFF59E0B),
+                      SleepNeedTone.met => context.vivordoColors.success,
+                      SleepNeedTone.short => context.vivordoColors.warning,
                       SleepNeedTone.learning =>
                         context.vivordoColors.textSecondary,
                     },
@@ -1136,24 +1137,40 @@ class _SleepingHeartRateChartState extends State<_SleepingHeartRateChart> {
     }
   }
 
+  /// What the line shows, for VoiceOver: the night's low and average.
+  String get _summary {
+    final r = widget.readings;
+    if (r.isEmpty) return 'Heart rate while asleep: no readings.';
+    final low = r.reduce((a, b) => b.bpm < a.bpm ? b : a);
+    final average = r.map((x) => x.bpm).reduce((a, b) => a + b) / r.length;
+    return 'Heart rate while asleep: lowest ${low.bpm.round()} bpm at '
+        '${DateFormat('h:mm a').format(low.timestamp.toLocal())}, '
+        'average ${average.round()} bpm.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragStart: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _SleepingHeartRatePainter(
-          readings: widget.readings,
-          bedtime: widget.bedtime,
-          wakeTime: widget.wakeTime,
-          selectedIndex: _selectedIndex,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragStart: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _SleepingHeartRatePainter(
+              readings: widget.readings,
+              bedtime: widget.bedtime,
+              wakeTime: widget.wakeTime,
+              selectedIndex: _selectedIndex,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -1459,23 +1476,48 @@ class _SleepBarChartState extends State<_SleepBarChart> {
     }
   }
 
+  /// What the bars show, for VoiceOver: the average, shortest and longest
+  /// of the nights with sleep recorded.
+  String get _summary {
+    final nights = [
+      for (final (i, h) in widget.values.indexed)
+        if (h > 0) (widget.dates[i], h),
+    ];
+    final period = 'Last ${widget.values.length} nights';
+    if (nights.isEmpty) return '$period: no sleep recorded.';
+    final average =
+        nights.map((n) => n.$2).reduce((a, b) => a + b) / nights.length;
+    final shortest = nights.reduce((a, b) => b.$2 < a.$2 ? b : a);
+    final longest = nights.reduce((a, b) => b.$2 > a.$2 ? b : a);
+    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
+    String duration(double h) => _SleepBarPainter._durationLabel(h);
+    return '$period: average ${duration(average)}, '
+        'shortest ${day.format(shortest.$1)} at ${duration(shortest.$2)}, '
+        'longest ${day.format(longest.$1)} at ${duration(longest.$2)}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _SleepBarPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          need: widget.need,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _SleepBarPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              need: widget.need,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -1625,7 +1667,7 @@ class _SleepBarPainter extends CustomPainter {
     }
   }
 
-  String _durationLabel(double hours) {
+  static String _durationLabel(double hours) {
     final totalMinutes = (hours * 60).round();
     if (totalMinutes <= 0) return 'No sleep recorded';
     final wholeHours = totalMinutes ~/ 60;

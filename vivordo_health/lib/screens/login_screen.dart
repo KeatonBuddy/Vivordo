@@ -365,25 +365,31 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 10),
-
-                    // Forgot password
+                    // Forgot password: its padding is the spacing around
+                    // it, so the target is 44 pt tall and nothing moves.
                     Align(
                       alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: _showResetPasswordSheet,
-                        child: const Text(
-                          'Forgot password?',
-                          style: TextStyle(
-                            color: accentPurple,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                      child: Semantics(
+                        button: true,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _showResetPasswordSheet,
+                          child: const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 10, 0, 20),
+                            child: Text(
+                              'Forgot password?',
+                              style: TextStyle(
+                                color: accentPurple,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 8),
 
                     // Sign in button
                     SizedBox(

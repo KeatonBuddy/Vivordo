@@ -652,15 +652,14 @@ class NotificationService {
 
     // Switch the running app's tab rather than rebuilding it, which
     // replayed the launch splash and dropped the account gates.
+    // A screen to push opens inside the tab, under the tab bar, so back
+    // and the iOS swipe-back return to the tab.
     final destination = notificationDestination(screen, type: type);
-    MainNavigationScreen.openTab(navigator, destination.tab);
-    final push = destination.push;
-    if (push == null) return;
-
-    // Pushed over the main app, so the AppBar back button and iOS
-    // swipe-back gesture always have somewhere useful to go.
-    await WidgetsBinding.instance.endOfFrame;
-    navigatorKey.currentState?.pushNamed(push);
+    MainNavigationScreen.openTab(
+      navigator,
+      destination.tab,
+      route: destination.push,
+    );
   }
 
   Future<void> _persistCurrentFcmToken() async {

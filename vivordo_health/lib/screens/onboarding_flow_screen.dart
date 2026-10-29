@@ -459,19 +459,22 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'It varies day to day',
-                      style: TextStyle(fontSize: 15, color: _ink),
+              child: MergeSemantics(
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'It varies day to day',
+                        style: TextStyle(fontSize: 15, color: _ink),
+                      ),
                     ),
-                  ),
-                  AppSwitch(
-                    value: _wrapUpVaries,
-                    onChanged: (value) => setState(() => _wrapUpVaries = value),
-                  ),
-                ],
+                    AppSwitch(
+                      value: _wrapUpVaries,
+                      onChanged: (value) =>
+                          setState(() => _wrapUpVaries = value),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1058,11 +1061,15 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
 /// phone's appearance (onboarding and account screens are light only).
 Widget onboardingLight(Widget child) => AnnotatedRegion<SystemUiOverlayStyle>(
   value: SystemUiOverlayStyle.dark,
-  child: Theme(
-    data: VivordoTheme.light,
-    child: CupertinoTheme(
-      data: const CupertinoThemeData(brightness: Brightness.light),
-      child: child,
+  child: Builder(
+    builder: (context) => Theme(
+      data: MediaQuery.highContrastOf(context)
+          ? VivordoTheme.lightHighContrast
+          : VivordoTheme.light,
+      child: CupertinoTheme(
+        data: const CupertinoThemeData(brightness: Brightness.light),
+        child: child,
+      ),
     ),
   ),
 );

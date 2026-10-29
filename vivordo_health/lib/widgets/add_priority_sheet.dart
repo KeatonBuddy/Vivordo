@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
@@ -168,6 +169,24 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   int _target = 1;
   bool get _editing => widget.initial != null;
 
+  /// What the form held when it opened; any difference asks before closing.
+  late final List<Object?> _initialValues;
+  List<Object?> get _values => [
+    _controller.text,
+    _date,
+    _time,
+    _addToCalendar,
+    _repeat,
+    ...(_selectedWeekdays.toList()..sort()),
+    _repeatEnd,
+    _reminderMinutes,
+    _reminderTime,
+    _completed,
+    _planning.toString(),
+    _habit,
+    _target,
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -192,6 +211,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     _selectedWeekdays = initial == null
         ? {_date.weekday}
         : {...initial.selectedWeekdays};
+    _initialValues = _values;
   }
 
   @override
@@ -329,7 +349,12 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DiscardChangesGuard(
+    dirty: !listEquals(_values, _initialValues),
+    child: _sheet(context),
+  );
+
+  Widget _sheet(BuildContext context) {
     final colors = context.vivordoColors;
     final lightMode = Theme.of(context).brightness == Brightness.light;
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
@@ -377,7 +402,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                         ),
                   ),
                   IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.maybePop(context),
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ],

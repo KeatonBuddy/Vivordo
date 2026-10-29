@@ -115,6 +115,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           color: _purple,
@@ -340,8 +341,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                           color: _rangeIndex == 0 && change < 10
                               ? context.vivordoColors.textSecondary
                               : change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -546,8 +547,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF20B26B),
+      style: TextStyle(
+        color: context.vivordoColors.success,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -600,24 +601,46 @@ class _StepsChartState extends State<_StepsChart> {
     if (!listEquals(oldWidget.values, widget.values)) selected = null;
   }
 
+  /// What the line shows, for VoiceOver: the period's average and best day.
+  String get _summary {
+    final days = widget.values.where((v) => v > 0).toList();
+    final period = 'Last ${widget.values.length} days';
+    if (days.isEmpty) return '$period: no steps recorded.';
+    final steps = NumberFormat.decimalPattern();
+    final average = days.reduce((a, b) => a + b) / days.length;
+    var best = 0;
+    for (var i = 1; i < widget.values.length; i++) {
+      if (widget.values[i] > widget.values[best]) best = i;
+    }
+    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
+    return '$period: average ${steps.format(average.round())} steps, '
+        'most on ${day.format(widget.dates[best])} with '
+        '${steps.format(widget.values[best].round())}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _StepsChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          maxY: widget.maxY,
-          usual: widget.usual,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _StepsChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              maxY: widget.maxY,
+              usual: widget.usual,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),

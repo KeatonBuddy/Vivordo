@@ -15,6 +15,11 @@ class AchievementUnlockedDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    // The light lilac only reads on the dark card; light mode needs a deep
+    // purple for 4.5:1.
+    final accentText = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0xFFB7A4FF)
+        : const Color(0xFF5B42F3);
     final tierLabel = achievement.tier == null
         ? null
         : '${achievement.tier![0].toUpperCase()}${achievement.tier!.substring(1)}';
@@ -44,10 +49,10 @@ class AchievementUnlockedDialog extends StatelessWidget {
                 Row(
                   children: [
                     const Spacer(),
-                    const Text(
+                    Text(
                       'ACHIEVEMENT UNLOCKED',
                       style: TextStyle(
-                        color: Color(0xFFB7A4FF),
+                        color: accentText,
                         fontSize: 15,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 1.2,
@@ -57,6 +62,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.centerRight,
                         child: IconButton.filled(
+                          tooltip: 'Close',
                           onPressed: onDismiss,
                           style: IconButton.styleFrom(
                             backgroundColor: colors.cardMuted,
@@ -106,9 +112,9 @@ class AchievementUnlockedDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Earned just now',
-                  style: TextStyle(color: Color(0xFF8F8FA5), fontSize: 14),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 22),
                 Container(
@@ -124,20 +130,20 @@ class AchievementUnlockedDialog extends StatelessWidget {
                       color: const Color(0xFF8B70F6).withValues(alpha: .35),
                     ),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.workspace_premium_rounded,
                         color: Color(0xFF9C83FF),
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Flexible(
                         child: Text(
                           'Added to your achievements',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Color(0xFFB7A4FF),
+                            color: accentText,
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),

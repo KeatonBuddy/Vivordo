@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -308,6 +309,20 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   );
   bool _loadingCalendars = true;
   bool _recurrenceChanged = false;
+  // The calendar loads after opening, so only a pick counts as an edit.
+  bool _calendarPicked = false;
+
+  /// What the form held when it opened; any difference asks before closing.
+  late final List<Object?> _initialValues;
+  List<Object?> get _values => [
+    _titleController.text,
+    _date,
+    _startTime,
+    _endTime,
+    _isAllDay,
+    _repeat,
+    _calendarPicked,
+  ];
 
   @override
   void initState() {
@@ -321,6 +336,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     _endTime = TimeOfDay.fromDateTime(widget.initialEnd);
     _isAllDay = widget.initialIsAllDay;
     _repeat = widget.initialRepeat;
+    _initialValues = _values;
     _loadCalendars();
   }
 
@@ -445,7 +461,10 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
       },
     );
     if (selected != null && mounted) {
-      setState(() => _selectedCalendar = selected);
+      setState(() {
+        _selectedCalendar = selected;
+        _calendarPicked = true;
+      });
     }
   }
 
@@ -562,7 +581,12 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DiscardChangesGuard(
+    dirty: !listEquals(_values, _initialValues),
+    child: _sheet(context),
+  );
+
+  Widget _sheet(BuildContext context) {
     final colors = context.vivordoColors;
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
@@ -614,7 +638,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                         ),
                   ),
                   IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.maybePop(context),
                     tooltip: 'Close',
                     icon: const Icon(Icons.close_rounded),
                   ),

@@ -158,6 +158,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: purple),
         ),
@@ -399,12 +400,12 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     };
     final statusColor = switch (bleState.status) {
       WhoopBleStatus.connected when hasReading => red,
-      WhoopBleStatus.connected => const Color(0xFF20B26B),
+      WhoopBleStatus.connected => context.vivordoColors.success,
       WhoopBleStatus.scanning || WhoopBleStatus.connecting => purple,
       WhoopBleStatus.unpaired ||
       WhoopBleStatus.disconnected => context.vivordoColors.textSecondary,
       WhoopBleStatus.unavailable ||
-      WhoopBleStatus.error => const Color(0xFFFF9F43),
+      WhoopBleStatus.error => context.vivordoColors.warning,
     };
     final String? detailText = switch (bleState.status) {
       WhoopBleStatus.unpaired =>
@@ -1085,26 +1086,55 @@ class _HeartChartState extends State<_HeartChart> {
     }
   }
 
+  /// What the chart shows, for VoiceOver: the average, the low and the high.
+  /// A day has a low and high per bucket; a range has one resting value a day.
+  String get _summary {
+    final v = widget.values;
+    if (v.isEmpty) return 'Heart rate: no readings.';
+    final lows = widget.showTime ? widget.lows : v;
+    final highs = widget.showTime ? widget.highs : v;
+    final average = v.reduce((a, b) => a + b) / v.length;
+    var low = 0, high = 0;
+    for (var i = 1; i < v.length; i++) {
+      if (lows[i] < lows[low]) low = i;
+      if (highs[i] > highs[high]) high = i;
+    }
+    final when = widget.showTime
+        ? DateFormat('h:mm a')
+        : DateFormat(v.length <= 7 ? 'EEEE' : 'MMM d');
+    final at = widget.showTime ? 'at' : 'on';
+    return '${widget.showTime ? 'Heart rate today' : 'Resting heart rate, last ${v.length} days'}: '
+        'average ${average.round()} bpm, '
+        'lowest ${lows[low].round()} $at ${when.format(widget.dates[low])}, '
+        'highest ${highs[high].round()} $at ${when.format(widget.dates[high])}'
+        '${widget.resting == null ? '' : ', resting ${widget.resting!.round()}'}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _HeartChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          lows: widget.lows,
-          highs: widget.highs,
-          resting: widget.resting,
-          showTime: widget.showTime,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _HeartChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              lows: widget.lows,
+              highs: widget.highs,
+              resting: widget.resting,
+              showTime: widget.showTime,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),

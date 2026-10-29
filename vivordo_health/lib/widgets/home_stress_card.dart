@@ -176,13 +176,14 @@ class _HomeStressCardState extends State<HomeStressCard>
                 ),
               ),
             ),
+            // The header's 44 pt info target takes 10 pt from the padding
+            // above and the gap below it, so nothing moves.
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(),
-                  const SizedBox(height: 10),
                   if (!widget.showNumbers)
                     _summary(displayedScore)
                   else
@@ -259,12 +260,18 @@ class _HomeStressCardState extends State<HomeStressCard>
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onInfoTap,
-          child: const Padding(
-            padding: EdgeInsets.all(3),
-            child: Icon(
-              Icons.info_outline_rounded,
-              color: _palePurple,
-              size: 18,
+          child: const SizedBox.square(
+            dimension: 44,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.all(3),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  color: _palePurple,
+                  size: 18,
+                ),
+              ),
             ),
           ),
         ),

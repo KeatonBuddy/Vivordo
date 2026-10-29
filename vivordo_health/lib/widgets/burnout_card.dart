@@ -9,6 +9,14 @@ const _amber = Color(0xFFEF9F27);
 const _coral = Color(0xFFE24B4A);
 const _purple = Color(0xFF7F77DD);
 
+/// [_levelColor] for text, dark enough to read in light mode.
+Color _levelTextColor(VivordoColors colors, String level) => switch (level) {
+  'warning' => colors.danger,
+  'watch' => colors.warning,
+  'steady' => colors.success,
+  _ => _purple,
+};
+
 Color _levelColor(String level) => switch (level) {
   'warning' => _coral,
   'watch' => _amber,
@@ -76,7 +84,9 @@ class BurnoutCard extends StatelessWidget {
                         fontSize: 11,
                         letterSpacing: .8,
                         fontWeight: FontWeight.w600,
-                        color: alert ? color : colors.textSecondary,
+                        color: alert
+                            ? _levelTextColor(colors, view.level)
+                            : colors.textSecondary,
                       ),
                     ),
                   ),

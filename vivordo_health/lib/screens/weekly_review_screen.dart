@@ -161,24 +161,26 @@ class WeeklyReviewCard extends StatelessWidget {
                     if (state.intro)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Remind me on Sundays',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: colors.textPrimary,
+                        child: MergeSemantics(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Remind me on Sundays',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: colors.textPrimary,
+                                  ),
                                 ),
                               ),
-                            ),
-                            AppSwitch(
-                              value: state.reminder,
-                              onChanged: (on) => unawaited(
-                                WeeklyReviewService.setReminder(on),
+                              AppSwitch(
+                                value: state.reminder,
+                                onChanged: (on) => unawaited(
+                                  WeeklyReviewService.setReminder(on),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     Align(

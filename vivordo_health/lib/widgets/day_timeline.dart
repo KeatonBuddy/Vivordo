@@ -144,46 +144,72 @@ class TimelineRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final done = completed == true;
+    // The toggle's 44 pt target spans the row's height, centred on the
+    // icon: row padding 12, time 62, energy strip 10, the card's border 3
+    // and padding 10, then half the 21 pt icon.
+    final toggleCentre = 12 + 62 + (energyColor != null ? 10 : 0) + 13 + 10.5;
+    // The clash with the energy forecast, e.g. "Lands in your afternoon dip".
+    final noteRow = energyNote == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.battery_2_bar_rounded,
+                  size: 13,
+                  color: Color(0xFFEF9F27),
+                ),
+                const SizedBox(width: 3),
+                Flexible(
+                  child: Text(
+                    energyNote!,
+                    style: TextStyle(
+                      color: context.vivordoColors.warning,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 62,
-              child: Text(
-                formatClock(start),
-                style: TextStyle(fontSize: 11, color: colors.textSecondary),
-              ),
-            ),
-            if (energyColor != null)
-              Container(
-                width: 4,
-                height: 36,
-                margin: const EdgeInsets.only(right: 6),
-                decoration: BoxDecoration(
-                  color: energyColor!.withValues(alpha: .7),
-                  borderRadius: BorderRadius.circular(2),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 62,
+                  child: Text(
+                    formatClock(start),
+                    style: TextStyle(fontSize: 11, color: colors.textSecondary),
+                  ),
                 ),
-              ),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: past ? .06 : .12),
-                  border: Border(left: BorderSide(color: color, width: 3)),
-                ),
-                child: Row(
-                  children: [
-                    if (completed != null) ...[
-                      Semantics(
-                        button: true,
-                        label: done ? 'Mark incomplete' : 'Mark completed',
-                        child: InkResponse(
-                          onTap: onToggle,
-                          radius: 18,
-                          child: Icon(
+                if (energyColor != null)
+                  Container(
+                    width: 4,
+                    height: 36,
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(
+                      color: energyColor!.withValues(alpha: .7),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: past ? .06 : .12),
+                      border: Border(left: BorderSide(color: color, width: 3)),
+                    ),
+                    child: Row(
+                      children: [
+                        if (completed != null) ...[
+                          Icon(
                             done
                                 ? Icons.check_circle_rounded
                                 : Icons.radio_button_unchecked_rounded,
@@ -192,87 +218,100 @@ class TimelineRow extends StatelessWidget {
                                 : colors.textSecondary,
                             size: 21,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: past || done
-                                  ? colors.textSecondary
-                                  : colors.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              decoration: done
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                          if (detail.isNotEmpty)
-                            Text(
-                              detail,
-                              style: TextStyle(
-                                color: colors.textSecondary,
-                                fontSize: 11,
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: past || done
+                                      ? colors.textSecondary
+                                      : colors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  decoration: done
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
                               ),
-                            ),
-                          if (energyNote != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.battery_2_bar_rounded,
-                                    size: 13,
-                                    color: Color(0xFFEF9F27),
+                              if (detail.isNotEmpty)
+                                Text(
+                                  detail,
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontSize: 11,
                                   ),
-                                  const SizedBox(width: 3),
-                                  Flexible(
-                                    child: Text(
-                                      energyNote!,
-                                      style: const TextStyle(
-                                        color: Color(0xFFEF9F27),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
+                                ),
+                              if (energyAction == null) ?noteRow,
+                              // The clash and its fix are one target, the
+                              // whole width of the card, so it is easy to hit.
+                              if (energyAction != null)
+                                Semantics(
+                                  container: true,
+                                  button: true,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: onEnergyAction,
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          ?noteRow,
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              energyAction!,
+                                              style: const TextStyle(
+                                                color: VivordoTheme.brand,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          if (energyAction != null)
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: onEnergyAction,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  energyAction!,
-                                  style: const TextStyle(
-                                    color: VivordoTheme.brand,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
                                 ),
-                              ),
-                            ),
-                          ?footer,
-                        ],
-                      ),
+                              ?footer,
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (completed != null)
+            Positioned(
+              left: toggleCentre - 22,
+              top: 0,
+              bottom: 0,
+              width: 44,
+              child: Semantics(
+                container: true,
+                button: true,
+                checked: done,
+                label: done ? 'Mark incomplete' : 'Mark completed',
+                child: InkResponse(
+                  onTap: onToggle,
+                  radius: 18,
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

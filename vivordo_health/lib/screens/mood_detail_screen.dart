@@ -141,6 +141,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           color: _purple,
@@ -324,8 +325,8 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
                         '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs your usual',
                         style: TextStyle(
                           color: change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -455,8 +456,8 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF20B26B),
+      style: TextStyle(
+        color: context.vivordoColors.success,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -526,25 +527,56 @@ class _MoodChartState extends State<_MoodChart> {
     if (!listEquals(oldWidget.values, widget.values)) selected = null;
   }
 
+  /// What the line shows, for VoiceOver: the average, low and high.
+  /// Data points are shown only for the day view, one per check-in.
+  String get _summary {
+    final v = widget.values;
+    if (v.isEmpty) return 'Mood: no check-ins yet.';
+    final average = v.reduce((a, b) => a + b) / v.length;
+    var low = 0, high = 0;
+    for (var i = 1; i < v.length; i++) {
+      if (v[i] < v[low]) low = i;
+      if (v[i] > v[high]) high = i;
+    }
+    final day = widget.showDataPoints;
+    final when = DateFormat(
+      day
+          ? 'h:mm a'
+          : v.length <= 7
+          ? 'EEEE'
+          : 'MMM d',
+    );
+    final at = day ? 'at' : 'on';
+    return 'Mood, ${v.length} ${day ? 'check-ins' : 'days'}: '
+        'average ${average.round()} out of 100, '
+        'lowest ${v[low].round()} $at ${when.format(widget.dates[low])}, '
+        'highest ${v[high].round()} $at ${when.format(widget.dates[high])}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _MoodChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          maxY: widget.maxY,
-          usual: widget.usual,
-          showDataPoints: widget.showDataPoints,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _MoodChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              maxY: widget.maxY,
+              usual: widget.usual,
+              showDataPoints: widget.showDataPoints,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),

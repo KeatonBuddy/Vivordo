@@ -503,7 +503,8 @@ class _PullDownToCloseSheetsState extends State<PullDownToCloseSheets> {
 
   void _close(ModalBottomSheetRoute<dynamic> sheet) {
     // isCurrent turns false once popped, so one swipe closes one sheet.
-    if (sheet.isCurrent) sheet.navigator?.pop();
+    // maybePop, so a sheet with unsaved edits (DiscardChangesGuard) asks.
+    if (sheet.isCurrent) sheet.navigator?.maybePop();
   }
 
   @override
@@ -553,6 +554,67 @@ class _PullDownToCloseSheetsState extends State<PullDownToCloseSheets> {
         }
         return false;
       },
+      child: widget.child,
+    ),
+  );
+}
+
+/// Keeps a sheet with unsaved edits open, as iOS does: closing it any way
+/// (the close button, tapping outside, swiping down) asks "Discard
+/// Changes?" first. While [dirty] the sheet no longer follows a swipe, so
+/// Flutter's own drag can't close it without asking.
+class DiscardChangesGuard extends StatefulWidget {
+  const DiscardChangesGuard({
+    super.key,
+    required this.dirty,
+    required this.child,
+  });
+
+  final bool dirty;
+  final Widget child;
+
+  @override
+  State<DiscardChangesGuard> createState() => _DiscardChangesGuardState();
+}
+
+class _DiscardChangesGuardState extends State<DiscardChangesGuard> {
+  bool _asking = false;
+  double _pulled = 0;
+
+  Future<void> _confirm() async {
+    if (_asking) return;
+    _asking = true;
+    final discard = await showAppleActionSheet<bool>(
+      context,
+      actions: const [
+        AppleSheetAction('Discard Changes', true, destructive: true),
+      ],
+      cancelLabel: 'Keep Editing',
+    );
+    _asking = false;
+    if (discard == true && mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !widget.dirty,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) unawaited(_confirm());
+    },
+    // Always here, with no handlers while clean, so the form below keeps
+    // its state when it becomes dirty.
+    child: GestureDetector(
+      onVerticalDragStart: widget.dirty ? (_) => _pulled = 0 : null,
+      onVerticalDragUpdate: widget.dirty
+          ? (details) => _pulled += details.delta.dy
+          : null,
+      onVerticalDragEnd: widget.dirty
+          ? (details) {
+              if (_pulled > 40 || (details.primaryVelocity ?? 0) > 300) {
+                unawaited(Navigator.maybePop(context));
+              }
+            }
+          : null,
       child: widget.child,
     ),
   );

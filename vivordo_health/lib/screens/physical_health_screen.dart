@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
@@ -92,6 +94,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
             Duration(days: _ranges[_range]!),
           );
           final trend = view.trend.where((p) => p.$1.isAfter(cutoff)).toList();
+          final scores = [for (final p in trend) p.$2];
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
             children: [
@@ -141,10 +144,19 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                             style: TextStyle(color: colors.textSecondary),
                           ),
                         )
-                      : CustomPaint(
-                          painter: _TrendPainter([
-                            for (final p in trend) p.$2.toDouble(),
-                          ], colors.border),
+                      : Semantics(
+                          label:
+                              'Physical Health over the last $_range: '
+                              'from ${scores.first} to ${scores.last}, '
+                              'low ${scores.reduce(math.min)}, '
+                              'high ${scores.reduce(math.max)}.',
+                          child: ExcludeSemantics(
+                            child: CustomPaint(
+                              painter: _TrendPainter([
+                                for (final p in trend) p.$2.toDouble(),
+                              ], colors.border),
+                            ),
+                          ),
                         ),
                 ),
               ),

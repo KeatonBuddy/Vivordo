@@ -340,6 +340,39 @@ void main() {
     expect(find.text('Training load'), findsNothing);
   });
 
+  testWidgets('a sheet with unsaved edits asks before any way of closing', (
+    tester,
+  ) async {
+    final context = await pumpApp(tester);
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => const DiscardChangesGuard(
+        dirty: true,
+        child: SizedBox(height: 400, child: Center(child: Text('Edits'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Swiping well past half way asks instead of closing.
+    await tester.timedDrag(
+      find.text('Edits'),
+      const Offset(0, 300),
+      const Duration(milliseconds: 600),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Discard Changes'), findsOneWidget);
+    await tester.tap(find.text('Keep Editing'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edits'), findsOneWidget);
+
+    // Tapping outside asks too, and discarding closes it.
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard Changes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edits'), findsNothing);
+  });
+
   testWidgets('words view breakdown shows states, not numbers', (tester) async {
     final context = await pumpApp(tester);
     showScoreBreakdown(

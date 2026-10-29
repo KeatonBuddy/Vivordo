@@ -302,8 +302,8 @@ class _MyAppState extends State<MyApp> {
       // Switch the open app's tab instead of rebuilding it under a new
       // route, which replayed the launch splash and dropped the account
       // gates below it.
-      void openTab(int index) =>
-          MainNavigationScreen.openTab(navigator!, index);
+      void openTab(int index, {String? route}) =>
+          MainNavigationScreen.openTab(navigator!, index, route: route);
 
       if (destination == 'mood') {
         HomeScreen.moodCheckInRequested.value = true;
@@ -322,28 +322,22 @@ class _MyAppState extends State<MyApp> {
         return true;
       }
 
+      // Detail screens open inside their tab, under the tab bar.
       if (destination == 'calendar') {
-        openTab(1);
-        await WidgetsBinding.instance.endOfFrame;
-        if (mounted && navigator.mounted) {
-          unawaited(navigator.pushNamed('/full-calendar'));
-        }
-        return mounted && navigator.mounted;
+        openTab(1, route: '/full-calendar');
+        return true;
       }
 
-      openTab(0);
-      final detailRoute = switch (destination) {
-        'stress' => '/stress',
-        'sleep' => '/sleep',
-        'heartrate' => '/heart-rate',
-        'steps' => '/steps',
-        _ => null,
-      };
-      if (detailRoute != null) {
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted || !navigator.mounted) return false;
-        unawaited(navigator.pushNamed(detailRoute));
-      }
+      openTab(
+        0,
+        route: switch (destination) {
+          'stress' => '/stress',
+          'sleep' => '/sleep',
+          'heartrate' => '/heart-rate',
+          'steps' => '/steps',
+          _ => null,
+        },
+      );
       return true;
     } finally {
       _openingWidget = false;
@@ -384,6 +378,9 @@ class _MyAppState extends State<MyApp> {
       ),
       theme: VivordoTheme.light,
       darkTheme: VivordoTheme.dark,
+      // Picked when Increase Contrast is on.
+      highContrastTheme: VivordoTheme.lightHighContrast,
+      highContrastDarkTheme: VivordoTheme.darkHighContrast,
       themeMode: themeController.mode,
       initialRoute: '/',
       routes: {

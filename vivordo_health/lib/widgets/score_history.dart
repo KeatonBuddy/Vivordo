@@ -323,7 +323,8 @@ class _ScoreHistoryState extends State<ScoreHistory> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 14),
+          // The picker's 6 pt tap margins replace spacing here.
+          const SizedBox(height: 8),
           _RangePicker(
             range: _range,
             onChanged: (range) => setState(() {
@@ -333,7 +334,6 @@ class _ScoreHistoryState extends State<ScoreHistory> {
               if (_pages.hasClients) _pages.jumpToPage(0);
             }),
           ),
-          const SizedBox(height: 6),
           Row(
             children: [
               IconButton(
@@ -342,7 +342,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
                     ? null
                     : () => _go(_back + 1, pages),
                 icon: const Icon(Icons.chevron_left_rounded),
-                color: _line,
+                color: _purple,
               ),
               Expanded(
                 child: Text(
@@ -358,7 +358,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
                 tooltip: 'Later',
                 onPressed: _back == 0 ? null : () => _go(_back - 1, pages),
                 icon: const Icon(Icons.chevron_right_rounded),
-                color: _line,
+                color: _purple,
               ),
             ],
           ),
@@ -407,47 +407,69 @@ class _RangePicker extends StatelessWidget {
   final ScoreHistoryRange range;
   final ValueChanged<ScoreHistoryRange> onChanged;
 
+  /// Invisible tap margin above and below the track, so each segment is at
+  /// least a 44 pt target while the track looks the same.
+  static const _slop = 6.0;
+
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(3),
-    decoration: BoxDecoration(
-      color: context.vivordoColors.input,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      children: [
-        for (final value in ScoreHistoryRange.values)
-          Expanded(
-            child: Semantics(
-              button: true,
-              selected: value == range,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => onChanged(value),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  decoration: BoxDecoration(
-                    color: value == range
-                        ? const Color(0xFF6B5CE7)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    value.label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: value == range ? Colors.white : _grey,
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(
+        top: _slop,
+        bottom: _slop,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: context.vivordoColors.input,
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Row(
+          children: [
+            for (final value in ScoreHistoryRange.values)
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  selected: value == range,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    excludeFromSemantics: true,
+                    onTap: () => onChanged(value),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: _slop + 3),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => onChanged(value),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            color: value == range
+                                ? const Color(0xFF6B5CE7)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            value.label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: value == range ? Colors.white : _grey,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-      ],
-    ),
+          ],
+        ),
+      ),
+    ],
   );
 }
 
@@ -468,29 +490,56 @@ class _Chart extends StatelessWidget {
   final int? selected;
   final ValueChanged<int> onSelect;
 
+  /// What the chart shows, for VoiceOver: its low and high days. The
+  /// average sits in the detail card underneath.
+  String get _summary {
+    final name = switch (kind) {
+      ScoreHistoryKind.capacity => 'Capacity',
+      ScoreHistoryKind.effort => 'Effort',
+      ScoreHistoryKind.plannedVsActual => 'Effort against the plan',
+    };
+    final saved = [
+      for (final d in days)
+        if (d.value != null) d,
+    ];
+    if (saved.isEmpty) return '$name by day: no days saved here.';
+    final low = saved.reduce((a, b) => b.value! < a.value! ? b : a);
+    final high = saved.reduce((a, b) => b.value! > a.value! ? b : a);
+    final date = DateFormat('EEE, MMM d');
+    return '$name by day, ${saved.length} '
+        '${saved.length == 1 ? 'day' : 'days'} saved: '
+        'lowest ${low.value!.round()} on ${date.format(low.day)}, '
+        'highest ${high.value!.round()} on ${date.format(high.day)}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: (tap) {
-        if (days.isEmpty) return;
-        final i = (tap.localPosition.dx / box.maxWidth * days.length)
-            .floor()
-            .clamp(0, days.length - 1);
-        if (days[i].value != null || days[i].planned != null) onSelect(i);
-      },
-      child: CustomPaint(
-        size: Size(box.maxWidth, 150),
-        painter: _ChartPainter(
-          kind: kind,
-          days: days,
-          today: today,
-          usual: usual,
-          selected: selected,
-          labelColor: context.vivordoColors.textSecondary,
-          gridColor: context.vivordoColors.border,
-          // Painted text doesn't inherit the theme's font.
-          fontFamily: DefaultTextStyle.of(context).style.fontFamily,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, box) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (tap) {
+            if (days.isEmpty) return;
+            final i = (tap.localPosition.dx / box.maxWidth * days.length)
+                .floor()
+                .clamp(0, days.length - 1);
+            if (days[i].value != null || days[i].planned != null) onSelect(i);
+          },
+          child: CustomPaint(
+            size: Size(box.maxWidth, 150),
+            painter: _ChartPainter(
+              kind: kind,
+              days: days,
+              today: today,
+              usual: usual,
+              selected: selected,
+              labelColor: context.vivordoColors.textSecondary,
+              gridColor: context.vivordoColors.border,
+              // Painted text doesn't inherit the theme's font.
+              fontFamily: DefaultTextStyle.of(context).style.fontFamily,
+            ),
+          ),
         ),
       ),
     ),

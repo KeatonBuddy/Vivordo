@@ -91,6 +91,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       surfaceTintColor: Colors.transparent,
       centerTitle: true,
       leading: IconButton(
+        tooltip: 'Back',
         icon: const Icon(Icons.arrow_back_ios_new_rounded),
         onPressed: () => Navigator.pop(context),
       ),
@@ -924,26 +925,43 @@ class _InteractiveTrendChartState extends State<_InteractiveTrendChart> {
     }
   }
 
+  /// What the line shows, for VoiceOver: first and latest values, low, high.
+  String get _summary {
+    final p = widget.points;
+    String value(double v) => '${v.toStringAsFixed(1)}${widget.suffix}';
+    String date(DateTime d) => DateFormat('MMM d').format(d);
+    final values = p.map((x) => x.value);
+    return '${value(p.first.value)} on ${date(p.first.date)}, '
+        '${value(p.last.value)} on ${date(p.last.date)}; '
+        'low ${value(values.reduce(math.min))}, '
+        'high ${value(values.reduce(math.max))}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (details) =>
-          _select(details.localPosition, constraints.maxWidth),
-      onHorizontalDragStart: (details) =>
-          _select(details.localPosition, constraints.maxWidth),
-      onHorizontalDragUpdate: (details) =>
-          _select(details.localPosition, constraints.maxWidth),
-      child: CustomPaint(
-        painter: _TrendPainter(
-          points: widget.points,
-          color: widget.color,
-          suffix: widget.suffix,
-          selectedIndex: selectedIndex,
-          dark: Theme.of(context).brightness == Brightness.dark,
-          background: context.vivordoColors.card,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) =>
+              _select(details.localPosition, constraints.maxWidth),
+          onHorizontalDragStart: (details) =>
+              _select(details.localPosition, constraints.maxWidth),
+          onHorizontalDragUpdate: (details) =>
+              _select(details.localPosition, constraints.maxWidth),
+          child: CustomPaint(
+            painter: _TrendPainter(
+              points: widget.points,
+              color: widget.color,
+              suffix: widget.suffix,
+              selectedIndex: selectedIndex,
+              dark: Theme.of(context).brightness == Brightness.dark,
+              background: context.vivordoColors.card,
+            ),
+            child: const SizedBox.expand(),
+          ),
         ),
-        child: const SizedBox.expand(),
       ),
     ),
   );

@@ -626,14 +626,23 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                             SizedBox(
                               width: 86,
                               height: 86,
-                              child: CustomPaint(
-                                painter: ActivityRingsPainter(
-                                  move: progress[0],
-                                  exercise: progress[1],
-                                  stand: progress[2],
-                                  moveColor: Colors.white,
-                                  trackColor: Colors.white.withValues(
-                                    alpha: .18,
+                              child: Semantics(
+                                label:
+                                    'Activity rings: '
+                                    'steps ${(progress[0] * 100).round()}%, '
+                                    'calories ${(progress[1] * 100).round()}%, '
+                                    'exercise ${(progress[2] * 100).round()}%',
+                                child: ExcludeSemantics(
+                                  child: CustomPaint(
+                                    painter: ActivityRingsPainter(
+                                      move: progress[0],
+                                      exercise: progress[1],
+                                      stand: progress[2],
+                                      moveColor: Colors.white,
+                                      trackColor: Colors.white.withValues(
+                                        alpha: .18,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -3695,44 +3704,50 @@ class _WorkoutSetRow extends StatelessWidget {
         ),
       ),
       Expanded(
-        child: TextFormField(
-          initialValue: set.lbs,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(),
+        child: Semantics(
+          label: 'Set $number weight, ${_units(context).liftLabel}',
+          child: TextFormField(
+            initialValue: set.lbs,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            textAlign: TextAlign.center,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              set.lbs = value;
+              onChanged();
+            },
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            onFieldSubmitted: (_) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
           ),
-          onChanged: (value) {
-            set.lbs = value;
-            onChanged();
-          },
-          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-          onFieldSubmitted: (_) =>
-              FocusManager.instance.primaryFocus?.unfocus(),
         ),
       ),
       const SizedBox(width: 8),
       Expanded(
-        child: TextFormField(
-          initialValue: set.reps,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            isDense: true,
-            border: const OutlineInputBorder(),
-            hintText: repsHint,
-            hintStyle: const TextStyle(color: _muted),
+        child: Semantics(
+          label: 'Set $number reps',
+          child: TextFormField(
+            initialValue: set.reps,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.done,
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(),
+              hintText: repsHint,
+              hintStyle: const TextStyle(color: _muted),
+            ),
+            onChanged: (value) {
+              set.reps = value;
+              onChanged();
+            },
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            onFieldSubmitted: (_) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
           ),
-          onChanged: (value) {
-            set.reps = value;
-            onChanged();
-          },
-          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-          onFieldSubmitted: (_) =>
-              FocusManager.instance.primaryFocus?.unfocus(),
         ),
       ),
       SizedBox(
@@ -4486,6 +4501,7 @@ class MonthlyRingsDialog extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close),
                 ),
@@ -4619,54 +4635,67 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
             final exercise = _metricSum(data, 'exercise_time');
             final isToday = DateUtils.isSameDay(date, today);
             final isSelected = DateUtils.isSameDay(date, _selectedDay);
-            return InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => setState(
-                () =>
-                    _pickedDay = DateUtils.isSameDay(date, today) ? null : date,
-              ),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? _purple.withValues(alpha: .08)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected ? _purple : Colors.transparent,
-                    width: 1.4,
-                  ),
+            final number = NumberFormat.decimalPattern();
+            return Semantics(
+              button: true,
+              selected: isSelected,
+              label:
+                  '${DateFormat('MMM d').format(date)}: '
+                  '${number.format(steps.round())} of ${number.format(goals.steps)} steps, '
+                  '${number.format(calories.round())} of ${number.format(goals.activeCalories)} kcal, '
+                  '${exercise.round()} of ${goals.exerciseMinutes} min',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(
+                  () => _pickedDay = DateUtils.isSameDay(date, today)
+                      ? null
+                      : date,
                 ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: CustomPaint(
-                        painter: ActivityRingsPainter(
-                          move: (steps / goals.steps).clamp(0.0, 1.0),
-                          exercise: (calories / goals.activeCalories).clamp(
-                            0.0,
-                            1.0,
-                          ),
-                          stand: (exercise / goals.exerciseMinutes).clamp(
-                            0.0,
-                            1.0,
+                child: ExcludeSemantics(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? _purple.withValues(alpha: .08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected ? _purple : Colors.transparent,
+                        width: 1.4,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: CustomPaint(
+                            painter: ActivityRingsPainter(
+                              move: (steps / goals.steps).clamp(0.0, 1.0),
+                              exercise: (calories / goals.activeCalories).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                              stand: (exercise / goals.exerciseMinutes).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                            ),
+                            child: const SizedBox.expand(),
                           ),
                         ),
-                        child: const SizedBox.expand(),
-                      ),
+                        Text(
+                          isToday ? 'Today' : '${date.day}',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: isSelected || isToday ? _purple : _muted,
+                            fontWeight: isSelected || isToday
+                                ? FontWeight.w800
+                                : null,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      isToday ? 'Today' : '${date.day}',
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: isSelected || isToday ? _purple : _muted,
-                        fontWeight: isSelected || isToday
-                            ? FontWeight.w800
-                            : null,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );

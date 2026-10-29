@@ -170,16 +170,18 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Wind-down reminder',
-                            style: TextStyle(fontSize: 15),
+                    child: MergeSemantics(
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Wind-down reminder',
+                              style: TextStyle(fontSize: 15),
+                            ),
                           ),
-                        ),
-                        AppSwitch(value: _windDown, onChanged: _setWindDown),
-                      ],
+                          AppSwitch(value: _windDown, onChanged: _setWindDown),
+                        ],
+                      ),
                     ),
                   ),
                 ),

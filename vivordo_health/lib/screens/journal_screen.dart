@@ -802,6 +802,7 @@ class _JournalScreenState extends State<JournalScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: IconButton.filledTonal(
+                tooltip: 'Back',
                 onPressed: () => Navigator.maybePop(context),
                 icon: const Icon(Icons.chevron_left_rounded, size: 30),
               ),
@@ -1346,44 +1347,46 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
         const SizedBox(height: 12),
         _Card(
           padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-          child: Row(
-            children: [
-              Icon(
-                item.shared ? Icons.groups_rounded : Icons.lock_outline,
-                color: colors.textSecondary,
-                size: 20,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.shared
-                          ? 'Shared with your Circle'
-                          : 'Private to you',
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      item.shared
-                          ? 'Your Circle can see this entry.'
-                          : 'Only you can see this entry.',
-                      style: TextStyle(
-                        color: colors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+          child: MergeSemantics(
+            child: Row(
+              children: [
+                Icon(
+                  item.shared ? Icons.groups_rounded : Icons.lock_outline,
+                  color: colors.textSecondary,
+                  size: 20,
                 ),
-              ),
-              AppSwitch(
-                value: item.shared,
-                onChanged: _sharing ? null : (shared) => _share(item, shared),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.shared
+                            ? 'Shared with your Circle'
+                            : 'Private to you',
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        item.shared
+                            ? 'Your Circle can see this entry.'
+                            : 'Only you can see this entry.',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AppSwitch(
+                  value: item.shared,
+                  onChanged: _sharing ? null : (shared) => _share(item, shared),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 20),

@@ -283,11 +283,33 @@ class EnergyCurve extends StatelessWidget {
   final DateTime until;
   final bool shadeWindows;
 
+  /// What the curve shows, for VoiceOver: the windows it shades.
+  String get _summary {
+    final windows = [
+      for (final phase in const [
+        EnergyPhase.peak,
+        EnergyPhase.dip,
+        EnergyPhase.secondWind,
+      ])
+        if (forecast.window(phase) case final w?
+            when w.end.isAfter(from) && w.start.isBefore(until))
+          '${energyPhaseName(w.phase)} ${energyWindowText(w)}',
+    ];
+    return windows.isEmpty
+        ? 'Energy forecast curve.'
+        : 'Energy forecast: ${windows.join(', ')}.';
+  }
+
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: CustomPaint(
-      size: Size.infinite,
-      painter: _EnergyCurvePainter(forecast, from, until, shadeWindows),
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: IgnorePointer(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _EnergyCurvePainter(forecast, from, until, shadeWindows),
+        ),
+      ),
     ),
   );
 }

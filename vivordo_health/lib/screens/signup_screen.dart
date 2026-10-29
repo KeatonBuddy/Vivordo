@@ -385,7 +385,7 @@ class _Requirement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = met ? const Color(0xFF34C759) : _grey;
+    final color = met ? context.vivordoColors.success : _grey;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

@@ -14,6 +14,14 @@ const _amber = Color(0xFFEF9F27);
 const _coral = Color(0xFFE24B4A);
 const _purple = Color(0xFF7F77DD);
 
+/// [_stateColor] for text, dark enough to read in light mode.
+Color _stateTextColor(VivordoColors colors, String state) => switch (state) {
+  'high' || 'strained' => colors.danger,
+  'building' => colors.warning,
+  'lighter' => colors.textSecondary,
+  _ => colors.success,
+};
+
 Color _stateColor(String state) => switch (state) {
   'high' || 'strained' => _coral,
   'building' => _amber,
@@ -99,7 +107,7 @@ class TrainingLoadCard extends StatelessWidget {
           ),
           Text(
             value,
-            style: off ? secondary.copyWith(color: _coral) : secondary,
+            style: off ? secondary.copyWith(color: colors.danger) : secondary,
           ),
         ],
       ),
@@ -144,7 +152,7 @@ class TrainingLoadCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: color,
+                        color: _stateTextColor(colors, view.state),
                       ),
                     ),
                   ),

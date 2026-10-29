@@ -69,7 +69,6 @@ class _ScanScreenState extends State<ScanScreen>
   int _tutorialPageIndex = 0;
 
   static const Color accentPurple = VivordoTheme.brand;
-  static const Color greenColor = Color(0xFF34C759);
   static const Color redColor = Color(0xFFFF3B30);
 
   @override
@@ -1389,11 +1388,14 @@ class _ScanScreenState extends State<ScanScreen>
         : bpm < 80
         ? 'Typical'
         : 'Elevated';
+    // Status colours here are text on the result cards, so they use the
+    // theme's readable status tones.
+    final status = context.vivordoColors;
     final heartColor = bpm < 65
-        ? greenColor
+        ? status.success
         : bpm < 80
-        ? const Color(0xFFFF9500)
-        : redColor;
+        ? status.warning
+        : status.danger;
     final qualityScore = PpgAlgorithm.calculateQuality(
       _redValues,
       _scanDurationSeconds.toDouble(),
@@ -1406,10 +1408,10 @@ class _ScanScreenState extends State<ScanScreen>
         : 'Weak';
 
     final qualityColor = qualityScore >= 0.7
-        ? greenColor
+        ? status.success
         : qualityScore >= 0.4
-        ? const Color(0xFFFF9500)
-        : redColor;
+        ? status.warning
+        : status.danger;
 
     return Column(
       children: [
@@ -1503,7 +1505,7 @@ class _ScanScreenState extends State<ScanScreen>
                 Icons.favorite_rounded,
                 'Heart Rate',
                 '$bpm bpm',
-                redColor,
+                status.danger,
               ),
             ),
             const SizedBox(width: 10),

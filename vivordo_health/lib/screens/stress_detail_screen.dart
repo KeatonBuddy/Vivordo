@@ -1715,39 +1715,61 @@ class _DayChartState extends State<_DayChart> {
     return local.difference(dayStart).inMinutes / 60;
   }
 
+  /// What the curve shows, for VoiceOver: the low and high of the day and
+  /// the latest reading.
+  String get _summary {
+    final r = widget.readings;
+    final low = r.reduce((a, b) => b.score < a.score ? b : a);
+    final high = r.reduce((a, b) => b.score > a.score ? b : a);
+    String level(StressReading x) => widget.showNumbers
+        ? '${x.score.round()}'
+        : stressBand(x.score).toLowerCase();
+    String at(StressReading x) => DateFormat('h:mm a').format(x.at.toLocal());
+    return 'Stress through the day: lowest ${level(low)} at ${at(low)}, '
+        'highest ${level(high)} at ${at(high)}, '
+        'latest ${level(r.last)} at ${at(r.last)}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final (start, end) = _hours;
-    return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (e) => _select(e.localPosition.dx, constraints.maxWidth),
-        onHorizontalDragUpdate: (e) =>
-            _select(e.localPosition.dx, constraints.maxWidth),
-        onHorizontalDragEnd: (_) => setState(() => _selected = null),
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _DayChartPainter(
-            points: [for (final r in widget.readings) (_hourOf(r.at), r.score)],
-            start: start,
-            end: end,
-            usualRange: widget.usualRange,
-            events: [
-              for (final e in widget.events) (_hourOf(e.$1), _hourOf(e.$2)),
-            ],
-            selected: _selected,
-            selectedLabel: _selected == null
-                ? null
-                : '${widget.showNumbers ? widget.readings[_selected!].score.round() : stressBand(widget.readings[_selected!].score)} · '
-                      '${DateFormat('h:mm a').format(widget.readings[_selected!].at.toLocal())}',
-            showAxis: widget.showNumbers,
-            line: _purple,
-            text: colors.textSecondary,
-            grid: colors.border,
-            band: colors.textPrimary.withValues(alpha: .12),
-            tooltip: colors.cardMuted,
-            tooltipText: colors.textPrimary,
+    return Semantics(
+      label: _summary,
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (e) => _select(e.localPosition.dx, constraints.maxWidth),
+            onHorizontalDragUpdate: (e) =>
+                _select(e.localPosition.dx, constraints.maxWidth),
+            onHorizontalDragEnd: (_) => setState(() => _selected = null),
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _DayChartPainter(
+                points: [
+                  for (final r in widget.readings) (_hourOf(r.at), r.score),
+                ],
+                start: start,
+                end: end,
+                usualRange: widget.usualRange,
+                events: [
+                  for (final e in widget.events) (_hourOf(e.$1), _hourOf(e.$2)),
+                ],
+                selected: _selected,
+                selectedLabel: _selected == null
+                    ? null
+                    : '${widget.showNumbers ? widget.readings[_selected!].score.round() : stressBand(widget.readings[_selected!].score)} · '
+                          '${DateFormat('h:mm a').format(widget.readings[_selected!].at.toLocal())}',
+                showAxis: widget.showNumbers,
+                line: _purple,
+                text: colors.textSecondary,
+                grid: colors.border,
+                band: colors.textPrimary.withValues(alpha: .12),
+                tooltip: colors.cardMuted,
+                tooltipText: colors.textPrimary,
+              ),
+            ),
           ),
         ),
       ),
@@ -1922,29 +1944,52 @@ class _RangeChart extends StatelessWidget {
   final List<String> labels;
   final ValueChanged<StressDay> onDay;
 
+  /// What the bars show, for VoiceOver: the period's average and its
+  /// highest day.
+  String get _summary {
+    final averages = [for (final d in days) ?d.average];
+    if (averages.isEmpty) return 'Stress by day: no readings yet.';
+    final mean = averages.reduce((a, b) => a + b) / averages.length;
+    final peak = days
+        .where((d) => d.maximum != null)
+        .fold<StressDay?>(
+          null,
+          (best, d) => best == null || d.maximum! > best.maximum! ? d : best,
+        );
+    return 'Stress by day, last ${days.length} days: average ${mean.round()}'
+        '${peak == null ? '' : ', highest ${peak.maximum!.round()} on '
+                  '${DateFormat('EEEE, MMM d').format(peak.date)}'}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapUp: (e) {
-          final slot = (constraints.maxWidth - _ChartFrame.right) / days.length;
-          final i = (e.localPosition.dx / slot).floor();
-          if (i >= 0 && i < days.length) onDay(days[i]);
-        },
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _RangeChartPainter(
-            days: days,
-            labels: labels,
-            bar: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF4A4560)
-                : const Color(0xFFD5D0F0),
-            today: _purple.withValues(alpha: .6),
-            dot: colors.textPrimary,
-            text: colors.textSecondary,
-            grid: colors.border,
+    return Semantics(
+      label: _summary,
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (e) {
+              final slot =
+                  (constraints.maxWidth - _ChartFrame.right) / days.length;
+              final i = (e.localPosition.dx / slot).floor();
+              if (i >= 0 && i < days.length) onDay(days[i]);
+            },
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _RangeChartPainter(
+                days: days,
+                labels: labels,
+                bar: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF4A4560)
+                    : const Color(0xFFD5D0F0),
+                today: _purple.withValues(alpha: .6),
+                dot: colors.textPrimary,
+                text: colors.textSecondary,
+                grid: colors.border,
+              ),
+            ),
           ),
         ),
       ),

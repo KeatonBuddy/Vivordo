@@ -3728,60 +3728,80 @@ class _PriorityRow extends StatelessWidget {
         priority.title,
         manual: priority.source == 'manual',
       ),
+      // The circle's 44 pt hit area takes 8 pt from the row's padding, and
+      // the title and pill pad back what it took, so nothing moves.
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.fromLTRB(6, 3, 14, 3),
         child: Row(
           children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
+            Semantics(
+              container: true,
+              button: true,
+              checked: priority.completed,
+              label: priority.completed ? 'Mark not complete' : 'Mark complete',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
                 onTap: onToggle,
-                customBorder: const CircleBorder(),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: priority.completed
-                        ? const Color(0xFF54C75B)
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: priority.completed
-                          ? const Color(0xFF54C75B)
-                          : MyDayScreen.muted,
-                      width: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onToggle,
+                      customBorder: const CircleBorder(),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: priority.completed
+                              ? const Color(0xFF54C75B)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: priority.completed
+                                ? const Color(0xFF54C75B)
+                                : MyDayScreen.muted,
+                            width: 2,
+                          ),
+                        ),
+                        child: priority.completed
+                            ? const Icon(
+                                Icons.check_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
+                      ),
                     ),
                   ),
-                  child: priority.completed
-                      ? const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                priority.title,
-                style: TextStyle(
-                  color: priority.completed
-                      ? colors.textSecondary
-                      : colors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  decoration: priority.completed
-                      ? TextDecoration.lineThrough
-                      : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  priority.title,
+                  style: TextStyle(
+                    color: priority.completed
+                        ? colors.textSecondary
+                        : colors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    decoration: priority.completed
+                        ? TextDecoration.lineThrough
+                        : null,
+                  ),
                 ),
               ),
             ),
             if (pill != null) ...[
               const SizedBox(width: 10),
               Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: pillColor.withValues(alpha: .12),

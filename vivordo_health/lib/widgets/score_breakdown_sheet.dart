@@ -265,8 +265,8 @@ class _BreakdownRowView extends StatelessWidget {
     final pointsColor = !signed || points == null || points.round() == 0
         ? colors.textSecondary
         : points > 0
-        ? const Color(0xFF1D9E75)
-        : const Color(0xFFD14343);
+        ? colors.success
+        : colors.danger;
     // An event (not a priority) opens its Event type.
     final event = row.item?.score.category == 'priority'
         ? null

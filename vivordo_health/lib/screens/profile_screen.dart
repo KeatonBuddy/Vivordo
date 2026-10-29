@@ -2507,85 +2507,108 @@ class _SettingsRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
+  /// How far a pill toggle's segments reach past the drawn pill, top and
+  /// bottom, to make 44 pt targets. The row's padding gives up the same
+  /// amount, and everything else pads it back, so nothing moves.
+  static const toggleSlop = 6.0;
+
+  bool get _trailingIsToggle =>
+      trailing is _AppearanceToggle || trailing is _UnitToggle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final status = this.status;
-    return InkWell(
+    const slop = EdgeInsets.symmetric(vertical: toggleSlop);
+    final row = InkWell(
       onTap: onTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12 - toggleSlop,
+          ),
           child: Row(
             children: [
-              leading,
+              Padding(padding: slop, child: leading),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                    ),
-                    if (subtitle case final subtitle?) ...[
-                      const SizedBox(height: 2),
+                child: Padding(
+                  padding: slop,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        subtitle,
+                        title,
                         style: TextStyle(
-                          fontSize: 12.5,
-                          height: 1.35,
-                          color: colors.textSecondary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
                         ),
                       ),
-                    ],
-                    if (status != null) ...[
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              color: status.$1
-                                  ? _SettingsScreenState._green
-                                  : colors.border,
-                              shape: BoxShape.circle,
-                            ),
+                      if (subtitle case final subtitle?) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.35,
+                            color: colors.textSecondary,
                           ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              status.$2,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: colors.textSecondary,
+                        ),
+                      ],
+                      if (status != null) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: status.$1
+                                    ? _SettingsScreenState._green
+                                    : colors.border,
+                                shape: BoxShape.circle,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                status.$2,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               if (trailing case final trailing?) ...[
                 const SizedBox(width: 10),
-                trailing,
+                _trailingIsToggle
+                    ? trailing
+                    : Padding(padding: slop, child: trailing),
               ],
             ],
           ),
         ),
       ),
     );
+    // A switch row has no tap of its own: merge so VoiceOver reads the
+    // title with the switch instead of a bare "Switch, off". Toggles keep
+    // a node per segment.
+    return onTap == null && trailing != null && !_trailingIsToggle
+        ? MergeSemantics(child: row)
+        : row;
   }
 }
 
@@ -2795,53 +2818,69 @@ class _PillToggle<T extends Object> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: colors.input,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final MapEntry(key: option, value: label) in options.entries)
-            Semantics(
-              button: true,
-              selected: value == option,
-              label: '$label $semanticsSuffix',
-              excludeSemantics: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onChanged(option),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  constraints: BoxConstraints(minWidth: segmentWidth),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: value == option
-                        ? VivordoTheme.brand
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: value == option
-                          ? Colors.white
-                          : colors.textSecondary,
+    return Stack(
+      children: [
+        Positioned.fill(
+          top: _SettingsRow.toggleSlop,
+          bottom: _SettingsRow.toggleSlop,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.input,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final MapEntry(key: option, value: label) in options.entries)
+                Semantics(
+                  button: true,
+                  selected: value == option,
+                  label: '$label $semanticsSuffix',
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onChanged(option),
+                    // Invisible margin above and below: a 44 pt target.
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: _SettingsRow.toggleSlop + 3,
+                      ),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        constraints: BoxConstraints(minWidth: segmentWidth),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: value == option
+                              ? VivordoTheme.brand
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: value == option
+                                ? Colors.white
+                                : colors.textSecondary,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

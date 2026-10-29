@@ -71,6 +71,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
         ),
@@ -323,8 +324,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                         '${change >= 0 ? '↑' : '↓'} ${change.abs()} min vs previous $_rangeName',
                         style: TextStyle(
                           color: change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -495,6 +496,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final change = visible.length < 2
         ? 0.0
         : visible.last.weight - visible.first.weight;
+    final units = context.watch<ThemeController>().units;
     return _card(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
       child: Column(
@@ -507,26 +509,37 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           Text(
             change == 0
                 ? 'Same weight across ${visible.length} sessions'
-                : '${change > 0 ? '↑' : '↓'} ${context.watch<ThemeController>().units.formatLift(change.abs())} across ${visible.length} sessions',
+                : '${change > 0 ? '↑' : '↓'} ${units.formatLift(change.abs())} across ${visible.length} sessions',
             style: TextStyle(
               color: change == 0
                   ? context.vivordoColors.textSecondary
                   : change > 0
-                  ? const Color(0xFF20B26B)
-                  : Colors.red,
+                  ? context.vivordoColors.success
+                  : context.vivordoColors.danger,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 8),
           SizedBox(
             height: 190,
-            child: CustomPaint(
-              painter: _WeightChartPainter(
-                units: context.watch<ThemeController>().units,
-                points: visible,
-                dark: Theme.of(context).brightness == Brightness.dark,
+            child: Semantics(
+              label:
+                  '$exercise weight by session: '
+                  '${units.formatLift(visible.first.weight)} on '
+                  '${DateFormat('MMM d').format(visible.first.date)}, '
+                  '${units.formatLift(visible.last.weight)} on '
+                  '${DateFormat('MMM d').format(visible.last.date)}, '
+                  'heaviest ${units.formatLift(visible.map((p) => p.weight).reduce(math.max))}.',
+              child: ExcludeSemantics(
+                child: CustomPaint(
+                  painter: _WeightChartPainter(
+                    units: units,
+                    points: visible,
+                    dark: Theme.of(context).brightness == Brightness.dark,
+                  ),
+                  size: const Size(double.infinity, 190),
+                ),
               ),
-              size: const Size(double.infinity, 190),
             ),
           ),
         ],
@@ -808,23 +821,38 @@ class _ExerciseTimeChartState extends State<_ExerciseTimeChart> {
     }
   }
 
+  /// What the bars show, for VoiceOver: the total and the days at goal.
+  String get _summary {
+    final v = widget.values;
+    final total = v.fold<double>(0, (a, b) => a + b).round();
+    final atGoal = v.where((m) => m >= widget.dailyGoal).length;
+    return 'Exercise, last ${v.length} days: $total min in all, '
+        'goal of ${widget.dailyGoal.round()} min met on $atGoal '
+        '${atGoal == 1 ? 'day' : 'days'}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _ExerciseBarPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          dailyGoal: widget.dailyGoal,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _ExerciseBarPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              dailyGoal: widget.dailyGoal,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
