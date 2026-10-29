@@ -66,6 +66,7 @@ dependencies:
   image_picker: ^1.2.3
   liquid_glass_renderer: ^0.2.0-dev.4
   purchases_flutter: ^10.16.0
+  path_provider: ^2.1.6
 dev_dependencies:
   flutter_test:
     sdk: flutter

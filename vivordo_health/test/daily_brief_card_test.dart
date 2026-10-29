@@ -39,6 +39,31 @@ void main() {
     });
   }
 
+  testWidgets('a changed score glides there from the old one', (tester) async {
+    Widget card(int? demand) => MaterialApp(
+      home: Scaffold(
+        body: DailyBriefCard(
+          headline: 'Room to spare today',
+          summary: '',
+          capacityScore: 84,
+          capacityLabel: 'Near your usual',
+          scheduleScore: demand,
+          scheduleLabel: 'Remaining today',
+          footer: '',
+        ),
+      ),
+    );
+    await tester.pumpWidget(card(null));
+    await tester.pumpWidget(card(18));
+    expect(find.text('18'), findsOneWidget); // arrives as is, no count-up
+    await tester.pumpWidget(card(30));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('18'), findsNothing);
+    expect(find.text('30'), findsNothing); // on its way
+    await tester.pumpAndSettle();
+    expect(find.text('30'), findsOneWidget);
+  });
+
   testWidgets('missing scores are not shown as zero', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

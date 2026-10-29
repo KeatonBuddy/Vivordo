@@ -386,38 +386,52 @@ class _BriefScore extends StatelessWidget {
     child: ExcludeSemantics(
       child: Row(
         children: [
-          SizedBox(
-            width: 56,
-            height: 56,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox.expand(
-                  child: CircularProgressIndicator(
-                    value: score == null ? 0 : score!.clamp(0, 100) / 100,
-                    strokeWidth: 6,
-                    strokeCap: StrokeCap.round,
-                    backgroundColor: const Color(0xFF8270DB),
-                    valueColor: const AlwaysStoppedAnimation(Color(0xFFD0A5FF)),
-                  ),
-                ),
-                if (score == null && emptyIcon != null)
-                  Icon(emptyIcon, color: Colors.white, size: 20)
-                else
-                  Padding(
-                    padding: const EdgeInsets.all(9),
-                    child: FittedBox(
-                      child: Text(
-                        score == null ? '—' : '$score',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
+          // A changed score glides from the old one. A score arriving where
+          // there was none shows as is (a fresh builder starts at its end),
+          // so nothing counts up from zero at launch.
+          TweenAnimationBuilder<double>(
+            key: ValueKey(score == null),
+            tween: Tween(end: (score ?? 0).clamp(0, 100).toDouble()),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            builder: (context, shown, _) => SizedBox(
+              width: 56,
+              height: 56,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.expand(
+                    child: CircularProgressIndicator(
+                      value: shown / 100,
+                      strokeWidth: 6,
+                      strokeCap: StrokeCap.round,
+                      backgroundColor: const Color(0xFF8270DB),
+                      valueColor: const AlwaysStoppedAnimation(
+                        Color(0xFFD0A5FF),
                       ),
                     ),
                   ),
-              ],
+                  if (score == null && emptyIcon != null)
+                    Icon(emptyIcon, color: Colors.white, size: 20)
+                  else
+                    Padding(
+                      padding: const EdgeInsets.all(9),
+                      child: FittedBox(
+                        child: Text(
+                          score == null ? '—' : '${shown.round()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 9),

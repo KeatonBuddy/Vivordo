@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/calendar_snapshot_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
 import '../src/services/outlook_calendar_service.dart';
@@ -150,6 +152,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// never flashes before the check.
   bool _calendarConnected = true;
   DateTime? _calendarLoadedAt;
+
+  /// Showing the schedule saved on the phone while the live one loads.
+  bool _eventsFromSnapshot = false;
+  DateTime? _snapshotSavedAt;
   bool _showCompleted = false;
   bool _showEarlier = false;
   Timer? _clockTimer;
@@ -247,7 +253,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           snapshot.days.entries
               .map((d) => MetricDayEntry(dayKey: d.key, data: d.value))
               .toList(),
-          isFromCache: snapshot.isFromCache || snapshot.error != null,
+          // Only when the listener failed: without metadata updates, a
+          // window first read from the cache never reports reaching the
+          // server, so the note would stick.
+          isFromCache: snapshot.error != null,
         );
         _briefMetrics = metrics;
         _takeHeart(snapshot.days, day);
@@ -281,12 +290,26 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
+    _capacitySnapshot.addListener(_onCapacity);
     _connectBriefMetrics(_priorityDay);
     _connectPriorities();
     _loadTodayEvents();
     unawaited(_loadWrapUp());
     unawaited(_loadFixHistory());
     CalendarService.eventsChanged.addListener(_onEventsChanged);
+  }
+
+  bool? _capacityProvisional;
+
+  /// A light tap when today's Capacity locks in with last night's sleep,
+  /// as the number settles on screen. Hidden updates publish when the tab
+  /// is shown, so it lands when you see it.
+  void _onCapacity() {
+    final provisional = _capacitySnapshot.value.data?.provisional;
+    if (_capacityProvisional == true && provisional == false && _screenActive) {
+      unawaited(HapticFeedback.lightImpact());
+    }
+    _capacityProvisional = provisional;
   }
 
   /// Set when the calendar changed while this tab was hidden.
@@ -621,6 +644,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final active = TickerMode.valuesOf(context).enabled;
+    // Set first: showing publishes held-back updates, and _onCapacity reads
+    // it.
+    final changed = _screenActive != active;
+    _screenActive = active;
     _briefSnapshot.setActive(active);
     _capacitySnapshot.setActive(active);
     _burnoutSnapshot.setActive(active);
@@ -630,8 +657,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _tomorrowPrioritySnapshot.setActive(active);
     _habitSnapshot.setActive(active);
     _templateSnapshot.setActive(active);
-    if (_screenActive == active) return;
-    _screenActive = active;
+    if (!changed) return;
     _clockTimer?.cancel();
     if (!active) return;
     if (!_handleDayRollover()) {
@@ -710,6 +736,58 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// [forceRefresh] bypasses the shared calendar cache. Used by pull-to-refresh
   /// and after the user edits an event, where reusing a cached range would
   /// show them what they just changed away from.
+  /// Today's and tomorrow's events, in start order.
+  (List<_CalendarEvent>, List<_CalendarEvent>) _splitDays(
+    List<gcal.Event> calendarEvents,
+    DateTime dayStart,
+  ) {
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final tomorrowEnd = dayStart.add(const Duration(days: 2));
+    final allEvents =
+        calendarEvents
+            .map(_CalendarEvent.fromGoogle)
+            .whereType<_CalendarEvent>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+    return (
+      allEvents
+          .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
+          .toList(),
+      allEvents
+          .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
+          .toList(),
+    );
+  }
+
+  /// Fills the screen with the schedule saved last time, unless the live
+  /// one got here first. Display only: nothing is rated, synced or saved
+  /// from it.
+  Future<void> _showSnapshot(
+    String uid,
+    int generation,
+    DateTime dayStart,
+    DateTime tomorrowEnd,
+  ) async {
+    final saved = await CalendarSnapshotService.eventsBetween(
+      uid,
+      dayStart,
+      tomorrowEnd,
+    );
+    if (saved == null ||
+        !mounted ||
+        generation != _loadGeneration ||
+        _calendarLoadedAt != null) {
+      return;
+    }
+    final (events, tomorrowEvents) = _splitDays(saved.events, dayStart);
+    setState(() {
+      _events = events;
+      _tomorrowEvents = tomorrowEvents;
+      _eventsFromSnapshot = true;
+      _snapshotSavedAt = saved.savedAt;
+    });
+  }
+
   Future<void> _loadTodayEvents({bool forceRefresh = false}) async {
     final generation = ++_loadGeneration;
     _eventsStale = false;
@@ -720,6 +798,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
     final connected = _anyCalendarConnected();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final snapshotShown =
+        _calendarLoadedAt == null && !_eventsFromSnapshot && uid != null
+        ? _showSnapshot(uid, generation, dayStart, tomorrowEnd)
+        : null;
+    final failuresBefore = CalendarService.fetchFailures;
     late List<dynamic> results;
     try {
       results = await Future.wait([
@@ -743,24 +827,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final calendarEvents = results[0] as List<gcal.Event>;
     final calendarConnected = await connected;
     MeetingPatternsService.rememberNames(calendarEvents);
-    final allEvents =
-        calendarEvents
-            .map(_CalendarEvent.fromGoogle)
-            .whereType<_CalendarEvent>()
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
-    final events = allEvents
-        .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
-        .toList();
-    final tomorrowEvents = allEvents
-        .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
-        .toList();
+    final (events, tomorrowEvents) = _splitDays(calendarEvents, dayStart);
 
     if (!mounted || generation != _loadGeneration) return;
+    // A calendar that couldn't be read comes back empty, like a free day.
+    final fetchFailed = CalendarService.fetchFailures != failuresBefore;
+    if (fetchFailed) {
+      await snapshotShown;
+      if (!mounted || generation != _loadGeneration) return;
+      // Keep the plan on screen (saved or last loaded) rather than
+      // emptying the day.
+      if (_eventsFromSnapshot || _calendarLoadedAt != null) {
+        setState(() {
+          _isLoading = false;
+          _calendarLoadError =
+              'Could not refresh the schedule. Pull down to retry.';
+        });
+        return;
+      }
+    }
+    if (uid != null && !fetchFailed) {
+      unawaited(
+        CalendarSnapshotService.save(
+          uid,
+          dayStart,
+          tomorrowEnd,
+          calendarEvents,
+        ),
+      );
+    }
     // The schedule may have just changed (pull to refresh, an edit).
     if (forceRefresh) unawaited(DayRecordService.sync());
     setState(() {
       _calendarLoadedAt = DateTime.now();
+      _eventsFromSnapshot = false;
       _calendarConnected = calendarConnected;
       _events = events;
       _tomorrowEvents = tomorrowEvents;
@@ -769,7 +869,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       unawaited(
         WindDownReminders.sync(tomorrowFirstEvent: _tomorrowFirst()?.start),
       );
-      _calendarLoadError = null;
+      _calendarLoadError = fetchFailed
+          ? 'Could not refresh the schedule. Pull down to retry.'
+          : null;
       _isLoading = false;
     });
     unawaited(_loadPatterns());
@@ -1394,8 +1496,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   ),
                 )
                 .toList();
-            final ready =
-                calendarReady && priorities.hasData && !priorities.hasError;
+            final prioritiesReady = priorities.hasData && !priorities.hasError;
+            // Live calendar: what gets saved, published or logged.
+            final ready = calendarReady && prioritiesReady;
+            // Also the saved schedule while the live one loads: what's
+            // shown.
+            final shown =
+                (calendarReady || _eventsFromSnapshot) && prioritiesReady;
             // Not loading any more, just failed: pull to refresh retries.
             final planFailed =
                 !ready && (_calendarLoadError != null || priorities.hasError);
@@ -1459,7 +1566,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final tomorrowCapacity = usualCapacity ?? capacityScore;
             final tomorrowHeavy =
                 evening &&
-                ready &&
+                shown &&
                 tomorrowCapacity != null &&
                 demandFit(demand, tomorrowCapacity) == DemandFit.over;
             // A big day in the last 3 is lowering Capacity (docs/scores.md
@@ -1473,14 +1580,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       : 'Today’s plan is done'
                 : recovering
                 ? bigDayHeadline(bigDay, today)
-                : capacityScore == null || !ready
+                : capacityScore == null || !shown
                 ? 'Make space for your day'
                 : switch (demandFit(demand, capacityScore)) {
                     DemandFit.roomToSpare => 'Room to spare today',
                     DemandFit.over => 'More than you’ve got: protect a break',
                     DemandFit.full => 'A full day ahead',
                   };
-            final calendarText = ready
+            final calendarText = shown
                 ? remainingToday(
                     timedEvents.where((e) => e.end.isAfter(now)).length,
                     briefPriorities.where((p) => !p.completed).length,
@@ -1494,7 +1601,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 if (!e.isAllDay) e,
             ];
             final fixes = evening
-                ? !tomorrowHeavy || _eveningFixesHiddenDay == localDayKey(today)
+                ? !ready ||
+                          !tomorrowHeavy ||
+                          _eveningFixesHiddenDay == localDayKey(today)
                       ? const <DayFix>[]
                       : _dayFixes(
                           now,
@@ -1593,7 +1702,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     final loadWords = showNumbers
                         ? null
                         : briefLoadState(
-                            demand: ready ? demand : null,
+                            demand: shown ? demand : null,
                             capacity: evening
                                 ? tomorrowCapacity
                                 : capacityScore,
@@ -1630,7 +1739,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                               capacityEmpty?.word,
                               capacityEmpty?.footer,
                             ),
-                      onScheduleTap: !ready
+                      onScheduleTap: !shown
                           ? null
                           : () => _showDemandBreakdown(
                               now: now,
@@ -1643,10 +1752,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                                   : capacityScore,
                               words: loadWords,
                             ),
-                      scheduleScore: ready
+                      scheduleScore: shown
                           ? demand.round().clamp(0, 100)
                           : null,
-                      scheduleLabel: !ready
+                      scheduleLabel: !shown
                           ? planFailed
                                 ? "Didn't load · pull to retry"
                                 : 'Loading your plan'
@@ -1655,15 +1764,18 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           : 'Remaining today',
                       // What's missing, by name; tapping it opens the data
                       // sheet.
-                      scheduleEmptyIcon: ready
+                      scheduleEmptyIcon: shown
                           ? null
                           : planFailed
                           ? Icons.cloud_off_rounded
                           : Icons.hourglass_top_rounded,
-                      footer: !ready
-                          ? planFailed
-                                ? "Your plan didn't load"
-                                : 'Your plan is still loading'
+                      // A failed load still says so over the saved plan.
+                      footer: planFailed
+                          ? _eventsFromSnapshot && _snapshotSavedAt != null
+                                ? "Couldn't refresh · plan from ${formatClock(_snapshotSavedAt!)}"
+                                : "Your plan didn't load"
+                          : !shown
+                          ? 'Your plan is still loading'
                           : capacityEmpty?.footer ??
                                 (!capacityStale
                                     ? 'Available data'
@@ -1689,7 +1801,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           AppleInfoItem(
                             'Calendar loaded',
                             _calendarLoadedAt == null
-                                ? 'Not yet.'
+                                ? _eventsFromSnapshot &&
+                                          _snapshotSavedAt != null
+                                      ? 'Showing the plan saved at ${formatClock(_snapshotSavedAt!)} until it refreshes.'
+                                      : 'Not yet.'
                                 : '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
                             icon: CupertinoIcons.calendar,
                           ),
@@ -2570,13 +2685,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     List<_CalendarEvent> timedEvents,
     BackToBackEventBlock? watchItem,
   ) {
-    if (_isLoading && _calendarLoadedAt == null) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
+    final colors = context.vivordoColors;
+    if (_isLoading && _calendarLoadedAt == null && !_eventsFromSnapshot) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: colors.border,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Checking your calendar',
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       );
     }
-    final colors = context.vivordoColors;
     final now = DateTime.now();
     final current = timedEvents
         .where((e) => !e.start.isAfter(now) && e.end.isAfter(now))
@@ -3171,11 +3306,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ]),
     builder: (context, _) {
       final snapshot = _prioritySnapshot.value;
-      if (_isLoading && _calendarLoadedAt == null) {
-        return const _SectionCard(
+      if (_isLoading && _calendarLoadedAt == null && !_eventsFromSnapshot) {
+        return _SectionCard(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Loading today’s plan',
+              style: TextStyle(
+                color: context.vivordoColors.textSecondary,
+                fontSize: 15,
+              ),
+            ),
           ),
         );
       }

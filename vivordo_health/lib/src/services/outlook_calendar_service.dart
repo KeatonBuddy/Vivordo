@@ -8,6 +8,7 @@ import 'package:intl/intl.dart' show DateFormat;
 import 'package:msal_auth/msal_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:vivordo_health/src/services/calendar_snapshot_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
@@ -197,6 +198,7 @@ class OutlookCalendarService {
       await _secureStorage.delete(key: key);
     }
     await _setSignedIn(false);
+    await CalendarSnapshotService.clear();
   }
 
   /// A Graph token from MSAL's cache, refreshed silently when it expired.
@@ -240,7 +242,11 @@ class OutlookCalendarService {
     if (!await isSignedIn()) return const <gcal.Event>[];
     return _eventRequests.run(
       '${start.toIso8601String()}|${end.toIso8601String()}',
-      () async => await _fetchEvents(start, end) ?? const <gcal.Event>[],
+      () async {
+        final events = await _fetchEvents(start, end);
+        if (events == null) CalendarService.fetchFailures++;
+        return events ?? const <gcal.Event>[];
+      },
       forceRefresh: forceRefresh,
     );
   }
