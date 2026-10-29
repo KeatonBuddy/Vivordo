@@ -8,12 +8,26 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 
 class WorkoutSetRecord {
-  const WorkoutSetRecord({required this.weightLbs, required this.reps});
+  const WorkoutSetRecord({
+    required this.weightLbs,
+    required this.reps,
+    this.loggedAt,
+  });
 
   final double weightLbs;
   final int reps;
 
-  Map<String, dynamic> toMap() => {'weightLbs': weightLbs, 'reps': reps};
+  /// When its reps were entered, which places each exercise on the heart
+  /// rate graph. Null on workouts saved before it was recorded.
+  final DateTime? loggedAt;
+
+  Map<String, dynamic> toMap() => {
+    'weightLbs': weightLbs,
+    'reps': reps,
+    // A string, not a Timestamp: this map is also JSON (Vivordo AI's
+    // context, the in-progress draft).
+    if (loggedAt != null) 'loggedAt': loggedAt!.toUtc().toIso8601String(),
+  };
 }
 
 class WorkoutExerciseRecord {
@@ -171,6 +185,7 @@ class SavedWorkout {
     required this.exercises,
     required this.exerciseCount,
     required this.setCount,
+    this.startedAt,
     this.activityName,
     this.activityCategory,
     this.customName,
@@ -178,6 +193,10 @@ class SavedWorkout {
 
   final String id;
   final DateTime completedAt;
+
+  /// Null on workouts written without it; [completedAt] minus the duration
+  /// stands in.
+  final DateTime? startedAt;
   final int durationSeconds;
   final List<WorkoutExerciseRecord> exercises;
   final int exerciseCount;
@@ -219,6 +238,7 @@ class SavedWorkout {
     exercises: exercises,
     exerciseCount: exerciseCount,
     setCount: setCount,
+    startedAt: startedAt,
     activityName: activityName,
     activityCategory: activityCategory,
     customName: name,
@@ -245,7 +265,15 @@ class SavedWorkout {
       for (final rawSet in rawSets.whereType<Map>()) {
         final weight = (rawSet['weightLbs'] as num?)?.toDouble() ?? 0;
         final reps = (rawSet['reps'] as num?)?.toInt() ?? 0;
-        sets.add(WorkoutSetRecord(weightLbs: weight, reps: reps));
+        sets.add(
+          WorkoutSetRecord(
+            weightLbs: weight,
+            reps: reps,
+            loggedAt: DateTime.tryParse(
+              rawSet['loggedAt'] as String? ?? '',
+            )?.toLocal(),
+          ),
+        );
       }
       if (name != null && name.trim().isNotEmpty) {
         exercises.add(
@@ -292,6 +320,7 @@ class SavedWorkout {
       id: document.id,
       completedAt:
           (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
       durationSeconds: (data['durationSeconds'] as num?)?.round() ?? 0,
       exercises: exercises,
       exerciseCount:

@@ -2561,7 +2561,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         }
         // Typed in Settings → Units, saved in lb (weightLbs).
         sets.add(
-          WorkoutSetRecord(weightLbs: units.liftToLbs(weight), reps: reps),
+          WorkoutSetRecord(
+            weightLbs: units.liftToLbs(weight),
+            reps: reps,
+            loggedAt: set.loggedAt,
+          ),
         );
       }
       records.add(
@@ -3283,10 +3287,14 @@ class _WorkoutSet {
   String lbs = '';
   String reps = '';
 
+  /// When reps were first entered: roughly when the set was done.
+  DateTime? loggedAt;
+
   Map<String, dynamic> toJson() => {
     'lbs': lbs,
     'reps': reps,
     'previous': previous?.toMap(),
+    'loggedAt': ?loggedAt?.toIso8601String(),
   };
 }
 
@@ -3374,6 +3382,7 @@ class _WorkoutExercise {
             );
             set.lbs = map['lbs'] as String? ?? '';
             set.reps = map['reps'] as String? ?? '';
+            set.loggedAt = DateTime.tryParse(map['loggedAt'] as String? ?? '');
             return set;
           }),
         );
@@ -3742,6 +3751,7 @@ class _WorkoutSetRow extends StatelessWidget {
             ),
             onChanged: (value) {
               set.reps = value;
+              if (value.isNotEmpty) set.loggedAt ??= DateTime.now();
               onChanged();
             },
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
