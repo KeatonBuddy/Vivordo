@@ -58,19 +58,19 @@ String timeOfDayGreeting(DateTime now) => now.hour < 12
     : 'Good evening';
 
 const _feelIcons = [
-  Icons.sentiment_very_dissatisfied_rounded,
-  Icons.sentiment_dissatisfied_rounded,
-  Icons.sentiment_neutral_rounded,
-  Icons.sentiment_satisfied_rounded,
-  Icons.sentiment_very_satisfied_rounded,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley_fill,
 ];
 
 const _sleepIcons = [
-  Icons.bedtime_off_outlined,
-  Icons.bedtime_outlined,
-  Icons.bedtime_outlined,
-  Icons.bedtime_rounded,
-  Icons.bedtime_rounded,
+  CupertinoIcons.moon_zzz,
+  CupertinoIcons.moon,
+  CupertinoIcons.moon,
+  CupertinoIcons.moon_fill,
+  CupertinoIcons.moon_fill,
 ];
 
 /// The daily check-in on Home as one line, under the stress card: shown

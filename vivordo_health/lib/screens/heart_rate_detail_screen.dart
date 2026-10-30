@@ -445,7 +445,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
-                        Icons.bluetooth_rounded,
+                        CupertinoIcons.bluetooth,
                         color: purple,
                         size: 22,
                       ),
@@ -524,7 +524,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                           const Padding(
                             padding: EdgeInsets.only(bottom: 7),
                             child: Icon(
-                              Icons.favorite_rounded,
+                              CupertinoIcons.heart_fill,
                               color: red,
                               size: 28,
                             ),
@@ -564,7 +564,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             )
                           else
                             Icon(
-                              Icons.monitor_heart_outlined,
+                              CupertinoIcons.waveform_path_ecg,
                               color: statusColor,
                               size: 36,
                             ),
@@ -631,7 +631,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         ),
                       ),
                       icon: Icon(
-                        live ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                        live
+                            ? CupertinoIcons.stop_fill
+                            : CupertinoIcons.play_fill,
                         size: 19,
                       ),
                       label: Text(
@@ -929,7 +931,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          bubble(Icons.show_chart_rounded, const Color(0xFF20B26B)),
+          bubble(CupertinoIcons.graph_square, const Color(0xFF20B26B)),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

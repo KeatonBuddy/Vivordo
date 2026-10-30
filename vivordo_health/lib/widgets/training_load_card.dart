@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -418,7 +419,7 @@ Future<void> showTrainingLoadDetails(
                     Navigator.pop(context);
                     plan();
                   },
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  icon: const Icon(CupertinoIcons.chat_bubble, size: 18),
                   label: const Text('Plan an easier week'),
                   style: FilledButton.styleFrom(
                     backgroundColor: _purple.withValues(alpha: .14),
@@ -571,7 +572,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
       children: [
         Row(
           children: [
-            arrow(Icons.chevron_left_rounded, 'Earlier week', _index + 1),
+            arrow(CupertinoIcons.chevron_left, 'Earlier week', _index + 1),
             Expanded(
               // A dropdown of the weeks, as wide as the space between the
               // arrows.
@@ -615,7 +616,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                           width: 18,
                           child: i == _index
                               ? const Icon(
-                                  Icons.check_rounded,
+                                  CupertinoIcons.checkmark,
                                   size: 18,
                                   color: _purple,
                                 )
@@ -678,8 +679,8 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                               if (_weeks.length > 1)
                                 Icon(
                                   controller.isOpen
-                                      ? Icons.expand_less_rounded
-                                      : Icons.expand_more_rounded,
+                                      ? CupertinoIcons.chevron_up
+                                      : CupertinoIcons.chevron_down,
                                   size: 18,
                                   color: _purple,
                                 ),
@@ -699,7 +700,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                 ),
               ),
             ),
-            arrow(Icons.chevron_right_rounded, 'Later week', _index - 1),
+            arrow(CupertinoIcons.chevron_right, 'Later week', _index - 1),
           ],
         ),
         const SizedBox(height: 10),

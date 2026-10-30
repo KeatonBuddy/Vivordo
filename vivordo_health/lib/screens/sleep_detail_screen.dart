@@ -490,7 +490,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.nightlight_round, _purple, size: 62),
+              _iconBubble(CupertinoIcons.moon_fill, _purple, size: 62),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -587,7 +587,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           Row(
             children: [
               Expanded(
-                child: _timeStat(Icons.bed_rounded, 'Bedtime', latest?.bedtime),
+                child: _timeStat(
+                  CupertinoIcons.bed_double_fill,
+                  'Bedtime',
+                  latest?.bedtime,
+                ),
               ),
               Container(
                 width: 1,
@@ -596,7 +600,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ),
               Expanded(
                 child: _timeStat(
-                  Icons.wb_sunny_rounded,
+                  CupertinoIcons.sun_max_fill,
                   'Wake time',
                   latest?.wakeTime,
                 ),
@@ -802,7 +806,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     padding: const EdgeInsets.all(22),
     child: Row(
       children: [
-        _iconBubble(Icons.favorite_outline_rounded, _purple),
+        _iconBubble(CupertinoIcons.heart, _purple),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
@@ -832,7 +836,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         padding: const EdgeInsets.all(22),
         child: Row(
           children: [
-            _iconBubble(Icons.bedtime_outlined, _purple),
+            _iconBubble(CupertinoIcons.moon, _purple),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

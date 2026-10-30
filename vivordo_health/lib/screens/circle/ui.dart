@@ -557,7 +557,7 @@ class _StreakLabel extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       Icon(
-        Icons.local_fire_department_rounded,
+        CupertinoIcons.flame_fill,
         size: size + 2,
         color: context.circle.streak,
       ),

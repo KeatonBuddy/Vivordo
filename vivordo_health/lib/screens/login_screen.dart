@@ -145,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration:
                     _inputDecoration(
                       hintText: 'you@example.com',
-                      icon: Icons.mail_outline_rounded,
+                      icon: CupertinoIcons.envelope,
                     ).copyWith(
                       fillColor: colors.input,
                       enabledBorder: OutlineInputBorder(
@@ -324,7 +324,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             style: const TextStyle(fontSize: 15),
                             decoration: _inputDecoration(
                               hintText: 'you@example.com',
-                              icon: Icons.mail_outline_rounded,
+                              icon: CupertinoIcons.envelope,
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -354,8 +354,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     icon: Icon(
                                       _obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
+                                          ? CupertinoIcons.eye_slash
+                                          : CupertinoIcons.eye,
                                       color: textGrey,
                                       size: 20,
                                     ),

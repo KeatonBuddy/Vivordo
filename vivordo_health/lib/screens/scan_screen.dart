@@ -759,7 +759,7 @@ class _ScanScreenState extends State<ScanScreen>
                       tooltip: 'Show tutorial',
                       onPressed: _showScannerTutorial,
                       icon: const Icon(
-                        Icons.help_outline_rounded,
+                        CupertinoIcons.question_circle,
                         color: accentPurple,
                       ),
                     ),
@@ -813,7 +813,11 @@ class _ScanScreenState extends State<ScanScreen>
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9500), size: 20),
+          Icon(
+            CupertinoIcons.exclamationmark_triangle,
+            color: Color(0xFFFF9500),
+            size: 20,
+          ),
           SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -833,26 +837,26 @@ class _ScanScreenState extends State<ScanScreen>
   Widget _buildFirstScanTutorial() {
     final tutorialSlides = [
       {
-        'icon': Icons.camera_alt_outlined,
+        'icon': CupertinoIcons.camera,
         'title': 'Use the rear camera',
         'body': _hasTorch
             ? 'Place your fingertip so it fully covers the rear camera.'
             : 'Place your fingertip so it fully covers the rear camera lens.',
       },
       {
-        'icon': Icons.touch_app_outlined,
+        'icon': CupertinoIcons.hand_point_right,
         'title': 'Use light, steady pressure',
         'body':
             'Press firmly enough to cover the lens, but avoid squeezing too hard. Too much pressure can weaken the pulse signal.',
       },
       {
-        'icon': Icons.back_hand_outlined,
+        'icon': CupertinoIcons.hand_raised,
         'title': 'Cup with your other hand',
         'body':
             'Use your other hand to gently shield the rear camera area. This helps block outside light and keeps your finger steady for a cleaner reading.',
       },
       {
-        'icon': Icons.pan_tool_alt_outlined,
+        'icon': CupertinoIcons.hand_raised,
         'title': 'Hold still for 15 seconds',
         'body':
             'Keep your phone and hand steady. The scan starts automatically once your finger is detected.',
@@ -879,7 +883,7 @@ class _ScanScreenState extends State<ScanScreen>
         children: [
           const Row(
             children: [
-              Icon(Icons.school_outlined, size: 17, color: accentPurple),
+              Icon(CupertinoIcons.book, size: 17, color: accentPurple),
               SizedBox(width: 7),
               Text(
                 'First scan tutorial',
@@ -1148,7 +1152,7 @@ class _ScanScreenState extends State<ScanScreen>
                               radius: 9,
                             ),
                           )
-                        : const Icon(Icons.flashlight_on_rounded),
+                        : const Icon(CupertinoIcons.lightbulb_fill),
                     label: Text(
                       _isStartingScan ? 'Starting...' : 'Start Scan',
                       style: const TextStyle(
@@ -1202,7 +1206,7 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 16),
               _buildStep(
                 '1',
-                Icons.wb_sunny_outlined,
+                CupertinoIcons.sun_max,
                 _hasTorch ? 'Enable torch' : 'Find bright light',
                 _hasTorch
                     ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
@@ -1211,21 +1215,21 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 14),
               _buildStep(
                 '2',
-                Icons.touch_app_outlined,
+                CupertinoIcons.hand_point_right,
                 'Cover the camera and flash',
                 'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
               ),
               const SizedBox(height: 14),
               _buildStep(
                 '3',
-                Icons.favorite_outline_rounded,
+                CupertinoIcons.heart,
                 'Hold still',
                 'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
               ),
               const SizedBox(height: 14),
               _buildStep(
                 '4',
-                Icons.bar_chart_rounded,
+                CupertinoIcons.chart_bar_fill,
                 'Get your results',
                 'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
               ),
@@ -1247,7 +1251,7 @@ class _ScanScreenState extends State<ScanScreen>
           child: Column(
             children: [
               _buildTipRow(
-                Icons.do_not_touch_outlined,
+                CupertinoIcons.hand_raised_slash,
                 'Avoid pressing too hard — light contact works best',
               ),
               const SizedBox(height: 10),
@@ -1257,7 +1261,7 @@ class _ScanScreenState extends State<ScanScreen>
               ),
               const SizedBox(height: 10),
               _buildTipRow(
-                Icons.timer_outlined,
+                CupertinoIcons.timer,
                 'After Start Scan, scanning begins when your finger is detected',
               ),
             ],
@@ -1323,7 +1327,7 @@ class _ScanScreenState extends State<ScanScreen>
                           )
                         : const Center(
                             child: Icon(
-                              Icons.videocam_off_outlined,
+                              CupertinoIcons.video_camera,
                               color: Colors.white70,
                               size: 34,
                             ),
@@ -1534,7 +1538,7 @@ class _ScanScreenState extends State<ScanScreen>
           children: [
             Expanded(
               child: _buildMetricCard(
-                Icons.favorite_rounded,
+                CupertinoIcons.heart_fill,
                 'Heart rate',
                 '$bpm bpm',
                 heartColor,
@@ -1543,7 +1547,7 @@ class _ScanScreenState extends State<ScanScreen>
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                Icons.show_chart_rounded,
+                CupertinoIcons.graph_square,
                 'Signal quality',
                 qualityLabel,
                 qualityColor,
@@ -1552,7 +1556,7 @@ class _ScanScreenState extends State<ScanScreen>
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                Icons.favorite_border_rounded,
+                CupertinoIcons.heart,
                 'Range',
                 heartLabel,
                 heartColor,
@@ -1577,11 +1581,7 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 15,
-                    color: accentPurple,
-                  ),
+                  Icon(CupertinoIcons.sparkles, size: 15, color: accentPurple),
                   SizedBox(width: 6),
                   Text(
                     'Insight',
@@ -1648,7 +1648,7 @@ class _ScanScreenState extends State<ScanScreen>
             child: Icon(
               _errorTitle == 'Poor signal detected'
                   ? Icons.fingerprint
-                  : Icons.camera_outlined,
+                  : CupertinoIcons.camera,
               size: 52,
               color: redColor,
             ),

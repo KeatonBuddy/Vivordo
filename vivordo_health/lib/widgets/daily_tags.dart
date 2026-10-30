@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -13,10 +14,10 @@ const dailyTags = <({String id, String label, IconData icon})>[
   (
     id: 'screens_in_bed',
     label: 'Screens in bed',
-    icon: Icons.phone_iphone_rounded,
+    icon: CupertinoIcons.device_phone_portrait,
   ),
   (id: 'sick', label: 'Sick', icon: Icons.sick_outlined),
-  (id: 'travel', label: 'Travel', icon: Icons.flight_rounded),
+  (id: 'travel', label: 'Travel', icon: CupertinoIcons.airplane),
 ];
 
 /// "alcohol and late meal", in the offered order.

@@ -426,7 +426,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       _Card(
                         children: [
                           _SwitchRow(
-                            icon: Icons.loop_rounded,
+                            icon: CupertinoIcons.arrow_2_circlepath,
                             label: 'Habit',
                             detail: 'A small thing you do most days',
                             value: _habit,
@@ -452,7 +452,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             child: Row(
                               children: [
                                 const Icon(
-                                  Icons.flag_outlined,
+                                  CupertinoIcons.flag,
                                   color: _purple,
                                   size: 23,
                                 ),
@@ -471,7 +471,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                   onPressed: _target > 1
                                       ? () => setState(() => _target--)
                                       : null,
-                                  icon: const Icon(Icons.remove_circle_outline),
+                                  icon: const Icon(CupertinoIcons.minus_circle),
                                 ),
                                 SizedBox(
                                   width: 28,
@@ -491,7 +491,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                   onPressed: _target < 20
                                       ? () => setState(() => _target++)
                                       : null,
-                                  icon: const Icon(Icons.add_circle_outline),
+                                  icon: const Icon(CupertinoIcons.plus_circle),
                                 ),
                               ],
                             ),
@@ -517,7 +517,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       _Card(
                         children: [
                           _Row(
-                            icon: Icons.timer_outlined,
+                            icon: CupertinoIcons.timer,
                             label: 'Estimated duration',
                             value: _planning['minutes'] == null
                                 ? 'Not set'
@@ -541,7 +541,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             },
                           ),
                           _Row(
-                            icon: Icons.bar_chart_rounded,
+                            icon: CupertinoIcons.chart_bar_fill,
                             label: 'Effort (optional)',
                             value:
                                 (_planning['effort'] != null &&
@@ -623,7 +623,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             onTap: _pickDate,
                           ),
                           _Row(
-                            icon: Icons.schedule_rounded,
+                            icon: CupertinoIcons.clock,
                             label: 'Time',
                             value: _time?.format(context) ?? 'Add time',
                             onTap: _pickTime,
@@ -662,7 +662,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                               child: const Text('Remove time'),
                             ),
                           _SwitchRow(
-                            icon: Icons.event_available_rounded,
+                            icon: CupertinoIcons.calendar_badge_plus,
                             label: 'Add to calendar',
                             detail: 'Create an event in your calendar',
                             value: _addToCalendar,

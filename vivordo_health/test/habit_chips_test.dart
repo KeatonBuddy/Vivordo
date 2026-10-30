@@ -92,7 +92,7 @@ void main() {
     final water = tester.getSemantics(find.bySemanticsLabel(RegExp('^Water')));
     expect(
       water,
-      containsSemantics(
+      isSemantics(
         isButton: true,
         hasTapAction: true,
         customActions: [const CustomSemanticsAction(label: 'Remove one')],
@@ -102,7 +102,7 @@ void main() {
     expect(
       tester.getSemantics(find.bySemanticsLabel(RegExp('^Walk'))),
       isNot(
-        containsSemantics(
+        isSemantics(
           customActions: [const CustomSemanticsAction(label: 'Remove one')],
         ),
       ),

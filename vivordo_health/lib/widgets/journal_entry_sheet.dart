@@ -357,7 +357,9 @@ class _JournalEntrySheetState extends State<JournalEntrySheet>
               child: Row(
                 children: [
                   Icon(
-                    _shared ? Icons.groups_rounded : CupertinoIcons.lock_fill,
+                    _shared
+                        ? CupertinoIcons.person_3_fill
+                        : CupertinoIcons.lock_fill,
                     size: 16,
                     color: colors.textSecondary,
                   ),

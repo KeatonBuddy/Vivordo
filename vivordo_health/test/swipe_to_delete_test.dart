@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -17,7 +18,7 @@ void main() {
       tester,
       SwipeToDelete(
         actionLabel: 'Hide',
-        actionIcon: Icons.visibility_off_outlined,
+        actionIcon: CupertinoIcons.eye_slash,
         confirmTitle: null,
         onDelete: () async => hidden++,
         child: const SizedBox(height: 56, child: Text('Plan my day')),

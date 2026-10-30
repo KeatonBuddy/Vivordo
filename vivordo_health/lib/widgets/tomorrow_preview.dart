@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../src/services/daily_priority_service.dart';
@@ -161,7 +162,7 @@ class TomorrowPreview extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 7),
             child: Row(
               children: [
-                const Icon(Icons.event_outlined, color: purple, size: 18),
+                const Icon(CupertinoIcons.calendar, color: purple, size: 18),
                 const SizedBox(width: 7),
                 Expanded(
                   child: Column(
@@ -226,8 +227,8 @@ class TomorrowPreview extends StatelessWidget {
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
                 icon: Icon(
                   priority.completed
-                      ? Icons.check_circle
-                      : Icons.radio_button_unchecked,
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
                   color: purple,
                   size: 22,
                 ),

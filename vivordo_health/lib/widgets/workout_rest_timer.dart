@@ -196,7 +196,7 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
               IconButton.outlined(
                 tooltip: 'Subtract 15 seconds',
                 onPressed: () => _adjust(-15),
-                icon: const Icon(Icons.remove),
+                icon: const Icon(CupertinoIcons.minus),
                 style: adjustStyle,
               ),
               const SizedBox(width: 8),
@@ -207,7 +207,9 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
                   tooltip: running ? 'Pause rest timer' : 'Start rest timer',
                   onPressed: _toggle,
                   icon: Icon(
-                    running ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    running
+                        ? CupertinoIcons.pause_fill
+                        : CupertinoIcons.play_fill,
                   ),
                   iconSize: 28,
                   style: IconButton.styleFrom(

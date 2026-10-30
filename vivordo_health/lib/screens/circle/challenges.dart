@@ -54,7 +54,7 @@ _ChallengeVisual _challengeVisual(BuildContext context, String type) {
       tint: palette.infoTint,
     ),
     'scan_count' => (
-      icon: Icons.monitor_heart_rounded,
+      icon: CupertinoIcons.waveform_path_ecg,
       color: palette.streak,
       tint: palette.streakTint,
     ),
@@ -64,7 +64,7 @@ _ChallengeVisual _challengeVisual(BuildContext context, String type) {
       tint: palette.successTint,
     ),
     'journal_count' => (
-      icon: Icons.menu_book_rounded,
+      icon: CupertinoIcons.book_fill,
       color: palette.pink,
       tint: palette.pinkTint,
     ),
@@ -158,7 +158,7 @@ class _ChallengesTab extends StatelessWidget {
           const _Loading()
         else if (challenges.error != null)
           const _EmptyState(
-            icon: Icons.cloud_off_rounded,
+            icon: CupertinoIcons.cloud,
             title: 'Could not load challenges',
             detail: 'Check your connection, then reopen Circle.',
           )
@@ -182,7 +182,7 @@ class _ChallengesTab extends StatelessWidget {
           const SizedBox(height: 12),
           if (ongoing.isEmpty)
             const _EmptyState(
-              icon: Icons.flag_rounded,
+              icon: CupertinoIcons.flag_fill,
               title: 'No active challenges',
               detail: 'Start one above and invite a friend to join you.',
             )
@@ -477,7 +477,7 @@ class _FinishedChallengeRow extends StatelessWidget {
               ),
               child: Icon(
                 completed
-                    ? Icons.emoji_events_rounded
+                    ? CupertinoIcons.rosette
                     : _challengeVisual(context, membership.type).icon,
                 size: 19,
                 color: completed ? palette.gold : context.muted,
@@ -645,7 +645,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                           const _Loading()
                         else if (details == null)
                           _EmptyState(
-                            icon: Icons.cloud_off_rounded,
+                            icon: CupertinoIcons.cloud,
                             title: 'Could not load challenge details',
                             detail: 'Tap to try again.',
                             onTap: () => setState(() => _details = _load()),
@@ -866,7 +866,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
             ),
             child: Icon(
               completed
-                  ? Icons.emoji_events_rounded
+                  ? CupertinoIcons.rosette
                   : _challengeVisual(context, membership.type).icon,
               size: 48,
               color: completed ? palette.gold : context.muted,
@@ -1247,7 +1247,7 @@ class _CreatorNoteCard extends StatelessWidget {
             tooltip: 'Report note',
             visualDensity: VisualDensity.compact,
             onPressed: onReport,
-            icon: Icon(Icons.flag_outlined, size: 18, color: context.muted),
+            icon: Icon(CupertinoIcons.flag, size: 18, color: context.muted),
           ),
       ],
     ),
@@ -1321,7 +1321,7 @@ class _StandingRow extends StatelessWidget {
                   if (done) ...[
                     const SizedBox(width: 5),
                     Icon(
-                      Icons.check_circle_rounded,
+                      CupertinoIcons.checkmark_circle_fill,
                       size: 16,
                       color: context.circle.success,
                     ),

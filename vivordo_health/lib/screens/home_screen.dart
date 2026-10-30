@@ -105,7 +105,7 @@ class _AvatarStack extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           )
-        : Icon(Icons.person_add_alt_1_rounded, color: foreground, size: 15);
+        : Icon(CupertinoIcons.person_badge_plus, color: foreground, size: 15);
     final photoUrl = person.photoUrl;
     return Container(
       width: _size,
@@ -1550,7 +1550,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             Expanded(
               child: _vital(
-                icon: Icons.bedtime_rounded,
+                icon: CupertinoIcons.moon_fill,
                 color: accentPurple,
                 value: sleepHours == null ? null : _sleepLabel(sleepHours),
                 label: 'Sleep',
@@ -1561,7 +1561,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _divider(),
             Expanded(
               child: _vital(
-                icon: Icons.favorite_rounded,
+                icon: CupertinoIcons.heart_fill,
                 color: _heartRed,
                 value: heartRate?.toString(),
                 label: heartRate == null ? 'Heart rate' : 'bpm',
@@ -1574,7 +1574,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Selector<ThemeController, bool>(
                 selector: (_, c) => c.showScoreNumbers,
                 builder: (context, showNumbers, _) => _vital(
-                  icon: Icons.mood_rounded,
+                  icon: CupertinoIcons.smiley,
                   color: _moodOrange,
                   // Words mode shows the check-in's word, not its score.
                   value: moodScore == null
@@ -2056,7 +2056,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.favorite_border_rounded,
+                          CupertinoIcons.heart,
                           color: accentPurple,
                           size: 15,
                         ),
@@ -2957,7 +2957,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.only(top: 3),
                 child: Icon(
-                  Icons.check_circle_rounded,
+                  CupertinoIcons.checkmark_circle_fill,
                   size: 9,
                   color: colors.textSecondary,
                 ),
@@ -3324,7 +3324,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final rows = <Widget>[
       if (sleepHours != null)
         HomeInsightRow(
-          icon: Icons.nightlight_round,
+          icon: CupertinoIcons.moon_fill,
           color: accentPurple,
           title: _getSleepInsightTitle(sleepHours),
           subtitle: '${_sleepLabel(sleepHours)} of sleep recorded',
@@ -3427,7 +3427,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     if (events.isEmpty) {
       return const _ScheduleInsight(
-        icon: Icons.event_available_rounded,
+        icon: CupertinoIcons.calendar_badge_plus,
         color: greenColor,
         title: 'Light schedule today',
         subtitle:
@@ -3480,7 +3480,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (tightTransitions >= 2) {
       return _ScheduleInsight(
-        icon: Icons.event_busy_rounded,
+        icon: CupertinoIcons.calendar_badge_minus,
         color: orangeColor,
         title: 'Back-to-back schedule block',
         subtitle:
@@ -3500,7 +3500,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (afternoonEvents >= 3) {
       return _ScheduleInsight(
-        icon: Icons.wb_sunny_rounded,
+        icon: CupertinoIcons.sun_max_fill,
         color: const Color(0xFFFF9500),
         title: 'Busy afternoon ahead',
         subtitle:
@@ -3511,7 +3511,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final longest = longestEvent;
     if (longest != null && longest.duration.inMinutes >= 90) {
       return _ScheduleInsight(
-        icon: Icons.timelapse_rounded,
+        icon: CupertinoIcons.timer,
         color: const Color(0xFF007AFF),
         title: 'Long calendar block today',
         subtitle:
@@ -3520,7 +3520,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     return _ScheduleInsight(
-      icon: Icons.event_note_rounded,
+      icon: CupertinoIcons.calendar,
       color: const Color(0xFF007AFF),
       title: 'Balanced schedule today',
       subtitle:
@@ -3946,7 +3946,7 @@ class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.local_fire_department_rounded,
+                    CupertinoIcons.flame_fill,
                     size: 15,
                     color: Colors.orange,
                   ),

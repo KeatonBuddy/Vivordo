@@ -420,7 +420,7 @@ class _CalendarEventSummarySheetState
                         children: [
                           if (typeEvent != null)
                             _SummaryDetailRow(
-                              icon: Icons.tune_rounded,
+                              icon: CupertinoIcons.slider_horizontal_3,
                               label: 'Type',
                               value: score == null
                                   ? ''
@@ -432,7 +432,7 @@ class _CalendarEventSummarySheetState
                               onTap: score == null ? null : _changeType,
                             ),
                           _SummaryDetailRow(
-                            icon: Icons.repeat_rounded,
+                            icon: CupertinoIcons.repeat,
                             label: 'Repeats',
                             value: _event.isRecurring
                                 ? 'Repeating'
@@ -441,7 +441,7 @@ class _CalendarEventSummarySheetState
                           ),
                           if (points != null)
                             _SummaryDetailRow(
-                              icon: Icons.bolt_rounded,
+                              icon: CupertinoIcons.bolt_fill,
                               label: started ? 'Effort' : 'Demand',
                               value: _pointsLabel(points, ended),
                               showDivider: false,
@@ -621,7 +621,7 @@ class _HeartRateNote extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Icon(Icons.favorite_rounded, color: _heartRed, size: 19),
+          const Icon(CupertinoIcons.heart_fill, color: _heartRed, size: 19),
           const SizedBox(width: 8),
           Text(
             'Heart rate',
@@ -708,7 +708,7 @@ class _HeartRateCardState extends State<_HeartRateCard> {
                   children: reading == null
                       ? [
                           const Icon(
-                            Icons.favorite_rounded,
+                            CupertinoIcons.heart_fill,
                             color: _heartRed,
                             size: 19,
                           ),
@@ -1049,7 +1049,7 @@ class _TrendRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                p.high ? Icons.trending_up_rounded : Icons.spa_outlined,
+                p.high ? CupertinoIcons.arrow_up_right : Icons.spa_outlined,
                 color: color,
                 size: 22,
               ),

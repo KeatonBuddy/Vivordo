@@ -592,7 +592,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
             onPressed: insight.busy
                 ? null
                 : insight.onAction ?? () => widget.onAsk(insight.prompt),
-            icon: const Icon(Icons.chat_bubble_outline),
+            icon: const Icon(CupertinoIcons.chat_bubble),
             label: Text(insight.actionLabel ?? 'Ask Vivordo AI'),
           ),
         ],

@@ -171,7 +171,11 @@ class _EventTypeSectionState extends State<EventTypeSection> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               child: Row(
                 children: [
-                  const Icon(Icons.tune_rounded, color: _purple, size: 23),
+                  const Icon(
+                    CupertinoIcons.slider_horizontal_3,
+                    color: _purple,
+                    size: 23,
+                  ),
                   const SizedBox(width: 14),
                   Text(
                     'Type',

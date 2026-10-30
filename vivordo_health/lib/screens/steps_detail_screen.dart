@@ -380,7 +380,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Row(
         children: [
-          _iconBubble(Icons.route_rounded, const Color(0xFF20B26B)),
+          _iconBubble(CupertinoIcons.map, const Color(0xFF20B26B)),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

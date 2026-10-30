@@ -44,19 +44,19 @@ String reviewLineDetailNamed(ReviewLine line) => reviewLineDetail(
 
 IconData _icon(String kind) => switch (kind) {
   'sick' => Icons.sick_outlined,
-  'travel' => Icons.flight_rounded,
-  'heavyDay' => Icons.trending_up_rounded,
-  'bigDay' => Icons.bolt_rounded,
-  'meeting' => Icons.groups_outlined,
-  'lateNight' => Icons.nightlight_outlined,
-  'lieIn' => Icons.wb_twilight_outlined,
-  'afterHours' => Icons.schedule_rounded,
+  'travel' => CupertinoIcons.airplane,
+  'heavyDay' => CupertinoIcons.arrow_up_right,
+  'bigDay' => CupertinoIcons.bolt_fill,
+  'meeting' => CupertinoIcons.person_3,
+  'lateNight' => CupertinoIcons.moon,
+  'lieIn' => CupertinoIcons.sunset,
+  'afterHours' => CupertinoIcons.clock,
   'training' => Icons.fitness_center_rounded,
-  'priority' => Icons.flag_outlined,
-  'sleep' => Icons.bedtime_outlined,
-  'fixes' => Icons.auto_fix_high_rounded,
+  'priority' => CupertinoIcons.flag,
+  'sleep' => CupertinoIcons.moon,
+  'fixes' => CupertinoIcons.wand_stars,
   'calm' => Icons.spa_outlined,
-  _ => Icons.circle_outlined,
+  _ => CupertinoIcons.circle,
 };
 
 Color _nextColor(String label) => switch (label) {
@@ -513,7 +513,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                     ),
                   );
                 },
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                icon: const Icon(CupertinoIcons.chat_bubble, size: 18),
                 label: const Text('Plan next week with Vivordo AI'),
                 style: FilledButton.styleFrom(
                   backgroundColor: _purple.withValues(alpha: .14),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -162,7 +163,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.mark_email_unread_rounded,
+                  CupertinoIcons.envelope_badge,
                   color: accentPurple,
                   size: 40,
                 ),

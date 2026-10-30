@@ -271,7 +271,7 @@ class _AchievementsLinkCardState extends State<_AchievementsLinkCard> {
         child: Row(
           children: [
             _IconTile(
-              icon: Icons.workspace_premium_rounded,
+              icon: CupertinoIcons.star_circle_fill,
               color: context.circle.accent,
               background: context.circle.accentTint,
               size: 44,
@@ -594,7 +594,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
             const SizedBox(height: 12),
             if (tiered.isEmpty)
               const _EmptyState(
-                icon: Icons.filter_alt_off_rounded,
+                icon: CupertinoIcons.line_horizontal_3_decrease,
                 title: 'Nothing matches this filter',
               )
             else
@@ -623,7 +623,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
             const SizedBox(height: 12),
             if (oneTime.isEmpty)
               const _EmptyState(
-                icon: Icons.filter_alt_off_rounded,
+                icon: CupertinoIcons.line_horizontal_3_decrease,
                 title: 'Nothing matches this filter',
               )
             else
@@ -835,7 +835,7 @@ class _OneTimeAchievementTile extends StatelessWidget {
           children: [
             Icon(
               achievement.earned
-                  ? Icons.check_circle_rounded
+                  ? CupertinoIcons.checkmark_circle_fill
                   : CupertinoIcons.lock_fill,
               size: 13,
               color: achievement.earned
@@ -914,7 +914,7 @@ class _AchievementBadge extends StatelessWidget {
         height: size,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => _IconTile(
-          icon: Icons.emoji_events_rounded,
+          icon: CupertinoIcons.rosette,
           color: context.circle.accent,
           background: context.circle.accentTint,
           size: size,

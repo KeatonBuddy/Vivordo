@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -156,7 +157,7 @@ class TimelineRow extends StatelessWidget {
             child: Row(
               children: [
                 const Icon(
-                  Icons.battery_2_bar_rounded,
+                  CupertinoIcons.battery_25,
                   size: 13,
                   color: Color(0xFFEF9F27),
                 ),
@@ -211,8 +212,8 @@ class TimelineRow extends StatelessWidget {
                         if (completed != null) ...[
                           Icon(
                             done
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_unchecked_rounded,
+                                ? CupertinoIcons.checkmark_circle_fill
+                                : CupertinoIcons.circle,
                             color: done
                                 ? timelineDoneGreen
                                 : colors.textSecondary,

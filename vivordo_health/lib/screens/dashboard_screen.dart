@@ -2,7 +2,8 @@ import 'dart:async';
 import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:provider/provider.dart';
@@ -531,7 +532,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         onPressed: _isLoadingMetricOrder
                             ? null
                             : _showLayoutEditor,
-                        icon: const Icon(Icons.tune_rounded, size: 18),
+                        icon: const Icon(
+                          CupertinoIcons.slider_horizontal_3,
+                          size: 18,
+                        ),
                         label: const Text('Customize'),
                         style: TextButton.styleFrom(
                           foregroundColor: accentPurple,
@@ -934,7 +938,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.tune_rounded, color: accentPurple),
+          const Icon(CupertinoIcons.slider_horizontal_3, color: accentPurple),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1045,7 +1049,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final rows = insights.isEmpty
         ? [
             _insightRow(
-              icon: Icons.insights_rounded,
+              icon: CupertinoIcons.chart_bar_alt_fill,
               color: accentPurple,
               text:
                   'Insights appear after about a week of sleep and activity '
@@ -1056,10 +1060,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             for (final insight in insights)
               _insightRow(
                 icon: switch (insight.kind) {
-                  MetricsInsightKind.sleep => Icons.bedtime_rounded,
-                  MetricsInsightKind.energy => Icons.bolt_rounded,
-                  MetricsInsightKind.effort => Icons.event_note_rounded,
-                  MetricsInsightKind.afterHours => Icons.nights_stay_rounded,
+                  MetricsInsightKind.sleep => CupertinoIcons.moon_fill,
+                  MetricsInsightKind.energy => CupertinoIcons.bolt_fill,
+                  MetricsInsightKind.effort => CupertinoIcons.calendar,
+                  MetricsInsightKind.afterHours =>
+                    CupertinoIcons.moon_stars_fill,
                   MetricsInsightKind.physical => Icons.directions_run_rounded,
                 },
                 color: switch (insight.tone) {
@@ -1407,7 +1412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Icon(
-                                        Icons.drag_indicator_rounded,
+                                        CupertinoIcons.line_horizontal_3,
                                         color:
                                             context.vivordoColors.textSecondary,
                                       ),
@@ -1520,36 +1525,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'steps':
         return Icons.directions_walk_rounded;
       case 'active_calories':
-        return Icons.local_fire_department_rounded;
+        return CupertinoIcons.flame_fill;
       case 'exercise_time':
         return Icons.fitness_center_rounded;
       case 'heart_rate':
       case 'heart_rate_scan':
-        return Icons.favorite_rounded;
+        return CupertinoIcons.heart_fill;
       case 'resting_heart_rate':
-        return Icons.favorite_border_rounded;
+        return CupertinoIcons.heart;
       case 'hrv':
-        return Icons.show_chart_rounded;
+        return CupertinoIcons.graph_square;
       case 'blood_oxygen':
-        return Icons.air_rounded;
+        return CupertinoIcons.wind;
       case 'respiratory_rate':
-        return Icons.wind_power_rounded;
+        return CupertinoIcons.wind;
       case 'sleep':
-        return Icons.bedtime_rounded;
+        return CupertinoIcons.moon_fill;
       case 'weight':
         return Icons.monitor_weight_rounded;
       case 'body_fat':
-        return Icons.percent_rounded;
+        return CupertinoIcons.percent;
       case 'vo2max':
-        return Icons.speed_rounded;
+        return CupertinoIcons.speedometer;
       case 'stress':
-        return Icons.psychology_rounded;
+        return CupertinoIcons.lightbulb_fill;
       case 'mood':
-        return Icons.mood_rounded;
+        return CupertinoIcons.smiley;
       case 'wellness':
         return Icons.spa_rounded;
       default:
-        return Icons.monitor_heart_outlined;
+        return CupertinoIcons.waveform_path_ecg;
     }
   }
 
@@ -1565,7 +1570,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         children: [
           Icon(
-            Icons.bar_chart_rounded,
+            CupertinoIcons.chart_bar_fill,
             size: 48,
             color: context.vivordoColors.textSecondary,
           ),
@@ -1593,7 +1598,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     context,
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
-                  icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                  icon: const Icon(
+                    CupertinoIcons.shield_lefthalf_fill,
+                    size: 16,
+                  ),
                   label: const Text('Connect Health'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accentPurple,

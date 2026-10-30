@@ -58,7 +58,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
                     const SizedBox(height: 18),
                     FilledButton.icon(
                       onPressed: () => _challenge(profile),
-                      icon: const Icon(Icons.emoji_events_rounded, size: 19),
+                      icon: const Icon(CupertinoIcons.rosette, size: 19),
                       label: Text('Challenge ${profile.username}'),
                       style: _primaryButtonStyle(),
                     ),
@@ -349,7 +349,7 @@ class _ProfileHero extends StatelessWidget {
                 right: -2,
                 bottom: 2,
                 child: _IconCircleButton(
-                  icon: Icons.camera_alt_rounded,
+                  icon: CupertinoIcons.camera_fill,
                   tooltip: 'Change photo',
                   filled: true,
                   onTap: onEdit,

@@ -399,8 +399,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   padding: const EdgeInsets.only(right: 6),
                   child: Icon(
                     difference > 0
-                        ? Icons.arrow_upward_rounded
-                        : Icons.arrow_downward_rounded,
+                        ? CupertinoIcons.arrow_up
+                        : CupertinoIcons.arrow_down,
                     size: 18,
                     color: difference > 0 ? _up(context) : _down(context),
                   ),
@@ -437,7 +437,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               if (confidence != null)
                 _chip(
                   icon: grey
-                      ? Icons.error_outline_rounded
+                      ? CupertinoIcons.exclamationmark_circle
                       : CupertinoIcons.checkmark,
                   iconColor: grey ? _up(context) : _down(context),
                   text: [
@@ -755,18 +755,18 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
   }
 
   IconData _icon(StressSignalKind kind) => switch (kind) {
-    StressSignalKind.feel => Icons.sentiment_satisfied_rounded,
-    StressSignalKind.sleep => Icons.bedtime_rounded,
-    StressSignalKind.hrv => Icons.monitor_heart_rounded,
-    StressSignalKind.heartRate => Icons.favorite_rounded,
-    StressSignalKind.breathing => Icons.air_rounded,
+    StressSignalKind.feel => CupertinoIcons.smiley,
+    StressSignalKind.sleep => CupertinoIcons.moon_fill,
+    StressSignalKind.hrv => CupertinoIcons.waveform_path_ecg,
+    StressSignalKind.heartRate => CupertinoIcons.heart_fill,
+    StressSignalKind.breathing => CupertinoIcons.wind,
     StressSignalKind.sitting => Icons.event_seat_rounded,
-    StressSignalKind.timeOfDay => Icons.schedule_rounded,
+    StressSignalKind.timeOfDay => CupertinoIcons.clock,
     StressSignalKind.activity => Icons.directions_walk_rounded,
     StressSignalKind.mindfulness => Icons.self_improvement_rounded,
-    StressSignalKind.calendar => Icons.event_note_rounded,
-    StressSignalKind.bloodOxygen => Icons.water_drop_rounded,
-    StressSignalKind.other => Icons.insights_rounded,
+    StressSignalKind.calendar => CupertinoIcons.calendar,
+    StressSignalKind.bloodOxygen => CupertinoIcons.drop_fill,
+    StressSignalKind.other => CupertinoIcons.chart_bar_alt_fill,
   };
 
   // ── A next step ────────────────────────────────────────────────────────────
@@ -790,7 +790,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.auto_awesome_rounded,
+                  CupertinoIcons.sparkles,
                   size: 20,
                   color: _purple,
                 ),
@@ -1307,7 +1307,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                         Icon(
                           s.measured
                               ? CupertinoIcons.checkmark
-                              : Icons.radio_button_unchecked_rounded,
+                              : CupertinoIcons.circle,
                           size: 16,
                           color: s.measured
                               ? _down(context)
@@ -1369,7 +1369,11 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(Icons.sync_rounded, size: 16, color: colors.textSecondary),
+              Icon(
+                CupertinoIcons.arrow_2_circlepath,
+                size: 16,
+                color: colors.textSecondary,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

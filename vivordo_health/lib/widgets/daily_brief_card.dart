@@ -238,7 +238,7 @@ enum BriefTone { good, usual, low }
   required bool tracksSleep,
 }) => beforeSleep
     ? (
-        icon: Icons.bedtime_rounded,
+        icon: CupertinoIcons.moon_fill,
         label: 'Ready after you sleep',
         word: 'After you sleep',
         footer: "Today's sleep is still ahead",
@@ -246,20 +246,20 @@ enum BriefTone { good, usual, low }
     : sleepRecorded
     // Last night arrived; the server's Capacity follows in a moment.
     ? (
-        icon: Icons.hourglass_top_rounded,
+        icon: CupertinoIcons.hourglass,
         label: 'Working it out',
         word: 'Working it out',
         footer: "Updating with last night's sleep",
       )
     : tracksSleep
     ? (
-        icon: Icons.sync_rounded,
+        icon: CupertinoIcons.arrow_2_circlepath,
         label: 'Waiting for sleep · check in now',
         word: 'Waiting for sleep',
         footer: "Waiting for last night's sleep",
       )
     : (
-        icon: Icons.favorite_border_rounded,
+        icon: CupertinoIcons.heart,
         label: 'Connect Health or check in',
         word: 'Connect Health',
         footer: 'No health data yet',

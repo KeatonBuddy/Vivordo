@@ -141,7 +141,7 @@ void main() {
     );
     expect(
       tester.getSemantics(find.byType(SwipeToDelete)),
-      containsSemantics(
+      isSemantics(
         customActions: [const CustomSemanticsAction(label: 'Delete')],
       ),
     );

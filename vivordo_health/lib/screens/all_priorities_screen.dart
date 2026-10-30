@@ -507,7 +507,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                icon ?? Icons.loop_rounded,
+                icon ?? CupertinoIcons.arrow_2_circlepath,
                 color: VivordoTheme.brand,
                 size: 18,
               ),
@@ -537,7 +537,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
             ),
             if (streak >= 1) ...[
               const Icon(
-                Icons.local_fire_department_rounded,
+                CupertinoIcons.flame_fill,
                 color: Color(0xFFF5A524),
                 size: 16,
               ),
@@ -605,7 +605,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
-                Icons.repeat_rounded,
+                CupertinoIcons.repeat,
                 color: VivordoTheme.brand,
                 size: 18,
               ),
@@ -817,7 +817,7 @@ class _PriorityTile extends StatelessWidget {
               child: Tooltip(
                 message: 'On your calendar',
                 child: Icon(
-                  Icons.event_outlined,
+                  CupertinoIcons.calendar,
                   color: colors.textSecondary,
                   size: 18,
                 ),

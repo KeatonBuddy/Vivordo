@@ -370,9 +370,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       primary: 'Continue',
       onPrimary: _busy ? null : () => _next(),
       children: const [
-        _Bullet(Icons.bolt_rounded, 'Capacity', 'the energy you have today'),
         _Bullet(
-          Icons.event_note_rounded,
+          CupertinoIcons.bolt_fill,
+          'Capacity',
+          'the energy you have today',
+        ),
+        _Bullet(
+          CupertinoIcons.calendar,
           'Your Day',
           "what's ahead and what it took",
         ),
@@ -382,7 +386,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           'your fitness and habits',
         ),
         _Bullet(
-          Icons.warning_amber_rounded,
+          CupertinoIcons.exclamationmark_triangle,
           'Burnout check',
           'an early warning when things pile up',
         ),
@@ -559,7 +563,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
     OnboardingStep.health => _StepLayout(
-      icon: Icons.favorite_rounded,
+      icon: CupertinoIcons.heart_fill,
       iconColor: const Color(0xFFE24B4A),
       kicker: 'Connect',
       title: 'Connect $_healthName',
@@ -575,12 +579,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       children: [
         if (_healthConnected) const _Connected('Connected'),
         const _Bullet(
-          Icons.bedtime_rounded,
+          CupertinoIcons.moon_fill,
           'Sleep',
           'Capacity and Physical Health',
         ),
         const _Bullet(
-          Icons.monitor_heart_rounded,
+          CupertinoIcons.waveform_path_ecg,
           'Resting heart rate and HRV',
           'Capacity and the burnout check',
         ),
@@ -589,7 +593,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           'Steps and exercise',
           'Effort and Physical Health',
         ),
-        const _Bullet(Icons.air_rounded, 'Cardio fitness', 'Physical Health'),
+        const _Bullet(CupertinoIcons.wind, 'Cardio fitness', 'Physical Health'),
       ],
     ),
     OnboardingStep.wearables => _StepLayout(
@@ -683,7 +687,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
     OnboardingStep.ai => _StepLayout(
-      icon: Icons.auto_awesome_rounded,
+      icon: CupertinoIcons.sparkles,
       iconColor: const Color(0xFF534AB7),
       kicker: 'Privacy',
       title: 'Vivordo AI',
@@ -779,14 +783,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
             ),
           ),
           SizedBox(height: 10),
-          _Bullet(Icons.wb_sunny_rounded, 'Tomorrow', 'your first Capacity'),
+          _Bullet(
+            CupertinoIcons.sun_max_fill,
+            'Tomorrow',
+            'your first Capacity',
+          ),
           _Bullet(
             Icons.directions_run_rounded,
             'In 2 weeks',
             'your Physical Health score',
           ),
           _Bullet(
-            Icons.warning_amber_rounded,
+            CupertinoIcons.exclamationmark_triangle,
             'In about 6 weeks',
             'the burnout check, once it knows your normal',
           ),
@@ -1331,8 +1339,8 @@ class _ScoreStyleOption extends StatelessWidget {
             const SizedBox(width: 10),
             Icon(
               selected
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
+                  ? CupertinoIcons.checkmark_circle_fill
+                  : CupertinoIcons.circle,
               color: selected ? _purple : context.vivordoColors.border,
             ),
           ],
@@ -1456,7 +1464,10 @@ class _Connected extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 16),
     child: Row(
       children: [
-        const Icon(Icons.check_circle_rounded, color: Color(0xFF1D9E75)),
+        const Icon(
+          CupertinoIcons.checkmark_circle_fill,
+          color: Color(0xFF1D9E75),
+        ),
         const SizedBox(width: 8),
         Text(
           label,
@@ -1495,7 +1506,7 @@ class _HistoryRow extends StatelessWidget {
           height: 22,
           child: switch (state) {
             _HistoryState.done => const Icon(
-              Icons.check_circle_rounded,
+              CupertinoIcons.checkmark_circle_fill,
               color: Color(0xFF1D9E75),
               size: 22,
             ),
@@ -1504,7 +1515,7 @@ class _HistoryRow extends StatelessWidget {
               child: CupertinoActivityIndicator(color: _purple),
             ),
             _HistoryState.waiting => Icon(
-              Icons.circle_outlined,
+              CupertinoIcons.circle,
               color: context.vivordoColors.border,
               size: 22,
             ),

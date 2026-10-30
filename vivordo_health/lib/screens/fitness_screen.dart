@@ -321,7 +321,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                           onPressed: _openGoals,
                           tooltip: 'Goals',
                           icon: const Icon(
-                            Icons.track_changes_rounded,
+                            CupertinoIcons.scope,
                             color: _purple,
                           ),
                         ),
@@ -359,7 +359,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                             onPressed: _startWorkout,
                             icon: Icon(
                               isWorkoutRunning && _activeWorkoutDraft != null
-                                  ? Icons.timer_outlined
+                                  ? CupertinoIcons.timer
                                   : Icons.fitness_center_rounded,
                             ),
                             label: _WorkoutButtonLabel(
@@ -803,7 +803,7 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
             snapshot.data ?? const [],
           );
           return _PillButton(
-            icon: Icons.local_fire_department_rounded,
+            icon: CupertinoIcons.flame_fill,
             label: '$streak-day streak',
             color: Colors.orange,
           );
@@ -1186,7 +1186,7 @@ class _SuggestRoutineRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Icon(
-                    Icons.auto_awesome_rounded,
+                    CupertinoIcons.sparkles,
                     color: _purple,
                     size: 19,
                   ),
@@ -2023,7 +2023,7 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.track_changes_rounded, color: Colors.white, size: 32),
+              Icon(CupertinoIcons.scope, color: Colors.white, size: 32),
               SizedBox(height: 12),
               Text(
                 'Build consistency',
@@ -2935,7 +2935,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           TextButton.icon(
             onPressed: _addSavedWorkout,
             style: TextButton.styleFrom(foregroundColor: _purple),
-            icon: const Icon(Icons.playlist_add_rounded),
+            icon: const Icon(CupertinoIcons.text_badge_plus),
             label: const Text(
               'Add saved workout',
               style: TextStyle(fontWeight: FontWeight.w800),
@@ -3269,7 +3269,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
                         const Tooltip(
                           message: 'Suggested by Vivordo AI',
                           child: Icon(
-                            Icons.auto_awesome_rounded,
+                            CupertinoIcons.sparkles,
                             size: 15,
                             color: _purple,
                           ),
@@ -3307,7 +3307,9 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
                 color: Colors.redAccent,
               ),
               Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                selected
+                    ? CupertinoIcons.checkmark_circle_fill
+                    : CupertinoIcons.circle,
                 color: selected ? _purple : _muted,
               ),
             ],
@@ -3585,7 +3587,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             ),
             child: const Row(
               children: [
-                Icon(Icons.timer_outlined, color: _purple, size: 20),
+                Icon(CupertinoIcons.timer, color: _purple, size: 20),
                 SizedBox(width: 9),
                 Expanded(
                   child: Text(
@@ -3618,7 +3620,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                       child: CupertinoActivityIndicator(radius: 10),
                     )
                   else
-                    const Icon(Icons.route_rounded, color: _purple, size: 20),
+                    const Icon(CupertinoIcons.map, color: _purple, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -4507,12 +4509,14 @@ class _ExercisePickerRow extends StatelessWidget {
                   : 'Add to favourites',
               onPressed: onFavourite,
               icon: Icon(
-                favourite ? Icons.star_rounded : Icons.star_border_rounded,
+                favourite ? CupertinoIcons.star_fill : CupertinoIcons.star,
                 color: favourite ? _purple : _muted,
               ),
             ),
             Icon(
-              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              selected
+                  ? CupertinoIcons.checkmark_circle_fill
+                  : CupertinoIcons.circle,
               color: selected ? _purple : _muted,
             ),
           ],
@@ -4536,7 +4540,7 @@ class _ExerciseIcon extends StatelessWidget {
       'Core' => (Icons.self_improvement_rounded, const Color(0xFFE94B9A)),
       'Cardio' => (Icons.directions_run_rounded, const Color(0xFFF43F5E)),
       'Sports' => (Icons.sports_basketball_rounded, const Color(0xFF2563EB)),
-      'Shoulders' => (Icons.accessibility_new_rounded, const Color(0xFF9B51E0)),
+      'Shoulders' => (CupertinoIcons.person_fill, const Color(0xFF9B51E0)),
       _ => (Icons.fitness_center_rounded, _purple),
     };
     return Container(

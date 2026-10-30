@@ -520,8 +520,8 @@ class _PlanTile extends StatelessWidget {
                 ),
                 Icon(
                   selected
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked_rounded,
+                      ? CupertinoIcons.checkmark_circle_fill
+                      : CupertinoIcons.circle,
                   color: selected
                       ? _purple
                       : context.vivordoColors.textSecondary.withValues(

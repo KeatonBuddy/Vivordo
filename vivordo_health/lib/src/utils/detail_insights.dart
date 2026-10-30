@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
 /// with their own usual rather than population cut-offs.
@@ -19,9 +18,12 @@ class DetailInsight {
 
 /// The icon and colour a screen's insight card uses for [tone].
 (IconData, Color) insightStyle(InsightTone tone) => switch (tone) {
-  InsightTone.good => (Icons.trending_up_rounded, const Color(0xFF20B26B)),
+  InsightTone.good => (CupertinoIcons.arrow_up_right, const Color(0xFF20B26B)),
   InsightTone.concern => (CupertinoIcons.info, const Color(0xFFE08600)),
-  InsightTone.neutral => (Icons.insights_rounded, const Color(0xFF6B55F5)),
+  InsightTone.neutral => (
+    CupertinoIcons.chart_bar_alt_fill,
+    const Color(0xFF6B55F5),
+  ),
 };
 
 /// Day-keyed values (date only). Days with no data are left out, never 0.

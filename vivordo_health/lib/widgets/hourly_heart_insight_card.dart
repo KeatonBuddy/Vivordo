@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -185,7 +186,7 @@ class HourlyHeartInsightCardState extends State<HourlyHeartInsightCard>
   @override
   Widget build(BuildContext context) => RepaintBoundary(
     child: HomeInsightRow(
-      icon: Icons.monitor_heart_rounded,
+      icon: CupertinoIcons.waveform_path_ecg,
       color: const Color(0xFFFF3B30),
       title: _insight.title,
       subtitle: _insight.subtitle,

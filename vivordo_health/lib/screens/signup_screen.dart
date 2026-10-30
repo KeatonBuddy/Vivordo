@@ -166,7 +166,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 _field(
                   controller: _email,
                   hint: 'you@email.com',
-                  icon: Icons.mail_outline_rounded,
+                  icon: CupertinoIcons.envelope,
                   keyboard: TextInputType.emailAddress,
                   autofill: AutofillHints.email,
                   validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
@@ -184,8 +184,8 @@ class _SignupScreenState extends State<SignupScreen> {
                     tooltip: _showPassword ? 'Hide password' : 'Show password',
                     icon: Icon(
                       _showPassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                          ? CupertinoIcons.eye_slash
+                          : CupertinoIcons.eye,
                       color: context.vivordoColors.textSecondary,
                     ),
                     onPressed: () =>
@@ -405,7 +405,7 @@ class _Requirement extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          met ? Icons.check_circle_rounded : Icons.circle_outlined,
+          met ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
           size: 14,
           color: color,
         ),

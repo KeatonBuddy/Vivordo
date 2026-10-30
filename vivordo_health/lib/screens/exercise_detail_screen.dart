@@ -339,7 +339,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               ),
               Expanded(
                 child: _summaryStat(
-                  Icons.bed_rounded,
+                  CupertinoIcons.bed_double_fill,
                   '$restDays',
                   restDays == 1 ? 'rest day' : 'rest days',
                 ),
@@ -721,7 +721,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                         ),
                         trailing: selected
                             ? const Icon(
-                                Icons.check_circle_rounded,
+                                CupertinoIcons.checkmark_circle_fill,
                                 color: _ExerciseDetailScreenState._purple,
                               )
                             : null,

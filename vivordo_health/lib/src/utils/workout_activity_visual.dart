@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 class WorkoutActivityVisual {
@@ -25,7 +26,7 @@ WorkoutActivityVisual workoutActivityVisual(String name, {String? category}) {
     'volleyball' => Icons.sports_volleyball_rounded,
     'baseball' => Icons.sports_baseball_rounded,
     'golf' => Icons.golf_course_rounded,
-    'dance' => Icons.music_note_rounded,
+    'dance' => CupertinoIcons.music_note,
     'rugby' => Icons.sports_rugby_rounded,
     'swimming' => Icons.pool_rounded,
     'boxing' => Icons.sports_mma_rounded,

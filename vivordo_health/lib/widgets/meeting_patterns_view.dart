@@ -217,7 +217,7 @@ class MeetingPatternsRow extends StatelessWidget {
     } else if (patterns.learning &&
         patterns.measured > 0 &&
         now.weekday == DateTime.monday) {
-      icon = Icons.insights_rounded;
+      icon = CupertinoIcons.chart_bar_alt_fill;
       accent = const Color(0xFF7F77DD);
       title = 'Learning which events get to you';
       subtitle =

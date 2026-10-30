@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -26,18 +27,18 @@ void main() {
     expect(find.text('1:30'), findsOneWidget);
     await tester.tap(find.byTooltip('Subtract 15 seconds'));
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.tap(find.byIcon(CupertinoIcons.play_fill));
     expect(notifications.last, now.add(const Duration(seconds: 75)));
     now = now.add(const Duration(seconds: 20));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('0:55'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.tap(find.byIcon(CupertinoIcons.pause_fill));
     expect(notifications.last, isNull);
     await tester.pump();
     now = now.add(const Duration(minutes: 1));
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('0:55'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+    await tester.tap(find.byIcon(CupertinoIcons.play_fill));
     now = now.add(const Duration(minutes: 2));
     await tester.pump(const Duration(milliseconds: 250));
     // Finished rests go straight back to the chosen length for the next set.

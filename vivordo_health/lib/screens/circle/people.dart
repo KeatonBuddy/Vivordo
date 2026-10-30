@@ -134,7 +134,7 @@ class _PeoplePageState extends State<_PeoplePage> {
                       const _Loading()
                     else if (friends.isEmpty)
                       const _EmptyState(
-                        icon: Icons.groups_rounded,
+                        icon: CupertinoIcons.person_3_fill,
                         title: 'No friends yet',
                         detail:
                             'Search above, or send someone your friend code.',
@@ -289,7 +289,7 @@ class _FriendCodeCard extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: () =>
                     _copy(context, profile.friendCode, 'Friend code copied'),
-                icon: const Icon(Icons.copy_rounded, size: 17),
+                icon: const Icon(CupertinoIcons.doc_on_doc, size: 17),
                 label: const Text('Copy code'),
                 style: FilledButton.styleFrom(
                   backgroundColor: context.vivordoColors.card,
@@ -468,7 +468,7 @@ class _FriendQuickLookSheetState extends State<_FriendQuickLookSheet> {
                           builder: (context, snapshot) {
                             final streak = snapshot.data ?? 0;
                             return _Pill(
-                              icon: Icons.local_fire_department_rounded,
+                              icon: CupertinoIcons.flame_fill,
                               label: streak == 0
                                   ? 'No workout streak'
                                   : '$streak-day workout streak',
@@ -530,7 +530,7 @@ class _FriendQuickLookSheetState extends State<_FriendQuickLookSheet> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: () => _challengeFromSheet(context, profile),
-                      icon: const Icon(Icons.emoji_events_rounded, size: 18),
+                      icon: const Icon(CupertinoIcons.rosette, size: 18),
                       label: const Text('Challenge'),
                       style: _primaryButtonStyle(),
                     ),

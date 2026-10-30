@@ -265,7 +265,7 @@ class _ActiveCaloriesDetailScreenState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.local_fire_department_rounded, _orange),
+              _iconBubble(CupertinoIcons.flame_fill, _orange),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(

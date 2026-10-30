@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -235,7 +236,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                   builder: (_, _) => Opacity(
                     opacity: 0.6 + 0.4 * _pulseController.value,
                     child: const Icon(
-                      Icons.show_chart_rounded,
+                      CupertinoIcons.graph_square,
                       size: 52,
                       color: accentPurple,
                     ),
@@ -324,7 +325,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           children: [
             Expanded(
               child: _buildMetricCard(
-                Icons.favorite_rounded,
+                CupertinoIcons.heart_fill,
                 'Heart Rate',
                 '68 bpm',
                 redColor,
@@ -333,7 +334,7 @@ class _GoalsScreenState extends State<GoalsScreen>
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                Icons.show_chart_rounded,
+                CupertinoIcons.graph_square,
                 'HRV',
                 '52 ms',
                 greenColor,
@@ -342,7 +343,7 @@ class _GoalsScreenState extends State<GoalsScreen>
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
-                Icons.psychology_outlined,
+                CupertinoIcons.lightbulb,
                 'Strain',
                 'Low',
                 accentPurple,

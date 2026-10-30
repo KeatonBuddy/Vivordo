@@ -385,7 +385,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.cloud_off_rounded,
+                        CupertinoIcons.cloud,
                         size: 16,
                         color: colors.textSecondary,
                       ),

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../src/utils/body_reaction.dart';
@@ -16,14 +17,14 @@ bodyReactionStyle(BodyReactionLevel level) => switch (level) {
   ),
   BodyReactionLevel.up => (
     label: 'Heart rate up',
-    icon: Icons.trending_up_rounded,
+    icon: CupertinoIcons.arrow_up_right,
     accent: const Color(0xFFEF9F27),
     fg: const Color(0xFF633806),
     bg: const Color(0xFFFAEEDA),
   ),
   BodyReactionLevel.high => (
     label: 'Heart rate high',
-    icon: Icons.monitor_heart_outlined,
+    icon: CupertinoIcons.waveform_path_ecg,
     accent: const Color(0xFFE0703F),
     fg: const Color(0xFF712B13),
     bg: const Color(0xFFFAECE7),

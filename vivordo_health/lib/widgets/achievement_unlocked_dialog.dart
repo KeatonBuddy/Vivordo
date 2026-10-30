@@ -134,7 +134,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(
-                        Icons.workspace_premium_rounded,
+                        CupertinoIcons.star_circle_fill,
                         color: Color(0xFF9C83FF),
                       ),
                       const SizedBox(width: 10),
@@ -228,7 +228,7 @@ class _CelebrationBadge extends StatelessWidget {
           Align(
             alignment: sparkle.$1,
             child: Icon(
-              Icons.auto_awesome,
+              CupertinoIcons.sparkles,
               color: sparkle.$2,
               size: sparkle.$3,
             ),

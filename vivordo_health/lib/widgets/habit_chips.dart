@@ -178,7 +178,7 @@ class _HabitChip extends StatelessWidget {
                   if (streak >= 2) ...[
                     const SizedBox(width: 6),
                     const Icon(
-                      Icons.local_fire_department_rounded,
+                      CupertinoIcons.flame_fill,
                       color: _streakOrange,
                       size: 15,
                     ),

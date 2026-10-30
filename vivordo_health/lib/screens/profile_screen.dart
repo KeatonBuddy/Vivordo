@@ -1211,7 +1211,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.workspace_premium_rounded,
+                        CupertinoIcons.star_circle_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'Plan and billing',
@@ -1235,7 +1235,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge(Icons.favorite_rounded, _red),
+                      leading: const _IconBadge(
+                        CupertinoIcons.heart_fill,
+                        _red,
+                      ),
                       title: 'Apple Health',
                       status: (
                         selectedMetricCount > 0,
@@ -1271,7 +1274,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _connectionRow(
                       leading: const _IconBadge(
-                        Icons.watch_rounded,
+                        CupertinoIcons.clock_fill,
                         Color(0xFF00B0B9),
                       ),
                       name: 'Fitbit',
@@ -1308,7 +1311,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         _isOutlookCalendarConnected)
                       _SettingsRow(
                         leading: const _IconBadge(
-                          Icons.event_available_rounded,
+                          CupertinoIcons.calendar_badge_plus,
                           VivordoTheme.brand,
                         ),
                         title: 'Default calendar',
@@ -1352,7 +1355,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       children: [
                         _SettingsRow(
                           leading: const _IconBadge(
-                            Icons.monitor_heart_outlined,
+                            CupertinoIcons.waveform_path_ecg,
                             VivordoTheme.brand,
                           ),
                           title: 'Scan reminders',
@@ -1374,7 +1377,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.chat_bubble_outline_rounded,
+                        CupertinoIcons.chat_bubble,
                         _green,
                       ),
                       title: 'End-of-day check-in',
@@ -1389,7 +1392,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.bedtime_outlined,
+                        CupertinoIcons.moon,
                         VivordoTheme.brand,
                       ),
                       title: 'Wind-down reminder',
@@ -1401,7 +1404,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.wb_sunny_outlined,
+                        CupertinoIcons.sun_max,
                         Color(0xFFEF9F27),
                       ),
                       title: 'Morning check-in reminder',
@@ -1416,7 +1419,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.event_note_outlined,
+                        CupertinoIcons.calendar,
                         Color(0xFF7F77DD),
                       ),
                       title: 'Weekly review',
@@ -1431,7 +1434,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.monitor_heart_outlined,
+                        CupertinoIcons.waveform_path_ecg,
                         Color(0xFFE24B4A),
                       ),
                       title: 'Burnout check',
@@ -1467,7 +1470,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.emoji_events_outlined,
+                        CupertinoIcons.rosette,
                         Color(0xFFBA7517),
                       ),
                       title: 'Achievements',
@@ -1484,7 +1487,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge(Icons.group_outlined, _orange),
+                      leading: const _IconBadge(
+                        CupertinoIcons.person_2,
+                        _orange,
+                      ),
                       title: 'Circle',
                       subtitle:
                           'Likes, comments, friend requests and challenges',
@@ -1519,7 +1525,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     const _SettingsRow(
                       leading: _IconBadge(
-                        Icons.brightness_6_rounded,
+                        CupertinoIcons.circle_lefthalf_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'Appearance',
@@ -1527,7 +1533,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.abc_rounded,
+                        CupertinoIcons.textformat_abc,
                         VivordoTheme.brand,
                       ),
                       title: 'Show score numbers',
@@ -1548,7 +1554,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.wb_twilight_rounded,
+                        CupertinoIcons.sunset_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'End of day',
@@ -1564,7 +1570,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     // stays once Home's setup card is gone.
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.bedtime_rounded,
+                        CupertinoIcons.moon_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'Sleep schedule',
@@ -1585,7 +1591,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.tour_rounded,
+                        CupertinoIcons.map,
                         VivordoTheme.brand,
                       ),
                       title: 'Take the tour again',
@@ -1641,7 +1647,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.height_rounded,
+                        CupertinoIcons.arrow_up_down,
                         VivordoTheme.brand,
                       ),
                       title: 'Height',
@@ -1661,7 +1667,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge.muted(Icons.block_rounded),
+                      leading: const _IconBadge.muted(CupertinoIcons.nosign),
                       title: 'Blocked users',
                       trailing: const _Chevron(),
                       onTap: () => Navigator.of(context).push(
@@ -1671,9 +1677,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge.muted(
-                        Icons.auto_awesome_rounded,
-                      ),
+                      leading: const _IconBadge.muted(CupertinoIcons.sparkles),
                       title: 'Vivordo AI consent',
                       subtitle:
                           'Ask again before Vivordo AI sends anything to '
@@ -1687,7 +1691,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge.muted(
-                        Icons.privacy_tip_outlined,
+                        CupertinoIcons.lock_shield,
                       ),
                       title: 'Privacy Policy',
                       trailing: const _ExternalLink(),
@@ -1697,9 +1701,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge.muted(
-                        Icons.description_outlined,
-                      ),
+                      leading: const _IconBadge.muted(CupertinoIcons.doc_text),
                       title: 'Terms & Conditions',
                       trailing: const _ExternalLink(),
                       onTap: () =>
@@ -1712,10 +1714,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge(
-                        Icons.bug_report_outlined,
-                        _red,
-                      ),
+                      leading: const _IconBadge(CupertinoIcons.ant, _red),
                       title: 'Report a bug',
                       subtitle: 'Tell us what went wrong',
                       trailing: const _Chevron(),
@@ -1723,7 +1722,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.support_agent_rounded,
+                        CupertinoIcons.person_crop_circle_badge_checkmark,
                         VivordoTheme.brand,
                       ),
                       title: 'Contact support',
@@ -1921,7 +1920,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     ),
     child: Row(
       children: [
-        const Icon(Icons.mail_outline_rounded, color: _orange, size: 18),
+        const Icon(CupertinoIcons.envelope, color: _orange, size: 18),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -1983,7 +1982,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       _SettingsRow(
                         leading: const _IconBadge(
-                          Icons.mail_outline_rounded,
+                          CupertinoIcons.envelope,
                           VivordoTheme.brand,
                         ),
                         title: 'Email',
@@ -2337,7 +2336,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                   children: [
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.favorite_rounded,
+                        CupertinoIcons.heart_fill,
                         _SettingsScreenState._red,
                       ),
                       title: 'Health data sync',
@@ -2353,7 +2352,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                     // its switches here.
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.tune_rounded,
+                        CupertinoIcons.slider_horizontal_3,
                         VivordoTheme.brand,
                       ),
                       title: 'Manage access',
@@ -2361,7 +2360,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                           'In the Health app: your profile, then Apps, then '
                           'Vivordo.',
                       trailing: Icon(
-                        Icons.open_in_new_rounded,
+                        CupertinoIcons.arrow_up_right_square,
                         size: 18,
                         color: colors.textSecondary,
                       ),
@@ -2460,19 +2459,19 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
 
 IconData _metricIcon(String key) => switch (key) {
   'steps' => Icons.directions_walk_rounded,
-  'active_calories' => Icons.local_fire_department_rounded,
+  'active_calories' => CupertinoIcons.flame_fill,
   'exercise_time' => Icons.fitness_center_rounded,
   'distance' => Icons.straighten_rounded,
-  'heart_rate' => Icons.favorite_rounded,
-  'resting_heart_rate' => Icons.favorite_border_rounded,
-  'hrv' => Icons.show_chart_rounded,
-  'blood_oxygen' => Icons.air_rounded,
-  'respiratory_rate' => Icons.wind_power_rounded,
-  'sleep' => Icons.bedtime_rounded,
+  'heart_rate' => CupertinoIcons.heart_fill,
+  'resting_heart_rate' => CupertinoIcons.heart,
+  'hrv' => CupertinoIcons.graph_square,
+  'blood_oxygen' => CupertinoIcons.wind,
+  'respiratory_rate' => CupertinoIcons.wind,
+  'sleep' => CupertinoIcons.moon_fill,
   'weight' => Icons.monitor_weight_rounded,
-  'body_fat' => Icons.percent_rounded,
-  'vo2max' => Icons.speed_rounded,
-  _ => Icons.monitor_heart_outlined,
+  'body_fat' => CupertinoIcons.percent,
+  'vo2max' => CupertinoIcons.speedometer,
+  _ => CupertinoIcons.waveform_path_ecg,
 };
 
 // ── Shared settings pieces ──────────────────────────────────────────────────
@@ -2778,7 +2777,7 @@ class _ExternalLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    Icons.open_in_new_rounded,
+    CupertinoIcons.arrow_up_right_square,
     size: 18,
     color: context.vivordoColors.textSecondary,
   );

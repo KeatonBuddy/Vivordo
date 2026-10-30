@@ -269,19 +269,23 @@ class ActionCard extends StatelessWidget {
     final calendar = action['type'] == 'calendar';
     final workout = action['type'] == 'workout';
     final (IconData icon, String label, Color color) = switch (status) {
-      ActionStatus.done => (Icons.check_circle_rounded, 'Done', Colors.green),
+      ActionStatus.done => (
+        CupertinoIcons.checkmark_circle_fill,
+        'Done',
+        Colors.green,
+      ),
       ActionStatus.cancelled => (
-        Icons.block,
+        CupertinoIcons.nosign,
         'Cancelled',
         colors.textSecondary,
       ),
       ActionStatus.failed => (
-        Icons.error_outline,
+        CupertinoIcons.exclamationmark_circle,
         'Not done',
         Colors.redAccent,
       ),
       ActionStatus.expired => (
-        Icons.history_toggle_off,
+        CupertinoIcons.clock,
         'Not confirmed',
         colors.textSecondary,
       ),
@@ -290,7 +294,7 @@ class ActionCard extends StatelessWidget {
             ? Icons.fitness_center_rounded
             : calendar
             ? CupertinoIcons.calendar
-            : Icons.check_box_outlined,
+            : CupertinoIcons.checkmark_square,
         workout
             ? 'Saved workout'
             : calendar
@@ -476,7 +480,11 @@ class SourceChips extends StatelessWidget {
       children: [
         for (final source in sources)
           ActionChip(
-            avatar: const Icon(Icons.insights_rounded, size: 16, color: _brand),
+            avatar: const Icon(
+              CupertinoIcons.chart_bar_alt_fill,
+              size: 16,
+              color: _brand,
+            ),
             label: Text('${source['label']}${range(source)}'),
             labelStyle: const TextStyle(
               color: _brand,

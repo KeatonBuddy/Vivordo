@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -78,7 +79,7 @@ class CrisisSupportCard extends StatelessWidget {
                 if (line != null)
                   FilledButton.icon(
                     onPressed: () => openVivordoLink(context, line.uri),
-                    icon: const Icon(Icons.call_rounded, size: 18),
+                    icon: const Icon(CupertinoIcons.phone_fill, size: 18),
                     label: Text(line.label),
                   ),
                 OutlinedButton.icon(
@@ -86,7 +87,7 @@ class CrisisSupportCard extends StatelessWidget {
                     context,
                     Uri.parse('https://findahelpline.com'),
                   ),
-                  icon: const Icon(Icons.public_rounded, size: 18),
+                  icon: const Icon(CupertinoIcons.globe, size: 18),
                   label: const Text('Find a helpline'),
                 ),
               ],

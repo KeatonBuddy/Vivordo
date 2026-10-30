@@ -99,7 +99,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
               ),
               Divider(height: 1, color: context.vivordoColors.border),
               _CircleBenefit(
-                icon: Icons.favorite_rounded,
+                icon: CupertinoIcons.heart_fill,
                 color: palette.success,
                 background: palette.successTint,
                 title: 'Support each other',
@@ -107,7 +107,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
               ),
               Divider(height: 1, color: context.vivordoColors.border),
               _CircleBenefit(
-                icon: Icons.emoji_events_rounded,
+                icon: CupertinoIcons.rosette,
                 color: palette.streak,
                 background: palette.streakTint,
                 title: 'Challenge friends',
@@ -208,7 +208,7 @@ class _CircleOnboardingGraphic extends StatelessWidget {
                 border: Border.all(color: _brand, width: 3),
               ),
               child: Icon(
-                Icons.groups_rounded,
+                CupertinoIcons.person_3_fill,
                 color: context.circle.accent,
                 size: 36,
               ),
@@ -373,7 +373,7 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
         stream: _requestCount,
         initialData: 0,
         builder: (context, snapshot) => _IconCircleButton(
-          icon: Icons.person_add_alt_1_rounded,
+          icon: CupertinoIcons.person_badge_plus,
           tooltip: 'People',
           badge: snapshot.data ?? 0,
           onTap: () => _openPeople(context, profile),

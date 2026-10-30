@@ -296,7 +296,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.monitor_heart_outlined,
+                  CupertinoIcons.waveform_path_ecg,
                   color: Colors.white,
                   size: 28,
                 ),
@@ -377,7 +377,7 @@ class _HomeStressCardState extends State<HomeStressCard>
       Row(
         children: [
           Icon(
-            _noReading ? Icons.watch_outlined : _comparisonIcon(),
+            _noReading ? CupertinoIcons.clock : _comparisonIcon(),
             color: _palePurple,
             size: 16,
           ),
@@ -531,25 +531,25 @@ class _HomeStressCardState extends State<HomeStressCard>
         (widget.showNumbers
             ? (score - usual).round().abs() <= 1
             : (score - usual).abs() < 5)) {
-      return Icons.trending_flat_rounded;
+      return CupertinoIcons.arrow_right;
     }
     return score < usual
-        ? Icons.trending_down_rounded
-        : Icons.trending_up_rounded;
+        ? CupertinoIcons.arrow_down_right
+        : CupertinoIcons.arrow_up_right;
   }
 
   Widget _driverChip(HomeStressDriver driver) {
     final (icon, color) = switch (driver.type) {
       HomeStressDriverType.sleep => (
-        Icons.dark_mode_rounded,
+        CupertinoIcons.moon_fill,
         const Color(0xFF9B8CFF),
       ),
       HomeStressDriverType.heartRate => (
-        Icons.favorite_rounded,
+        CupertinoIcons.heart_fill,
         const Color(0xFFFF6BAE),
       ),
       HomeStressDriverType.hrv => (
-        Icons.monitor_heart_rounded,
+        CupertinoIcons.waveform_path_ecg,
         const Color(0xFFFF6BAE),
       ),
       HomeStressDriverType.activity => (
@@ -557,11 +557,11 @@ class _HomeStressCardState extends State<HomeStressCard>
         const Color(0xFF69E987),
       ),
       HomeStressDriverType.mood => (
-        Icons.mood_rounded,
+        CupertinoIcons.smiley,
         const Color(0xFFFFA44D),
       ),
       HomeStressDriverType.other => (
-        Icons.insights_rounded,
+        CupertinoIcons.chart_bar_alt_fill,
         const Color(0xFF9B8CFF),
       ),
       HomeStressDriverType.calendar => (

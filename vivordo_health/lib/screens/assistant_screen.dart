@@ -669,7 +669,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             IconButton(
               tooltip: 'Open full conversation',
               icon: Icon(
-                Icons.open_in_full_rounded,
+                CupertinoIcons.arrow_up_left_arrow_down_right,
                 color: colors.textSecondary,
               ),
               onPressed: widget.onExpand,
@@ -677,10 +677,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           if (!_asSheet)
             IconButton(
               tooltip: 'What Vivordo AI remembers',
-              icon: Icon(
-                Icons.bookmark_border_rounded,
-                color: colors.textSecondary,
-              ),
+              icon: Icon(CupertinoIcons.bookmark, color: colors.textSecondary),
               onPressed: () => Navigator.of(context, rootNavigator: true).push(
                 MaterialPageRoute<void>(
                   builder: (_) => const AssistantMemoryScreen(),
@@ -689,7 +686,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             ),
           IconButton(
             tooltip: 'Data & privacy',
-            icon: Icon(Icons.shield_outlined, color: colors.textSecondary),
+            icon: Icon(CupertinoIcons.shield, color: colors.textSecondary),
             onPressed: _showPrivacy,
           ),
         ],
@@ -1150,9 +1147,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                 onPressed: _sending ? _stop : _send,
                 style: IconButton.styleFrom(backgroundColor: _brand),
                 icon: Icon(
-                  _sending
-                      ? CupertinoIcons.stop_fill
-                      : Icons.arrow_upward_rounded,
+                  _sending ? CupertinoIcons.stop_fill : CupertinoIcons.arrow_up,
                   color: Colors.white,
                 ),
               ),
@@ -1213,7 +1208,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   void _showPrivacy() => showInfoSheet(
     context,
-    icon: Icons.shield_outlined,
+    icon: CupertinoIcons.shield,
     title: 'Privacy & Safety',
     items: const [
       AppleInfoItem(
@@ -1222,19 +1217,19 @@ class _AssistantScreenState extends State<AssistantScreen> {
             'messages and the health, fitness, calendar, priority and '
             'past-conversation information relevant to them are sent to '
             'Anthropic for processing.',
-        icon: Icons.cloud_outlined,
+        icon: CupertinoIcons.cloud,
       ),
       AppleInfoItem(
         'Saved to your account',
         'Your conversation is saved to your account so it’s here next time.',
-        icon: Icons.history_rounded,
+        icon: CupertinoIcons.arrow_counterclockwise,
       ),
       AppleInfoItem(
         'Not medical advice',
         'Vivordo AI provides wellness information, not medical advice. '
             'Responses can be inaccurate. Consult a qualified healthcare '
             'professional before making medical decisions.',
-        icon: Icons.health_and_safety_outlined,
+        icon: CupertinoIcons.shield_lefthalf_fill,
       ),
     ],
     body: Builder(

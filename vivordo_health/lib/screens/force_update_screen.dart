@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -44,7 +45,7 @@ class ForceUpdateScreen extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
-                    Icons.system_update_rounded,
+                    CupertinoIcons.arrow_down_circle,
                     color: accentPurple,
                     size: 40,
                   ),

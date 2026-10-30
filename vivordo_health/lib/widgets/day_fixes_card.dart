@@ -169,19 +169,19 @@ class _FixRow extends StatelessWidget {
 /// What a fix says: icon, colour, title and detail.
 (IconData, Color, String, String) _fixText(DayFix fix) => switch (fix.kind) {
   DayFixKind.movePriority => (
-    Icons.event_repeat_rounded,
+    CupertinoIcons.calendar_today,
     VivordoTheme.brand,
     'Move "${fix.title}"',
     'To a lighter day this week',
   ),
   DayFixKind.buffer => (
-    Icons.more_time_rounded,
+    CupertinoIcons.clock,
     const Color(0xFF378ADD),
     '15-min buffer before ${fix.title}',
     'Ends the back-to-back after ${fix.after}',
   ),
   DayFixKind.energySlot => (
-    Icons.bolt_rounded,
+    CupertinoIcons.bolt_fill,
     _green,
     '${fix.title} at ${_time(fix.newStart!)}',
     'Out of a low-energy window, into your best time',
@@ -737,7 +737,11 @@ class _Warning extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.warning_amber_rounded, size: 18, color: _amber),
+        const Icon(
+          CupertinoIcons.exclamationmark_triangle,
+          size: 18,
+          color: _amber,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

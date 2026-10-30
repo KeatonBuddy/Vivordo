@@ -549,7 +549,7 @@ class _SummaryCard extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, color: _summaryPurple, size: 21),
+              Icon(CupertinoIcons.sparkles, color: _summaryPurple, size: 21),
               SizedBox(width: 8),
               Text(
                 'Vivordo summary',
@@ -964,7 +964,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                Icon(Icons.route_rounded, color: colors.textSecondary),
+                Icon(CupertinoIcons.map, color: colors.textSecondary),
                 const SizedBox(width: 10),
                 Text(
                   _units(context).formatDistance(exercise.distanceKm!),
@@ -1066,7 +1066,7 @@ class _HeartRateCardState extends State<_HeartRateCard> {
                 ? Row(
                     children: [
                       Icon(
-                        Icons.favorite_rounded,
+                        CupertinoIcons.heart_fill,
                         color: _zoneColor(context, WorkoutZone.z5),
                         size: 19,
                       ),
@@ -1586,7 +1586,7 @@ class _PeakHeartRateChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.favorite_rounded, color: color, size: 13),
+            Icon(CupertinoIcons.heart_fill, color: color, size: 13),
             const SizedBox(width: 4),
             Text(
               'Peak $bpm',
@@ -1627,7 +1627,7 @@ class _ProgressiveOverloadRecommendation extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(
-            Icons.trending_up_rounded,
+            CupertinoIcons.arrow_up_right,
             color: _summaryPurple,
             size: 20,
           ),
@@ -1665,7 +1665,7 @@ class _PersonalBestBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.star_rounded, color: color, size: 16),
+          Icon(CupertinoIcons.star_fill, color: color, size: 16),
           const SizedBox(width: 4),
           Text(
             'Personal best',
@@ -1692,17 +1692,17 @@ class _ExerciseComparisonBadge extends StatelessWidget {
     final differenceLabel = _exerciseDifferenceLabel(exercise, _units(context));
     final (icon, label, color) = switch (trend) {
       ExerciseAttemptTrend.improved => (
-        Icons.trending_up_rounded,
+        CupertinoIcons.arrow_up_right,
         differenceLabel,
         _improvedColor(context),
       ),
       ExerciseAttemptTrend.declined => (
-        Icons.trending_down_rounded,
+        CupertinoIcons.arrow_down_right,
         differenceLabel,
         _declinedColor(context),
       ),
       ExerciseAttemptTrend.maintained => (
-        Icons.drag_handle_rounded,
+        CupertinoIcons.line_horizontal_3,
         'Matched last time',
         _summaryPurple,
       ),

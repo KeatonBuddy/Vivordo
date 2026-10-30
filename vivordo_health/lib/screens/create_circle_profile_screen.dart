@@ -300,7 +300,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                                 ],
                               ),
                               child: const Icon(
-                                Icons.camera_alt_rounded,
+                                CupertinoIcons.camera_fill,
                                 color: Colors.white,
                               ),
                             ),
@@ -502,7 +502,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     ),
             ),
             child: photoBytes == null
-                ? const Icon(Icons.camera_alt_rounded, color: _purple)
+                ? const Icon(CupertinoIcons.camera_fill, color: _purple)
                 : null,
           ),
           const SizedBox(width: 16),

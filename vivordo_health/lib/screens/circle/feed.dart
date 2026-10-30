@@ -833,7 +833,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
             const SizedBox(height: 14),
             if (visible.isEmpty)
               _EmptyState(
-                icon: Icons.favorite_border_rounded,
+                icon: CupertinoIcons.heart,
                 title: all.isEmpty
                     ? 'No recent activity'
                     : _filter == _ActivityFilter.workouts
@@ -883,7 +883,7 @@ class _ActivityVisual extends StatelessWidget {
     }
     if (activity.kind == 'journal') {
       return _IconTile(
-        icon: Icons.menu_book_rounded,
+        icon: CupertinoIcons.book_fill,
         color: context.circle.pink,
         background: context.circle.pinkTint,
         size: size,
@@ -1042,9 +1042,7 @@ class _EngagementBarState extends State<_EngagementBar> {
         builder: (context, commentsSnapshot) => Row(
           children: [
             _EngagementButton(
-              icon: liked
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
+              icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
               label: '${likes.length}',
               semanticLabel: liked ? 'Unlike' : 'Like',
               active: liked,
@@ -1053,7 +1051,7 @@ class _EngagementBarState extends State<_EngagementBar> {
             ),
             const SizedBox(width: 10),
             _EngagementButton(
-              icon: Icons.chat_bubble_outline_rounded,
+              icon: CupertinoIcons.chat_bubble,
               label: '${commentsSnapshot.data?.length ?? 0}',
               semanticLabel: 'Comments',
               onTap: () => _openActivityDetails(context, widget.activity),
@@ -1062,7 +1060,7 @@ class _EngagementBarState extends State<_EngagementBar> {
             if (!_isMine(widget.activity))
               IconButton(
                 tooltip: 'Report post',
-                icon: Icon(Icons.flag_outlined, color: context.muted, size: 20),
+                icon: Icon(CupertinoIcons.flag, color: context.muted, size: 20),
                 onPressed: () => _reportPost(context, widget.activity),
               ),
           ],
@@ -1167,7 +1165,7 @@ class _AchievementActivityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fallback = _IconTile(
-      icon: Icons.emoji_events_rounded,
+      icon: CupertinoIcons.rosette,
       color: context.circle.accent,
       background: context.circle.accentTint,
       size: size,
@@ -1375,7 +1373,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                         ),
                         if (!_isMine(activity))
                           _IconCircleButton(
-                            icon: Icons.flag_outlined,
+                            icon: CupertinoIcons.flag,
                             tooltip: 'Report post',
                             onTap: () => _reportPost(context, activity),
                           ),
@@ -1500,9 +1498,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
             ),
           ),
           _IconCircleButton(
-            icon: liked
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
+            icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
             tooltip: liked ? 'Unlike' : 'Like',
             filled: liked,
             onTap: _savingLike ? null : () => _toggleLike(liked),
@@ -1838,7 +1834,7 @@ class _CommentComposer extends StatelessWidget {
                 ),
               )
             : _IconCircleButton(
-                icon: Icons.send_rounded,
+                icon: CupertinoIcons.paperplane_fill,
                 tooltip: 'Send comment',
                 filled: true,
                 onTap: onSend,

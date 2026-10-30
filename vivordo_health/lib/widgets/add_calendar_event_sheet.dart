@@ -673,14 +673,14 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                           onTap: _pickDate,
                         ),
                         _PickerRow(
-                          icon: Icons.schedule_rounded,
+                          icon: CupertinoIcons.clock,
                           label: 'Start time',
                           value: _startTime.format(context),
                           enabled: !_isAllDay,
                           onTap: () => _pickTime(start: true),
                         ),
                         _PickerRow(
-                          icon: Icons.schedule_rounded,
+                          icon: CupertinoIcons.clock,
                           label: 'End time',
                           // Matches CalendarEventDraft.end, which rolls an
                           // end at or before the start into the next day.
@@ -749,7 +749,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                           ],
                           // No onTap: the tap belongs to the menu button.
                           child: _PickerRow(
-                            icon: Icons.repeat_rounded,
+                            icon: CupertinoIcons.repeat,
                             label: 'Repeat',
                             trailingIcon:
                                 CupertinoIcons.chevron_up_chevron_down,
@@ -1151,7 +1151,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
                       () => _repeat = _repeat.copyWith(interval: interval - 1),
                     )
                   : null,
-              icon: const Icon(Icons.remove_rounded),
+              icon: const Icon(CupertinoIcons.minus),
             ),
             SizedBox(
               width: 44,
@@ -1217,7 +1217,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
           _SheetCard(
             children: [
               _PickerRow(
-                icon: Icons.event_busy_rounded,
+                icon: CupertinoIcons.calendar_badge_minus,
                 label: 'End date',
                 value: DateFormat('MMM d, y').format(_repeat.until!),
                 onTap: _pickUntil,

@@ -1040,7 +1040,7 @@ class _ReviewRow extends StatelessWidget {
                   const Padding(
                     padding: EdgeInsets.only(top: 2),
                     child: Icon(
-                      Icons.event_note_rounded,
+                      CupertinoIcons.calendar,
                       size: 15,
                       color: _reviewPurple,
                     ),
@@ -1152,7 +1152,9 @@ class _EntryRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Icon(
-                  item.shared ? Icons.groups_rounded : CupertinoIcons.lock,
+                  item.shared
+                      ? CupertinoIcons.person_3_fill
+                      : CupertinoIcons.lock,
                   size: 17,
                   color: colors.textSecondary,
                 ),
@@ -1306,7 +1308,9 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
             child: Row(
               children: [
                 Icon(
-                  item.shared ? Icons.groups_rounded : CupertinoIcons.lock,
+                  item.shared
+                      ? CupertinoIcons.person_3_fill
+                      : CupertinoIcons.lock,
                   color: colors.textSecondary,
                   size: 20,
                 ),
@@ -1438,11 +1442,7 @@ class _Empty extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
       child: Column(
         children: [
-          Icon(
-            Icons.auto_stories_outlined,
-            color: colors.textSecondary,
-            size: 32,
-          ),
+          Icon(CupertinoIcons.book, color: colors.textSecondary, size: 32),
           const SizedBox(height: 9),
           Text(
             title,

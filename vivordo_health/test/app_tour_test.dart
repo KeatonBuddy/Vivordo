@@ -95,7 +95,7 @@ void main() {
     }
     // The full line from the first frame, not the half typed so far.
     expect(
-      find.bySemanticsLabel(RegExp('Your day starts here\.')),
+      find.bySemanticsLabel(RegExp(r'Your day starts here\.')),
       findsOneWidget,
     );
     expect(find.bySemanticsLabel('Behind the tour'), findsNothing);

@@ -379,7 +379,7 @@ class _BurnoutDetails extends StatelessWidget {
                     Navigator.pop(context);
                     onTalk!();
                   },
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  icon: const Icon(CupertinoIcons.chat_bubble, size: 18),
                   label: const Text('Talk it through with Vivordo AI'),
                   style: FilledButton.styleFrom(
                     backgroundColor: _purple.withValues(alpha: .14),

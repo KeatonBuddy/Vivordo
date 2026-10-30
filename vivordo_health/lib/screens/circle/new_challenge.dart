@@ -355,7 +355,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                             message: _messageController.text.trim(),
                           ),
                         ),
-                  icon: const Icon(Icons.send_rounded, size: 19),
+                  icon: const Icon(CupertinoIcons.paperplane_fill, size: 19),
                   label: const Text('Send challenge'),
                   style: _primaryButtonStyle(height: 54),
                 ),
@@ -469,7 +469,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
     }
     if (friends.isEmpty) {
       return _EmptyState(
-        icon: Icons.person_add_alt_1_rounded,
+        icon: CupertinoIcons.person_badge_plus,
         title: 'Add a friend first',
         detail:
             'Challenges need at least one Circle friend. Tap to find people.',
@@ -1020,7 +1020,7 @@ class _ExerciseResultTile extends StatelessWidget {
                 ),
                 if (selected)
                   Icon(
-                    Icons.check_circle_rounded,
+                    CupertinoIcons.checkmark_circle_fill,
                     color: context.circle.accent,
                   ),
               ],

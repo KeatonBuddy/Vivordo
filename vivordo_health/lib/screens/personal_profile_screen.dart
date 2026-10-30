@@ -104,7 +104,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       actions: [
         IconButton(
           tooltip: 'Your profile',
-          icon: const Icon(Icons.account_circle_outlined),
+          icon: const Icon(CupertinoIcons.person_crop_circle),
           onPressed: () => _openProfile(context),
         ),
       ],
@@ -1515,7 +1515,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                       ),
                       const Divider(height: 1),
                       _row(
-                        Icons.percent_rounded,
+                        CupertinoIcons.percent,
                         'Body fat',
                         _MeasurementField(
                           controller: bodyFatController,

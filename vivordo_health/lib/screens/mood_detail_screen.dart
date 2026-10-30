@@ -256,7 +256,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.mood_rounded, _moodColor),
+              _iconBubble(CupertinoIcons.smiley, _moodColor),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(

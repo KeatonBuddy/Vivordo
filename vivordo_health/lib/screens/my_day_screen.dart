@@ -1095,7 +1095,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           ),
                           tooltip: 'Journal',
                           icon: const Icon(
-                            Icons.menu_book_rounded,
+                            CupertinoIcons.book_fill,
                             color: MyDayScreen.purple,
                           ),
                         ),
@@ -1116,7 +1116,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   Row(
                     children: [
                       Icon(
-                        Icons.cloud_off_rounded,
+                        CupertinoIcons.cloud,
                         size: 16,
                         color: colors.textSecondary,
                       ),
@@ -1354,7 +1354,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.layers_outlined,
+                          CupertinoIcons.square_stack_3d_up,
                           size: 18,
                           color: colors.textSecondary,
                         ),
@@ -1405,7 +1405,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
           child: Row(
             children: [
-              const Icon(Icons.bedtime_outlined, size: 18, color: Colors.white),
+              const Icon(CupertinoIcons.moon, size: 18, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1775,8 +1775,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       scheduleEmptyIcon: shown
                           ? null
                           : planFailed
-                          ? Icons.cloud_off_rounded
-                          : Icons.hourglass_top_rounded,
+                          ? CupertinoIcons.cloud
+                          : CupertinoIcons.hourglass,
                       // A failed load still says so over the saved plan.
                       footer: planFailed
                           ? _eventsFromSnapshot && _snapshotSavedAt != null
@@ -2643,7 +2643,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           Row(
             children: [
               const Icon(
-                Icons.warning_amber_rounded,
+                CupertinoIcons.exclamationmark_triangle,
                 color: MyDayScreen.purple,
                 size: 17,
               ),
@@ -2968,12 +2968,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               // Swipe left to hide it for today.
               SwipeToDelete(
                 actionLabel: 'Hide',
-                actionIcon: Icons.visibility_off_outlined,
+                actionIcon: CupertinoIcons.eye_slash,
                 actionColor: const Color(0xFF8E8E93),
                 confirmTitle: null,
                 onDelete: () => _hidePlanMyDay(untimed),
                 child: _ListAction(
-                  icon: Icons.event_available_rounded,
+                  icon: CupertinoIcons.calendar_badge_plus,
                   label: 'Plan my day · ${untimed.length} without a time',
                   // Planned again from the moment it's opened.
                   onTap: () =>
@@ -3896,7 +3896,7 @@ class _CalendarEvent {
       attendeeCount: event.attendees?.length ?? 0,
       isPriorityLinked:
           event.extendedProperties?.private?['vivordoPriority'] == 'true',
-      icon: Icons.event_rounded,
+      icon: CupertinoIcons.calendar,
       color: CalendarService.isOutlook(event)
           ? MyDayScreen.purple
           : const Color(0xFF3978F6),
