@@ -688,9 +688,13 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           'Changes apply to this priority only, not the original calendar event or recurring schedule.',
                         )
                       else
-                        _RepeatSelector(
+                        AppSegmented<PriorityRepeat>(
+                          segments: {
+                            if (!_habit) PriorityRepeat.once: 'Once',
+                            PriorityRepeat.daily: 'Every day',
+                            PriorityRepeat.selectedDays: 'Selected days',
+                          },
                           value: _repeat,
-                          allowOnce: !_habit,
                           onChanged: (value) => setState(() => _repeat = value),
                         ),
                       if (_repeat == PriorityRepeat.selectedDays) ...[
@@ -924,67 +928,6 @@ class _SwitchRow extends StatelessWidget {
             ),
           ),
           AppSwitch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
-
-class _RepeatSelector extends StatelessWidget {
-  const _RepeatSelector({
-    required this.value,
-    required this.onChanged,
-    this.allowOnce = true,
-  });
-  final PriorityRepeat value;
-  final ValueChanged<PriorityRepeat> onChanged;
-  final bool allowOnce;
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    final choices = [
-      if (allowOnce) (PriorityRepeat.once, 'Once'),
-      (PriorityRepeat.daily, 'Every day'),
-      (PriorityRepeat.selectedDays, 'Selected days'),
-    ];
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: .035),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: colors.textPrimary.withValues(alpha: .13)),
-      ),
-      child: Row(
-        children: [
-          for (final choice in choices)
-            Expanded(
-              child: InkWell(
-                onTap: () => onChanged(choice.$1),
-                borderRadius: BorderRadius.circular(13),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: value == choice.$1
-                        ? const LinearGradient(
-                            colors: [Color(0xFF494AF5), Color(0xFF6546E7)],
-                          )
-                        : null,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: Text(
-                    choice.$2,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: value == choice.$1
-                          ? Colors.white
-                          : colors.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

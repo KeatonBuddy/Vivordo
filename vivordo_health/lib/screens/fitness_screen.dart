@@ -9,7 +9,11 @@ import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/vivordo_time_picker.dart';
 import 'package:flutter/cupertino.dart'
-    show CupertinoIcons, CupertinoSwitch, CupertinoActivityIndicator;
+    show
+        CupertinoButton,
+        CupertinoIcons,
+        CupertinoSwitch,
+        CupertinoActivityIndicator;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
@@ -431,7 +435,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
   }
 
   void _openMonthlyRings() =>
-      showDialog(context: context, builder: (_) => const MonthlyRingsDialog());
+      showAppleSheet<void>(context, builder: (_) => const MonthlyRingsSheet());
 }
 
 class _TodayActivityRings extends StatefulWidget {
@@ -4455,55 +4459,57 @@ class _ExerciseIcon extends StatelessWidget {
   }
 }
 
-class MonthlyRingsDialog extends StatelessWidget {
-  const MonthlyRingsDialog({super.key});
+/// The last 30 days of activity rings, in a sheet with Done at the top.
+class MonthlyRingsSheet extends StatelessWidget {
+  const MonthlyRingsSheet({super.key});
   @override
-  Widget build(BuildContext context) => Dialog(
-    insetPadding: const EdgeInsets.all(20),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 700),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Activity rings',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _muted,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      Text(
-                        'Last 30 Days',
-                        style: TextStyle(
-                          fontSize: 23,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AppleGrabber(),
+        SizedBox(
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  'Last 30 days',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Close',
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(CupertinoIcons.xmark),
+                  child: Text(
+                    'Done',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: appleTint(context),
+                    ),
+                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const _ThirtyDayActivityRings(),
-          ],
+              ),
+            ],
+          ),
         ),
-      ),
+        const Flexible(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 16),
+            child: _ThirtyDayActivityRings(),
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -4604,6 +4610,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
     final selectedSteps = _metricSum(selectedData, 'steps');
     final selectedCalories = _metricSum(selectedData, 'active_calories');
     final selectedExercise = _metricSum(selectedData, 'exercise_time');
+    final colors = context.vivordoColors;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4671,6 +4678,9 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                                 0.0,
                                 1.0,
                               ),
+                              trackColor: colors.textPrimary.withValues(
+                                alpha: .1,
+                              ),
                             ),
                             child: const SizedBox.expand(),
                           ),
@@ -4678,7 +4688,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                         Text(
                           isToday ? 'Today' : '${date.day}',
                           style: TextStyle(
-                            fontSize: 8,
+                            fontSize: 11,
                             color: isSelected || isToday ? _purple : _muted,
                             fontWeight: isSelected || isToday
                                 ? FontWeight.w800
@@ -4694,29 +4704,27 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
           },
         ),
         const SizedBox(height: 18),
-        _SectionTitle(
-          icon: CupertinoIcons.calendar,
-          title: DateUtils.isSameDay(_selectedDay, today)
+        AppleFormGroup(
+          header: DateUtils.isSameDay(_selectedDay, today)
               ? "Today's activity"
               : DateFormat('MMMM d, y').format(_selectedDay),
-        ),
-        const SizedBox(height: 9),
-        Wrap(
-          spacing: 14,
-          runSpacing: 8,
           children: [
-            _RingLegend(
-              color: _purple,
-              text:
-                  'Steps ${NumberFormat.decimalPattern().format(selectedSteps.round())}',
+            AppleFormRow(
+              leading: const _RingDot(_purple),
+              label: 'Steps',
+              value: NumberFormat.decimalPattern().format(
+                selectedSteps.round(),
+              ),
             ),
-            _RingLegend(
-              color: const Color(0xFFFB923C),
-              text: 'Active calories ${_formatMetric(selectedCalories)}',
+            AppleFormRow(
+              leading: const _RingDot(Color(0xFFFB923C)),
+              label: 'Active calories',
+              value: '${_formatMetric(selectedCalories)} kcal',
             ),
-            _RingLegend(
-              color: const Color(0xFF34D399),
-              text: 'Exercise ${_formatMetric(selectedExercise)} min',
+            AppleFormRow(
+              leading: const _RingDot(Color(0xFF34D399)),
+              label: 'Exercise',
+              value: '${_formatMetric(selectedExercise)} min',
             ),
           ],
         ),
@@ -4869,54 +4877,14 @@ class _PillButton extends StatelessWidget {
   );
 }
 
-class _RingLegend extends StatelessWidget {
+class _RingDot extends StatelessWidget {
+  const _RingDot(this.color);
   final Color color;
-  final String text;
-  const _RingLegend({required this.color, required this.text});
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Container(
-        width: 9,
-        height: 9,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-      const SizedBox(width: 7),
-      Flexible(
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 11,
-            color: _muted,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
-class _SectionTitle extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  const _SectionTitle({required this.icon, required this.title});
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Icon(icon, size: 16, color: _purple),
-      const SizedBox(width: 7),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: _muted,
-          ),
-        ),
-      ),
-    ],
+  Widget build(BuildContext context) => Container(
+    width: 9,
+    height: 9,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
 

@@ -659,8 +659,9 @@ class _DiscardChangesGuardState extends State<DiscardChangesGuard> {
   );
 }
 
-class _Grabber extends StatelessWidget {
-  const _Grabber();
+/// The handle at the top of a sheet.
+class AppleGrabber extends StatelessWidget {
+  const AppleGrabber({super.key});
 
   @override
   Widget build(BuildContext context) => Center(
@@ -771,7 +772,7 @@ class AppleFormSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const _Grabber(),
+          const AppleGrabber(),
           SizedBox(
             height: 48,
             child: Row(
@@ -949,11 +950,18 @@ class AppleFormRow extends StatelessWidget {
               ),
               if (value != null)
                 Flexible(
-                  child: Text(
-                    value!,
-                    textAlign: TextAlign.right,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16, color: colors.textSecondary),
+                  // Fills its share of the row so the value sits on the right.
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      value!,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: colors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
               if (trailing != null) ...[const SizedBox(width: 8), trailing!],
@@ -1106,7 +1114,7 @@ Future<void> showInfoSheet(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Grabber(),
+            const AppleGrabber(),
             const SizedBox(height: 10),
             Center(
               child: Container(
