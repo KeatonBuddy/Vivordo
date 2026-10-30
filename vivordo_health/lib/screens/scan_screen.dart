@@ -46,6 +46,14 @@ class _ScanScreenState extends State<ScanScreen>
   bool _isProcessingFrame = false;
   int _fingerDetectedFrames = 0;
 
+  /// iOS Reduce Motion: no looping pulse or spin. Flutter already shortens
+  /// one-off animations, but not repeating ones.
+  bool get _reduceMotion => WidgetsBinding
+      .instance
+      .platformDispatcher
+      .accessibilityFeatures
+      .disableAnimations;
+
   /// The finger came off mid-scan; says so until it's back.
   bool _fingerLifted = false;
   static const double _fingerRedThreshold = 140.0;
@@ -84,7 +92,8 @@ class _ScanScreenState extends State<ScanScreen>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
+    );
+    if (!_reduceMotion) _pulseController.repeat(reverse: true);
 
     _spinController = AnimationController(
       vsync: this,
@@ -395,7 +404,7 @@ class _ScanScreenState extends State<ScanScreen>
       _scanStartTime = DateTime.now();
       _progress = 0.0;
     });
-    _spinController.repeat();
+    if (!_reduceMotion) _spinController.repeat();
 
     _scanTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!mounted || _scanState != ScanState.scanning) {
@@ -663,7 +672,7 @@ class _ScanScreenState extends State<ScanScreen>
   Future<void> _reset() async {
     _scanTimer?.cancel();
     _spinController.stop();
-    _pulseController.repeat(reverse: true);
+    if (!_reduceMotion) _pulseController.repeat(reverse: true);
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) {
       if (mounted) {
@@ -1805,7 +1814,7 @@ class _ScanScreenState extends State<ScanScreen>
             label,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 11,
               color: context.vivordoColors.textSecondary,
               fontWeight: FontWeight.w500,
             ),

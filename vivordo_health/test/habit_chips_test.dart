@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
@@ -70,5 +71,47 @@ void main() {
     await tester.longPress(find.text('Water'));
     await tester.pump();
     expect(calls, ['Water 4', 'Walk 1', 'Meds 0', 'Water 2']);
+  });
+
+  testWidgets('VoiceOver can remove one with an action', (tester) async {
+    final handle = tester.ensureSemantics();
+    final calls = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: HabitChips(
+            today: DateTime(2026, 10, 7),
+            habits: [habit('Water', target: 8, count: 3), habit('Walk')],
+            templates: const {},
+            onChanged: (h, count) => calls.add('${h.title} $count'),
+          ),
+        ),
+      ),
+    );
+    final water = tester.getSemantics(find.bySemanticsLabel(RegExp('^Water')));
+    expect(
+      water,
+      containsSemantics(
+        isButton: true,
+        hasTapAction: true,
+        customActions: [const CustomSemanticsAction(label: 'Remove one')],
+      ),
+    );
+    // Nothing to take away from a habit at 0.
+    expect(
+      tester.getSemantics(find.bySemanticsLabel(RegExp('^Walk'))),
+      isNot(
+        containsSemantics(
+          customActions: [const CustomSemanticsAction(label: 'Remove one')],
+        ),
+      ),
+    );
+    final id = CustomSemanticsAction.getIdentifier(
+      const CustomSemanticsAction(label: 'Remove one'),
+    );
+    water.owner!.performAction(water.id, SemanticsAction.customAction, id);
+    expect(calls, ['Water 2']);
+    handle.dispose();
   });
 }

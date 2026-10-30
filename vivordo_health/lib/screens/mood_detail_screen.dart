@@ -12,6 +12,7 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import '../src/utils/chart_text.dart';
 
 class MoodDetailScreen extends StatefulWidget {
   const MoodDetailScreen({super.key});
@@ -650,6 +651,7 @@ class _MoodChartPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${_moodName(values[index])} · ${values[index].round()}/100';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -689,6 +691,7 @@ class _MoodChartPainter extends CustomPainter {
 
   void _text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -703,6 +706,7 @@ class _MoodChartPainter extends CustomPainter {
 
   void _centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(

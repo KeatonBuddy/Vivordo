@@ -301,7 +301,8 @@ class _AppTourState extends State<AppTour> with SingleTickerProviderStateMixin {
   }
 
   void _type(String text) {
-    if (_reduceMotion) {
+    // No typing for VoiceOver either: it would read half a sentence.
+    if (_reduceMotion || MediaQuery.accessibleNavigationOf(context)) {
       setState(() => _shown = text.length);
       return;
     }
@@ -345,110 +346,118 @@ class _AppTourState extends State<AppTour> with SingleTickerProviderStateMixin {
     final motion = _reduceMotion
         ? Duration.zero
         : const Duration(milliseconds: 650);
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: TweenAnimationBuilder<Rect?>(
-            tween: RectTween(end: _hole ?? Rect.zero),
-            duration: motion,
-            curve: Curves.easeInOutCubic,
-            builder: (context, hole, _) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: (details) {
-                if (hole != null && hole.contains(details.localPosition)) {
-                  _next();
-                }
-              },
-              child: CustomPaint(painter: _ScrimPainter(hole ?? Rect.zero)),
-            ),
-          ),
-        ),
-        AnimatedBuilder(
-          animation: _fly,
-          builder: (context, child) {
-            final pos = _position;
-            return Positioned(left: pos.dx, top: pos.dy, child: child!);
-          },
-          child: AnimatedScale(
-            scale: _scale,
-            alignment: Alignment.bottomCenter,
-            duration: motion,
-            curve: Curves.easeInOutCubic,
-            child: AnimatedOpacity(
-              opacity: _leaving ? 0 : 1,
+    // The tour is modal: VoiceOver stays in it, not on the screen beneath.
+    return BlockSemantics(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: TweenAnimationBuilder<Rect?>(
+              tween: RectTween(end: _hole ?? Rect.zero),
               duration: motion,
-              curve: Curves.easeIn,
-              child: VivordoRobotRig(
-                size: _robotHeight,
-                pose: _pose,
-                talking: _talking,
+              curve: Curves.easeInOutCubic,
+              builder: (context, hole, _) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (details) {
+                  if (hole != null && hole.contains(details.localPosition)) {
+                    _next();
+                  }
+                },
+                child: CustomPaint(painter: _ScrimPainter(hole ?? Rect.zero)),
               ),
             ),
           ),
-        ),
-        if (step != null && !_leaving)
-          AnimatedPositioned(
-            duration: motion,
-            curve: Curves.easeInOutCubic,
-            left: 20,
-            right: 20,
-            top: _bubbleTop,
-            bottom: _bubbleBottom,
-            child: Material(
-              color: colors.card,
-              elevation: 12,
-              shadowColor: Colors.black.withValues(alpha: .4),
-              borderRadius: BorderRadius.circular(22),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      step.text.substring(0, _shown),
-                      style: TextStyle(
-                        fontSize: 16,
-                        height: 1.4,
-                        color: colors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          '${_index + 1} of ${widget.steps.length}',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (!last)
-                          TextButton(
-                            onPressed: _leave,
-                            style: TextButton.styleFrom(
-                              foregroundColor: colors.textSecondary,
-                            ),
-                            child: const Text('Skip tour'),
-                          ),
-                        FilledButton(
-                          // While typing, the first tap shows the whole line.
-                          onPressed: _next,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: VivordoTheme.brand,
-                            shape: const StadiumBorder(),
-                          ),
-                          child: Text(last ? 'Done' : 'Next'),
-                        ),
-                      ],
-                    ),
-                  ],
+          AnimatedBuilder(
+            animation: _fly,
+            builder: (context, child) {
+              final pos = _position;
+              return Positioned(left: pos.dx, top: pos.dy, child: child!);
+            },
+            child: AnimatedScale(
+              scale: _scale,
+              alignment: Alignment.bottomCenter,
+              duration: motion,
+              curve: Curves.easeInOutCubic,
+              child: AnimatedOpacity(
+                opacity: _leaving ? 0 : 1,
+                duration: motion,
+                curve: Curves.easeIn,
+                child: VivordoRobotRig(
+                  size: _robotHeight,
+                  pose: _pose,
+                  talking: _talking,
                 ),
               ),
             ),
           ),
-      ],
+          if (step != null && !_leaving)
+            AnimatedPositioned(
+              duration: motion,
+              curve: Curves.easeInOutCubic,
+              left: 20,
+              right: 20,
+              top: _bubbleTop,
+              bottom: _bubbleBottom,
+              child: Semantics(
+                liveRegion: true,
+                child: Material(
+                  color: colors.card,
+                  elevation: 12,
+                  shadowColor: Colors.black.withValues(alpha: .4),
+                  borderRadius: BorderRadius.circular(22),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          step.text.substring(0, _shown),
+                          // The whole line, read out as each step appears.
+                          semanticsLabel: step.text,
+                          style: TextStyle(
+                            fontSize: 16,
+                            height: 1.4,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              '${_index + 1} of ${widget.steps.length}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (!last)
+                              TextButton(
+                                onPressed: _leave,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: colors.textSecondary,
+                                ),
+                                child: const Text('Skip tour'),
+                              ),
+                            FilledButton(
+                              // While typing, the first tap shows the whole line.
+                              onPressed: _next,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: VivordoTheme.brand,
+                                shape: const StadiumBorder(),
+                              ),
+                              child: Text(last ? 'Done' : 'Next'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

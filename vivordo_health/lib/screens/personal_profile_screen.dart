@@ -14,6 +14,7 @@ import '../src/utils/trend_weight.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/birth_year_picker.dart';
 import '../widgets/vivordo_time_picker.dart';
+import '../src/utils/chart_text.dart';
 
 const _purple = Color(0xFF6250E8);
 const _muted = Color(0xFF85859B);
@@ -1129,6 +1130,7 @@ class _TrendPainter extends CustomPainter {
       canvas.drawCircle(offset, 6, Paint()..color = color);
 
       final tooltip = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text:
               '${point.value.toStringAsFixed(1)}$suffix'
@@ -1180,6 +1182,7 @@ class _TrendPainter extends CustomPainter {
     Color color,
   ) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(fontSize: size, color: color),

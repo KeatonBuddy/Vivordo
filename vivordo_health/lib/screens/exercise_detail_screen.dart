@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../widgets/apple_ui.dart';
+import '../src/utils/chart_text.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key});
@@ -921,6 +922,7 @@ class _ExerciseBarPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${values[index].round()} min';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -949,6 +951,7 @@ class _ExerciseBarPainter extends CustomPainter {
 
   void _rightText(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(
@@ -963,6 +966,7 @@ class _ExerciseBarPainter extends CustomPainter {
 
   void _center(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(
@@ -1047,6 +1051,7 @@ class _WeightChartPainter extends CustomPainter {
 
   void _center(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(

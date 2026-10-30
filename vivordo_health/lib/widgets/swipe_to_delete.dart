@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../theme/vivordo_theme.dart';
 import 'apple_ui.dart';
@@ -46,85 +47,97 @@ class _SwipeToDeleteState extends State<SwipeToDelete> {
   bool _confirming = false;
 
   @override
-  Widget build(BuildContext context) => ClipRect(
-    child: Stack(
-      children: [
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: SizedBox(
-              width: _actionWidth,
-              child: Material(
-                color: widget.actionColor,
-                child: InkWell(
-                  onTap: _deleting ? null : _delete,
-                  child: Center(
-                    child: _deleting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CupertinoActivityIndicator(
-                              color: Colors.white,
-                              radius: 10,
-                            ),
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                widget.actionIcon,
-                                color: Colors.white,
-                                size: 22,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                widget.actionLabel,
-                                style: const TextStyle(
+  Widget build(BuildContext context) => Semantics(
+    // VoiceOver can't swipe the row: the action is in its actions rotor.
+    customSemanticsActions: {
+      CustomSemanticsAction(label: widget.actionLabel): () {
+        if (!_deleting) _delete();
+      },
+    },
+    child: ClipRect(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            // Hidden behind the row until it's swiped open.
+            child: ExcludeSemantics(
+              excluding: _dragOffset == 0,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: _actionWidth,
+                  child: Material(
+                    color: widget.actionColor,
+                    child: InkWell(
+                      onTap: _deleting ? null : _delete,
+                      child: Center(
+                        child: _deleting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  radius: 10,
                                 ),
+                              )
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    widget.actionIcon,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.actionLabel,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        GestureDetector(
-          // Let taps in the revealed action area reach the Delete button.
-          behavior: HitTestBehavior.deferToChild,
-          onTap: widget.onTap,
-          onHorizontalDragStart: (_) => setState(() => _dragging = true),
-          onHorizontalDragUpdate: (details) => setState(() {
-            _dragOffset = (_dragOffset + details.delta.dx).clamp(
-              -_actionWidth,
-              0,
-            );
-          }),
-          onHorizontalDragEnd: (_) => setState(() {
-            _dragging = false;
-            _dragOffset = _dragOffset <= -_actionWidth * .35
-                ? -_actionWidth
-                : 0;
-          }),
-          onHorizontalDragCancel: () => setState(() {
-            _dragging = false;
-            _dragOffset = 0;
-          }),
-          child: AnimatedContainer(
-            duration: _dragging
-                ? Duration.zero
-                : const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            transform: Matrix4.translationValues(_dragOffset, 0, 0),
-            color: context.vivordoColors.card,
-            child: widget.child,
+          GestureDetector(
+            // Let taps in the revealed action area reach the Delete button.
+            behavior: HitTestBehavior.deferToChild,
+            onTap: widget.onTap,
+            onHorizontalDragStart: (_) => setState(() => _dragging = true),
+            onHorizontalDragUpdate: (details) => setState(() {
+              _dragOffset = (_dragOffset + details.delta.dx).clamp(
+                -_actionWidth,
+                0,
+              );
+            }),
+            onHorizontalDragEnd: (_) => setState(() {
+              _dragging = false;
+              _dragOffset = _dragOffset <= -_actionWidth * .35
+                  ? -_actionWidth
+                  : 0;
+            }),
+            onHorizontalDragCancel: () => setState(() {
+              _dragging = false;
+              _dragOffset = 0;
+            }),
+            child: AnimatedContainer(
+              duration: _dragging
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              transform: Matrix4.translationValues(_dragOffset, 0, 0),
+              color: context.vivordoColors.card,
+              child: widget.child,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 

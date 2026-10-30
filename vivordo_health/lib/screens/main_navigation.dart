@@ -29,6 +29,7 @@ import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/day_record_service.dart';
 import '../src/services/vo2_max_service.dart';
+import '../src/services/reduce_transparency.dart';
 import '../src/services/health_service.dart';
 import '../theme/vivordo_theme.dart';
 
@@ -250,6 +251,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // Warms Circle's data so the tab opens filled; launch doesn't wait.
     unawaited(CircleProfileService.preload());
     _achievementMonitor = AchievementMonitor.start();
+    ReduceTransparency.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
     // A full sync walks every consented metric, so keep the interval long and
@@ -1016,31 +1018,48 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           ),
         ],
       ),
-      child: LiquidGlassLayer(
-        settings: _glassSettings(),
-        child: LiquidGlass(
-          shape: const LiquidRoundedSuperellipse(
-            borderRadius: ContextualInsightBar.buttonSize / 2,
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: Colors.white.withValues(alpha: isDark ? .10 : .6),
-              ),
+      child: _glass(
+        radius: ContextualInsightBar.buttonSize / 2,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isDark ? .10 : .6),
             ),
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: VivordoRobot3D(size: 46, waves: waves),
-              ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: VivordoRobot3D(size: 46, waves: waves),
             ),
           ),
         ),
       ),
     );
   }
+
+  /// Liquid glass, or the solid card colour with iOS Reduce Transparency on.
+  Widget _glass({required double radius, required Widget child}) =>
+      ValueListenableBuilder<bool>(
+        valueListenable: ReduceTransparency.enabled,
+        child: child,
+        builder: (context, solid, child) => solid
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: ColoredBox(
+                  color: context.vivordoColors.card,
+                  child: child,
+                ),
+              )
+            : LiquidGlassLayer(
+                settings: _glassSettings(),
+                child: LiquidGlass(
+                  shape: LiquidRoundedSuperellipse(borderRadius: radius),
+                  clipBehavior: Clip.antiAlias,
+                  child: child!,
+                ),
+              ),
+      );
 
   /// Liquid glass for the tab bar and the AI button, cached per brightness.
   LiquidGlassSettings _glassSettings() {
@@ -1068,7 +1087,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget _buildFloatingNavBar() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glassSettings = _glassSettings();
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     const items = [
       (CupertinoIcons.house_fill, 'Home'),
@@ -1094,56 +1112,50 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             ),
           ],
         ),
-        child: LiquidGlassLayer(
-          settings: glassSettings,
-          child: LiquidGlass(
-            shape: const LiquidRoundedSuperellipse(
-              borderRadius: _navBarHeight / 2,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                height: _navBarHeight,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(_navBarHeight / 2),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? .10 : .6),
-                  ),
+        child: _glass(
+          radius: _navBarHeight / 2,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              height: _navBarHeight,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(_navBarHeight / 2),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: isDark ? .10 : .6),
                 ),
-                child: Stack(
-                  children: [
-                    // The selection lens slides to the chosen tab. Placed
-                    // by fraction, so it keeps up while the bar widens.
-                    AnimatedAlign(
-                      duration: reduceMotion
-                          ? Duration.zero
-                          : const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment(
-                        -1 + 2 * _selectedIndex / (items.length - 1),
-                        0,
-                      ),
-                      child: FractionallySizedBox(
-                        widthFactor: 1 / items.length,
-                        heightFactor: 1,
-                        child: DecoratedBox(
-                          decoration: ShapeDecoration(
-                            shape: const StadiumBorder(),
-                            color: primaryPurple,
-                          ),
+              ),
+              child: Stack(
+                children: [
+                  // The selection lens slides to the chosen tab. Placed
+                  // by fraction, so it keeps up while the bar widens.
+                  AnimatedAlign(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(
+                      -1 + 2 * _selectedIndex / (items.length - 1),
+                      0,
+                    ),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / items.length,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          shape: const StadiumBorder(),
+                          color: primaryPurple,
                         ),
                       ),
                     ),
-                    Row(
-                      children: [
-                        for (final (index, (icon, label)) in items.indexed)
-                          Expanded(child: _navItem(icon, label, index)),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                  Row(
+                    children: [
+                      for (final (index, (icon, label)) in items.indexed)
+                        Expanded(child: _navItem(icon, label, index)),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),

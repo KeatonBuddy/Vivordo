@@ -280,30 +280,33 @@ class _FitnessScreenState extends State<FitnessScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Fitness',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
+              // At large text the actions go under the title, so the
+              // title keeps the width.
+              Builder(
+                builder: (context) {
+                  final title = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Fitness',
+                        // Large titles stop growing at 1.5x, as in iOS.
+                        textScaler: MediaQuery.textScalerOf(
+                          context,
+                        ).clamp(maxScaleFactor: 1.5),
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: colors.textPrimary,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                          style: TextStyle(color: colors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Row(
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ],
+                  );
+                  final actions = Row(
                     key: widget.actionsKey,
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -320,8 +323,20 @@ class _FitnessScreenState extends State<FitnessScreen> {
                         ),
                       ),
                     ],
-                  ),
-                ],
+                  );
+                  return MediaQuery.textScalerOf(context).scale(34) > 46
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [title, actions],
+                        )
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: title),
+                            actions,
+                          ],
+                        );
+                },
               ),
               const SizedBox(height: 18),
               KeyedSubtree(
@@ -802,7 +817,7 @@ class _ProfileMetric extends StatelessWidget {
         label,
         textAlign: TextAlign.center,
         style: const TextStyle(
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: FontWeight.w700,
           color: _muted,
         ),
@@ -1043,22 +1058,27 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
               child: _Card(
                 child: Column(
                   children: [
-                    SizedBox(
-                      height: 96,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          for (final day in days)
-                            _WeekDayBar(
-                              letter: 'MTWTFSS'[day.date.weekday - 1],
-                              fraction: maxMinutes == 0
-                                  ? 0
-                                  : day.minutes / maxMinutes,
-                              isToday: day.date == today,
-                              workout: day.workout,
-                            ),
-                        ],
+                    // A chart: its day letters grow only as far as the
+                    // other chart labels do (chartTextScaler).
+                    MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.35,
+                      child: SizedBox(
+                        height: 96,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            for (final day in days)
+                              _WeekDayBar(
+                                letter: 'MTWTFSS'[day.date.weekday - 1],
+                                fraction: maxMinutes == 0
+                                    ? 0
+                                    : day.minutes / maxMinutes,
+                                isToday: day.date == today,
+                                workout: day.workout,
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -3629,7 +3649,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                 child: Text(
                   'Previous',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: _muted,
                   ),
@@ -4977,35 +4997,39 @@ class _StrengthRow extends StatelessWidget {
     required this.value,
     required this.goal,
   });
+  // A progress chart in fixed columns: grows only as far as chart labels.
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      SizedBox(
-        width: 78,
-        child: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.35,
+    child: Row(
+      children: [
+        SizedBox(
+          width: 78,
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+          ),
         ),
-      ),
-      Expanded(
-        child: LinearProgressIndicator(
-          value: (value / goal).clamp(0, 1),
-          minHeight: 7,
-          borderRadius: BorderRadius.circular(8),
-          color: _purple,
-          backgroundColor: context.vivordoColors.input,
+        Expanded(
+          child: LinearProgressIndicator(
+            value: (value / goal).clamp(0, 1),
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+            color: _purple,
+            backgroundColor: context.vivordoColors.input,
+          ),
         ),
-      ),
-      const SizedBox(width: 10),
-      SizedBox(
-        width: 60,
-        child: Text(
-          '$value / $goal sets',
-          textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 10, color: _muted),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 68,
+          child: Text(
+            '$value / $goal sets',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 11, color: _muted),
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 

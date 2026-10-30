@@ -99,36 +99,39 @@ class AppleAlert extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
-              child: Column(
-                children: [
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                  if (message != null) ...[
-                    const SizedBox(height: 5),
+            // Scrolls at large text sizes; the buttons stay in view.
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+                child: Column(
+                  children: [
                     Text(
-                      message!,
+                      title,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: colors.textSecondary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
                       ),
                     ),
+                    if (message != null) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        message!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (content != null) ...[
+                      const SizedBox(height: 12),
+                      content!,
+                    ],
                   ],
-                  if (content != null) ...[
-                    const SizedBox(height: 12),
-                    content!,
-                  ],
-                ],
+                ),
               ),
             ),
             Divider(height: .5, thickness: .5, color: divider),

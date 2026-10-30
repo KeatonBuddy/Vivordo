@@ -105,9 +105,13 @@ class TrainingLoadCard extends StatelessWidget {
               style: TextStyle(fontSize: 14, color: colors.textPrimary),
             ),
           ),
-          Text(
-            value,
-            style: off ? secondary.copyWith(color: colors.danger) : secondary,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: off ? secondary.copyWith(color: colors.danger) : secondary,
+            ),
           ),
         ],
       ),

@@ -65,4 +65,41 @@ void main() {
     await settle();
     expect(finished, isTrue);
   });
+
+  testWidgets('VoiceOver hears the whole line and not the screen beneath', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: Stack(
+            children: [
+              const Center(child: Text('Behind the tour')),
+              Positioned.fill(
+                child: AppTour(
+                  steps: const [TourStep('Your day starts here.')],
+                  onSelectTab: (_) {},
+                  onFinished: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    // Two frames to measure, then typing starts.
+    for (var i = 0; i < 3; i++) {
+      await tester.pump();
+    }
+    // The full line from the first frame, not the half typed so far.
+    expect(
+      find.bySemanticsLabel(RegExp('Your day starts here\.')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Behind the tour'), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+    handle.dispose();
+  });
 }

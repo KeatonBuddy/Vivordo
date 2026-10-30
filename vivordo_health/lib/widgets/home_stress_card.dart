@@ -277,53 +277,72 @@ class _HomeStressCardState extends State<HomeStressCard>
     ],
   );
 
-  Widget _ringCenter(double? displayedScore) => Center(
-    child: widget.loading
-        ? const SizedBox(
-            width: 26,
-            height: 26,
-            child: CupertinoActivityIndicator(color: Colors.white, radius: 13),
-          )
-        : _noReading
-        ? const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.monitor_heart_outlined, color: Colors.white, size: 28),
-              SizedBox(height: 4),
-              Text(
-                'No reading',
-                style: TextStyle(
-                  color: _label,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+  // Shrinks to fit inside the ring at large text sizes.
+  Widget _ringCenter(double? displayedScore) => Padding(
+    padding: const EdgeInsets.all(14),
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: widget.loading
+          ? const SizedBox(
+              width: 26,
+              height: 26,
+              child: CupertinoActivityIndicator(
+                color: Colors.white,
+                radius: 13,
               ),
-            ],
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                displayedScore == null ? '--' : '${displayedScore.round()}%',
-                style: const TextStyle(
+            )
+          : _noReading
+          ? const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.monitor_heart_outlined,
                   color: Colors.white,
-                  fontSize: 26,
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
+                  size: 28,
                 ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Stress',
-                style: TextStyle(
-                  color: _label,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                SizedBox(height: 4),
+                Text(
+                  'No reading',
+                  style: TextStyle(
+                    color: _label,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  displayedScore == null ? '--' : '${displayedScore.round()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Stress',
+                  style: TextStyle(
+                    color: _label,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+    ),
+  );
+
+  static const _summaryStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 22,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.3,
   );
 
   Widget _summary(double? displayedScore) => Column(
@@ -335,18 +354,24 @@ class _HomeStressCardState extends State<HomeStressCard>
           height: 22,
           child: CupertinoActivityIndicator(color: Colors.white, radius: 11),
         )
+      else if (widget.showNumbers && homeStressLevel(displayedScore) != null)
+        // One word ("Moderate"): shrinks rather than breaking mid-word.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            homeStressLevel(displayedScore)!,
+            maxLines: 1,
+            style: _summaryStyle,
+          ),
+        )
       else
         Text(
           (widget.showNumbers
-                  ? homeStressLevel(displayedScore)
+                  ? null
                   : homeStressSentence(displayedScore, usual: widget.usual)) ??
               'No stress reading yet',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
+          style: _summaryStyle,
         ),
       const SizedBox(height: 3),
       Row(

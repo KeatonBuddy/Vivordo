@@ -87,6 +87,30 @@ import WidgetKit
         result(nil)
       }
 
+      // Reduce Transparency, which Flutter doesn't expose: the glass tab
+      // bar goes solid while it's on (ReduceTransparency in Dart).
+      let accessibilityChannel = FlutterMethodChannel(
+        name: "com.vivordo.health/accessibility",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      accessibilityChannel.setMethodCallHandler { call, result in
+        guard call.method == "reduceTransparency" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        result(UIAccessibility.isReduceTransparencyEnabled)
+      }
+      NotificationCenter.default.addObserver(
+        forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+        object: nil,
+        queue: .main
+      ) { _ in
+        accessibilityChannel.invokeMethod(
+          "reduceTransparency",
+          arguments: UIAccessibility.isReduceTransparencyEnabled
+        )
+      }
+
       let widgetChannel = FlutterMethodChannel(
         name: "com.vivordo.health/home_widgets",
         binaryMessenger: engineBridge.applicationRegistrar.messenger()

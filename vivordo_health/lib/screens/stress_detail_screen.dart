@@ -20,6 +20,7 @@ import '../widgets/contextual_insight_bar.dart';
 import '../widgets/home_stress_card.dart'
     show StressLevelChip, stressLevelColors;
 import '../widgets/morning_check_in_card.dart' show feelCheckInLabels;
+import '../src/utils/chart_text.dart';
 
 /// Stress, against the person's own usual: a dial anchored at their usual,
 /// today's curve, what moved the latest reading, a next step, the trend and
@@ -1889,6 +1890,7 @@ class _DayChartPainter extends CustomPainter {
       );
       canvas.drawCircle(p, 5, Paint()..color = tooltipText);
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: selectedLabel,
           style: TextStyle(
@@ -2063,11 +2065,12 @@ class _RangeChartPainter extends CustomPainter {
       }
       if (labels[i].isNotEmpty) {
         final painter = TextPainter(
+          textScaler: chartTextScaler,
           text: TextSpan(
             text: labels[i],
             style: TextStyle(
               color: text,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: isToday ? FontWeight.w800 : FontWeight.w400,
             ),
           ),
@@ -2091,6 +2094,7 @@ class _RangeChartPainter extends CustomPainter {
 
 void _text(Canvas canvas, String value, Offset at, Color color, double size) {
   (TextPainter(
+    textScaler: chartTextScaler,
     text: TextSpan(
       text: value,
       style: TextStyle(color: color, fontSize: size),

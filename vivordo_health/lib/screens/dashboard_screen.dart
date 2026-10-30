@@ -28,6 +28,7 @@ import '../src/utils/physical_health_view.dart';
 import '../widgets/building_ring_centre.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import '../src/utils/chart_text.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -460,13 +461,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Metrics',
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w900,
-                              color: context.vivordoColors.textPrimary,
-                              letterSpacing: -1,
+                          // Large titles stop growing at 1.5x, as in iOS,
+                          // and shrink rather than break mid-word.
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Metrics',
+                              maxLines: 1,
+                              textScaler: MediaQuery.textScalerOf(
+                                context,
+                              ).clamp(maxScaleFactor: 1.5),
+                              style: TextStyle(
+                                fontSize: 34,
+                                fontWeight: FontWeight.w900,
+                                color: context.vivordoColors.textPrimary,
+                                letterSpacing: -1,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -936,78 +947,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color color,
     VoidCallback? onTap,
   }) {
-    return Material(
-      color: context.vivordoColors.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: context.vivordoColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 160,
-          child: Padding(
-            padding: const EdgeInsets.all(15),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 43,
-                  height: 43,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: .1),
-                    shape: BoxShape.circle,
+    // Two columns: past this size the labels break mid-word.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Material(
+        color: context.vivordoColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: context.vivordoColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          // At least 160pt, taller when large text needs it.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 160),
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 43,
+                    height: 43,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: .1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 23),
                   ),
-                  child: Icon(icon, color: color, size: 23),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, height: 1.2),
-                      ),
-                      const SizedBox(height: 5),
-                      SizedBox(
-                        height: 31,
-                        width: double.infinity,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, height: 1.2),
+                        ),
+                        const SizedBox(height: 5),
+                        SizedBox(
+                          height: 31,
+                          width: double.infinity,
+                          child: Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(
-                              value,
-                              maxLines: 1,
-                              style: TextStyle(
-                                color: color,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                value,
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        detail,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.vivordoColors.textSecondary,
-                          fontSize: 12,
-                          height: 1.2,
+                        const SizedBox(height: 6),
+                        Text(
+                          detail,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.vivordoColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.2,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1729,9 +1745,10 @@ class _AreaChartPainter extends CustomPainter {
       final y = chartH * i / gridLines;
       canvas.drawLine(Offset(leftPad, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: '${(maxY * (1 - i / gridLines)).round()}',
-          style: TextStyle(fontSize: 9, color: Colors.grey.shade400),
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -1785,10 +1802,11 @@ class _AreaChartPainter extends CustomPainter {
 
     // X-axis labels — skip empty strings (used for month view non-Monday points)
     if (labels.length == n) {
-      final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
+      final labelStyle = TextStyle(fontSize: 11, color: Colors.grey.shade500);
       for (int i = 0; i < n; i++) {
         if (labels[i].isEmpty) continue;
         final tp = TextPainter(
+          textScaler: chartTextScaler,
           text: TextSpan(text: labels[i], style: labelStyle),
           textDirection: TextDirection.ltr,
         )..layout();
@@ -1827,6 +1845,7 @@ class _AreaChartPainter extends CustomPainter {
         ? labels[index]
         : 'Day ${index + 1}';
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: '$label: $valueText',
         style: const TextStyle(

@@ -20,6 +20,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'sleep_preferences_screen.dart';
+import '../src/utils/chart_text.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
   final sleep = dailyMetrics?['sleep'];
@@ -1315,6 +1316,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
       canvas.drawCircle(point, 4, Paint()..color = _lineColor);
 
       final tooltip = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text:
               '${DateFormat('h:mm a').format(reading.timestamp)}\n${reading.bpm.round()} bpm',
@@ -1372,6 +1374,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
 
   TextPainter _textPainter(String text, double size, Color color) =>
       TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: text,
           style: TextStyle(fontSize: size, color: color),
@@ -1534,11 +1537,12 @@ class _SleepBarPainter extends CustomPainter {
       if (needY == null) return;
       final minutes = (need! * 60).round();
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text:
               'Need ${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m',
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 11,
             color: dark ? Colors.white70 : Colors.black54,
           ),
         ),
@@ -1606,6 +1610,7 @@ class _SleepBarPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${_durationLabel(values[index])}';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -1644,6 +1649,7 @@ class _SleepBarPainter extends CustomPainter {
 
   void _center(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(

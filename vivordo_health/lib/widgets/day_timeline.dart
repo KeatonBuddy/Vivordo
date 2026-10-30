@@ -257,8 +257,13 @@ class TimelineRow extends StatelessWidget {
                                   child: GestureDetector(
                                     behavior: HitTestBehavior.opaque,
                                     onTap: onEnergyAction,
-                                    child: SizedBox(
+                                    child: Container(
                                       width: double.infinity,
+                                      // 44pt to tap, as iOS asks.
+                                      constraints: const BoxConstraints(
+                                        minHeight: 44,
+                                      ),
+                                      alignment: Alignment.centerLeft,
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,

@@ -17,6 +17,7 @@ import 'package:vivordo_health/src/utils/personal_best.dart';
 import 'package:vivordo_health/src/utils/workout_activity_visual.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import '../src/utils/chart_text.dart';
 
 const _summaryPurple = Color(0xFF6B5CE7);
 
@@ -1501,6 +1502,7 @@ class _HeartRatePainter extends CustomPainter {
       late TextPainter label;
       for (final text in [name, name.split(' ').first, '${span.index + 1}']) {
         label = TextPainter(
+          textScaler: chartTextScaler,
           text: TextSpan(
             text: text,
             style: TextStyle(
@@ -1547,6 +1549,7 @@ class _HeartRatePainter extends CustomPainter {
 
   void _text(Canvas canvas, String text, Offset at, {bool alignRight = false}) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(color: textColor, fontSize: 11),

@@ -146,6 +146,8 @@ class _HomeCircleProfileButton extends StatelessWidget {
     final fallback = username.isNotEmpty
         ? Text(
             username[0].toUpperCase(),
+            // A fixed 46pt avatar, like Circle's: the letter doesn't grow.
+            textScaler: TextScaler.noScaling,
             style: const TextStyle(
               color: _HomeScreenState.accentPurple,
               fontSize: 18,
@@ -1517,6 +1519,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// The most the three-column tiles grow with the system text size.
+  static const _tileTextScale = 1.25;
+
   Widget _buildVitals({
     required double? sleepHours,
     required int? heartRate,
@@ -1524,52 +1529,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required bool loading,
     required bool hrLoading,
   }) => _card(
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: _vital(
-              icon: Icons.bedtime_rounded,
-              color: accentPurple,
-              value: sleepHours == null ? null : _sleepLabel(sleepHours),
-              label: 'Sleep',
-              loading: loading,
-              onTap: () => _push(const SleepDetailScreen()),
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: _vital(
-              icon: Icons.favorite_rounded,
-              color: _heartRed,
-              value: heartRate?.toString(),
-              label: heartRate == null ? 'Heart rate' : 'bpm',
-              loading: hrLoading,
-              onTap: () => _push(const HeartRateDetailScreen()),
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: Selector<ThemeController, bool>(
-              selector: (_, c) => c.showScoreNumbers,
-              builder: (context, showNumbers, _) => _vital(
-                icon: Icons.mood_rounded,
-                color: _moodOrange,
-                // Words mode shows the check-in's word, not its score.
-                value: moodScore == null
-                    ? null
-                    : showNumbers
-                    ? moodScore.round().toString()
-                    : MetricsService.moodLabelForScore(moodScore),
-                label: 'Mood',
+    // Three columns: past this size the labels would only truncate.
+    child: MediaQuery.withClampedTextScaling(
+      maxScaleFactor: _tileTextScale,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _vital(
+                icon: Icons.bedtime_rounded,
+                color: accentPurple,
+                value: sleepHours == null ? null : _sleepLabel(sleepHours),
+                label: 'Sleep',
                 loading: loading,
-                emptyAction: 'Check in',
-                onTap: _showMoodCheck,
+                onTap: () => _push(const SleepDetailScreen()),
               ),
             ),
-          ),
-        ],
+            _divider(),
+            Expanded(
+              child: _vital(
+                icon: Icons.favorite_rounded,
+                color: _heartRed,
+                value: heartRate?.toString(),
+                label: heartRate == null ? 'Heart rate' : 'bpm',
+                loading: hrLoading,
+                onTap: () => _push(const HeartRateDetailScreen()),
+              ),
+            ),
+            _divider(),
+            Expanded(
+              child: Selector<ThemeController, bool>(
+                selector: (_, c) => c.showScoreNumbers,
+                builder: (context, showNumbers, _) => _vital(
+                  icon: Icons.mood_rounded,
+                  color: _moodOrange,
+                  // Words mode shows the check-in's word, not its score.
+                  value: moodScore == null
+                      ? null
+                      : showNumbers
+                      ? moodScore.round().toString()
+                      : MetricsService.moodLabelForScore(moodScore),
+                  label: 'Mood',
+                  loading: loading,
+                  emptyAction: 'Check in',
+                  onTap: _showMoodCheck,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -1621,18 +1630,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       )
                     else
-                      Text(
-                        shown,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: value == null ? 13 : 15.5,
-                          fontWeight: FontWeight.w800,
-                          color: value != null
-                              ? colors.textPrimary
-                              : emptyAction != null
-                              ? accentPurple
-                              : colors.textSecondary,
+                      // Shrinks to fit the narrow column at large text.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          shown,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: value == null ? 13 : 15.5,
+                            fontWeight: FontWeight.w800,
+                            color: value != null
+                                ? colors.textPrimary
+                                : emptyAction != null
+                                ? accentPurple
+                                : colors.textSecondary,
+                          ),
                         ),
                       ),
                     Text(
@@ -1749,66 +1762,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
     return _card(
       onTap: widget.onFitnessTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-        child: Row(
-          children: [
-            Semantics(
-              label:
-                  'Activity: steps $steps of ${goals.steps}, '
-                  '$activeCalories of ${goals.activeCalories} calories, '
-                  '$exerciseMinutes of ${goals.exerciseMinutes} exercise minutes',
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ring(52, progress(steps, goals.steps), accentPurple, 6),
-                    ring(
-                      36,
-                      progress(activeCalories, goals.activeCalories),
-                      _calorieOrange,
-                      6,
-                    ),
-                    ring(
-                      20,
-                      progress(exerciseMinutes, goals.exerciseMinutes),
-                      _exerciseGreen,
-                      5,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _activityNumber(
-                        NumberFormat.decimalPattern().format(steps),
-                        'steps',
-                        first: true,
-                        onTap: () => _push(const StepsDetailScreen()),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: _tileTextScale,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          child: Row(
+            children: [
+              Semantics(
+                label:
+                    'Activity: steps $steps of ${goals.steps}, '
+                    '$activeCalories of ${goals.activeCalories} calories, '
+                    '$exerciseMinutes of ${goals.exerciseMinutes} exercise minutes',
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ring(52, progress(steps, goals.steps), accentPurple, 6),
+                      ring(
+                        36,
+                        progress(activeCalories, goals.activeCalories),
+                        _calorieOrange,
+                        6,
                       ),
-                    ),
-                    _divider(),
-                    Expanded(child: _activityNumber('$activeCalories', 'cal')),
-                    _divider(),
-                    Expanded(
-                      child: _activityNumber('${exerciseMinutes}m', 'exercise'),
-                    ),
-                  ],
+                      ring(
+                        20,
+                        progress(exerciseMinutes, goals.exerciseMinutes),
+                        _exerciseGreen,
+                        5,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const _HomeWorkoutStreakBadge(),
-            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _activityNumber(
+                          NumberFormat.decimalPattern().format(steps),
+                          'steps',
+                          first: true,
+                          onTap: () => _push(const StepsDetailScreen()),
+                        ),
+                      ),
+                      _divider(),
+                      Expanded(
+                        child: _activityNumber('$activeCalories', 'cal'),
+                      ),
+                      _divider(),
+                      Expanded(
+                        child: _activityNumber(
+                          '${exerciseMinutes}m',
+                          'exercise',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const _HomeWorkoutStreakBadge(),
+              Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
+            ],
+          ),
         ),
       ),
     );
@@ -1864,8 +1885,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildSectionTitle(String title, {List<Widget> trailing = const []}) =>
       Padding(
         padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
-        child: SizedBox(
-          height: 36,
+        // At least 36pt, taller when large text wraps the title.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 36),
           child: Row(
             children: [
               Expanded(
@@ -2786,14 +2808,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         const SizedBox(width: 5),
-                        Text('$label: ${value.round()}', style: caption),
+                        Flexible(
+                          child: Text(
+                            '$label: ${value.round()}',
+                            style: caption,
+                          ),
+                        ),
                       ],
                     ),
                 ],
               ),
             ),
             if (usual != null)
-              Text('usual by now: ${usual.round()}', style: caption),
+              Flexible(
+                child: Text(
+                  'usual by now: ${usual.round()}',
+                  textAlign: TextAlign.right,
+                  style: caption,
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 4),

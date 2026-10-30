@@ -48,59 +48,69 @@ class DailyTagChips extends StatelessWidget {
     const purple = Color(0xFF7F77DD);
     return Wrap(
       spacing: 6,
-      runSpacing: 6,
       children: [
         for (final tag in dailyTags)
           if (selected.contains(tag.id) case final on)
             Semantics(
               button: true,
               selected: on,
-              child: Material(
-                color: on
-                    ? (dark
-                          ? purple.withValues(alpha: .22)
-                          : const Color(0xFFEEEDFE))
-                    : Colors.transparent,
-                shape: StadiumBorder(
-                  side: BorderSide(color: on ? purple : colors.border),
+              // The 36pt chip with 4pt of tappable space above and below:
+              // a 44pt target, and the gap between rows.
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(
+                  on ? ({...selected}..remove(tag.id)) : {...selected, tag.id},
                 ),
-                child: InkWell(
-                  customBorder: const StadiumBorder(),
-                  onTap: () => onChanged(
-                    on
-                        ? ({...selected}..remove(tag.id))
-                        : {...selected, tag.id},
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Material(
+                    color: on
+                        ? (dark
+                              ? purple.withValues(alpha: .22)
+                              : const Color(0xFFEEEDFE))
+                        : Colors.transparent,
+                    shape: StadiumBorder(
+                      side: BorderSide(color: on ? purple : colors.border),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          tag.icon,
-                          size: 15,
-                          color: on
-                              ? (dark
-                                    ? const Color(0xFFCECBF6)
-                                    : const Color(0xFF3C3489))
-                              : colors.textSecondary,
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      onTap: () => onChanged(
+                        on
+                            ? ({...selected}..remove(tag.id))
+                            : {...selected, tag.id},
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          tag.label,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: on
-                                ? (dark
-                                      ? const Color(0xFFCECBF6)
-                                      : const Color(0xFF3C3489))
-                                : colors.textSecondary,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              tag.icon,
+                              size: 15,
+                              color: on
+                                  ? (dark
+                                        ? const Color(0xFFCECBF6)
+                                        : const Color(0xFF3C3489))
+                                  : colors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              tag.label,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: on
+                                    ? (dark
+                                          ? const Color(0xFFCECBF6)
+                                          : const Color(0xFF3C3489))
+                                    : colors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

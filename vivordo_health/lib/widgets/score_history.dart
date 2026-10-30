@@ -8,6 +8,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/day_key.dart';
+import '../src/utils/chart_text.dart';
 
 /// Which score a [ScoreHistory] charts.
 enum ScoreHistoryKind {
@@ -711,10 +712,11 @@ class _ChartPainter extends CustomPainter {
           ? 'MTWTFSS'[d.weekday - 1]
           : DateFormat('MMM d').format(d);
       final text = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 11,
             fontFamily: fontFamily,
             color: DateUtils.isSameDay(d, today) ? _line : labelColor,
           ),

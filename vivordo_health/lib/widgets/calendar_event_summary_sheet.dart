@@ -18,6 +18,7 @@ import '../src/utils/meeting_patterns.dart';
 import '../src/utils/screen_metric_projection.dart' show reactionHeartDays;
 import 'day_timeline.dart' show formatSpan;
 import 'event_type_section.dart';
+import '../src/utils/chart_text.dart';
 
 const _summaryPurple = Color(0xFF6B5CE7);
 const _heartRed = Color(0xFFE5484D);
@@ -878,10 +879,11 @@ class _EventHeartPainter extends CustomPainter {
     Color? color,
   }) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: 11,
           color: color ?? textColor,
           fontFamily: 'DMSans',
         ),

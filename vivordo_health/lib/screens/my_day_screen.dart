@@ -566,15 +566,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _showReaction(_CalendarEvent e, BodyReaction reaction) =>
-      showBodyReactionSheet(
-        context,
-        title: e.title,
-        start: e.start,
-        end: e.end,
-        reaction: reaction,
-      );
-
   /// Rated items for Demand: [events] and the timed priorities on [day]
   /// that aren't linked to one of them.
   List<EffortItem> _effortItems(
@@ -1071,6 +1062,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       children: [
                         Text(
                           'My Day',
+                          // Large titles stop growing at 1.5x, as in iOS.
+                          textScaler: MediaQuery.textScalerOf(
+                            context,
+                          ).clamp(maxScaleFactor: 1.5),
                           style: TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w800,
@@ -3467,10 +3462,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   day: DateUtils.dateOnly(DateTime.now()),
                 ),
           footer: reaction != null
-              ? BodyReactionChip(
-                  reaction: reaction,
-                  onTap: () => _showReaction(event!, reaction),
-                )
+              ? BodyReactionChip(reaction: reaction)
               : pattern != null
               ? MeetingPatternTag(
                   pattern: pattern,
@@ -3722,6 +3714,24 @@ class _PriorityRow extends StatelessWidget {
     final (pill, pillColor) = overdue != null
         ? (overdueLabel(overdue, today), const Color(0xFFE5484D))
         : (_timeLabel, MyDayScreen.purple);
+    final pillBadge = pill == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: pillColor.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              pill,
+              style: TextStyle(
+                color: pillColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+    final stacked = MediaQuery.textScalerOf(context).scale(15) > 20;
     return SwipeToDelete(
       onTap: onEdit,
       onDelete: onDelete,
@@ -3786,38 +3796,37 @@ class _PriorityRow extends StatelessWidget {
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  priority.title,
-                  style: TextStyle(
-                    color: priority.completed
-                        ? colors.textSecondary
-                        : colors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    decoration: priority.completed
-                        ? TextDecoration.lineThrough
-                        : null,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      priority.title,
+                      style: TextStyle(
+                        color: priority.completed
+                            ? colors.textSecondary
+                            : colors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        decoration: priority.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    // At large text the pill goes under the title, so the
+                    // title keeps the row's width.
+                    if (pillBadge != null && stacked) ...[
+                      const SizedBox(height: 4),
+                      pillBadge,
+                    ],
+                  ],
                 ),
               ),
             ),
-            if (pill != null) ...[
+            if (pillBadge != null && !stacked) ...[
               const SizedBox(width: 10),
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: pillColor.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text(
-                  pill,
-                  style: TextStyle(
-                    color: pillColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: pillBadge,
               ),
             ],
           ],

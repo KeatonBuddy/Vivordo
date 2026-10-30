@@ -19,6 +19,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import '../src/utils/chart_text.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
   const HeartRateDetailScreen({super.key});
@@ -1315,6 +1316,7 @@ class _HeartChartPainter extends CustomPainter {
           : '${DateFormat('MMM d').format(dates[index])}\n'
                 '${values[index].round()} bpm';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -1409,6 +1411,7 @@ class _HeartChartPainter extends CustomPainter {
 
   void text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -1424,6 +1427,7 @@ class _HeartChartPainter extends CustomPainter {
 
   void centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -1447,6 +1451,7 @@ class _HeartChartPainter extends CustomPainter {
     double maximumX,
   ) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
