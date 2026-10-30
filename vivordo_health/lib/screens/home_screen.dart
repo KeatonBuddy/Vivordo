@@ -1437,8 +1437,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final colors = context.vivordoColors;
     final now = DateTime.now();
     final name = _firstName();
-    // Without a name the greeting takes its place.
     final date = DateFormat('EEE, MMM d').format(now);
+    final greeting = timeOfDayGreeting(now);
     return Row(
       children: [
         Expanded(
@@ -1446,7 +1446,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                name == null ? date : '$date · ${timeOfDayGreeting(now)}',
+                name == null ? '$date · $greeting' : '$date · $greeting, $name',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 13,
@@ -1454,13 +1454,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 2),
+              // The tab's name, like the other tabs, so the small title
+              // that replaces it on scroll (CollapsingTitle) matches.
               Text(
-                name ?? timeOfDayGreeting(now),
+                'Home',
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                textScaler: MediaQuery.textScalerOf(
+                  context,
+                ).clamp(maxScaleFactor: 1.5),
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 30,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
                 ),
