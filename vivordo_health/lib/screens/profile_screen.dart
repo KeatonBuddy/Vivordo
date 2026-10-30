@@ -31,6 +31,8 @@ import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
+import 'package:vivordo_health/screens/sleep_preferences_screen.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -1557,6 +1559,29 @@ class _SettingsScreenState extends State<SettingsScreen>
                             : _formatReminderTime(dayWrapUp),
                       ),
                       onTap: () => _chooseDayWrapUp(dayWrapUp),
+                    ),
+                    // Also asked in setup after onboarding; this is where it
+                    // stays once Home's setup card is gone.
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.bedtime_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Sleep schedule',
+                      subtitle: 'Your usual bed and wake times',
+                      trailing: _ValueChevron(
+                        switch (SleepSchedule.fromPreferences(preferences)) {
+                          final s? =>
+                            '${_formatReminderTime(s.bed)} – '
+                                '${_formatReminderTime(s.wake)}',
+                          null => 'Not set',
+                        },
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SleepPreferencesScreen(),
+                        ),
+                      ),
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(

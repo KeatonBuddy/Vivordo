@@ -728,7 +728,7 @@ class _ScanScreenState extends State<ScanScreen>
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
       body: CollapsingTitle(
-        title: 'Heart Scan',
+        title: 'Scan',
         threshold: 84,
         child: SafeArea(
           child: SingleChildScrollView(
@@ -740,12 +740,16 @@ class _ScanScreenState extends State<ScanScreen>
                 const SizedBox(height: 48),
                 Row(
                   children: [
-                    const Expanded(
+                    // The tab's name, the size of the other tabs' titles.
+                    Expanded(
                       child: Text(
-                        'Heart Scan',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
+                        'Scan',
+                        textScaler: MediaQuery.textScalerOf(
+                          context,
+                        ).clamp(maxScaleFactor: 1.5),
+                        style: const TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: -0.5,
                         ),
                       ),
