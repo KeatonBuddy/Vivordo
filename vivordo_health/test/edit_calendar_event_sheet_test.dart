@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart' show AppSwitch;
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
 
 void main() {
@@ -75,6 +76,42 @@ void main() {
     expect(find.text('Every year'), findsOneWidget);
     expect(find.text('Every 2 weeks on Mon, Wed'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('turning off all-day gives the event real hours', (tester) async {
+    final event = gcal.Event()
+      ..summary = 'Offsite'
+      ..start = (gcal.EventDateTime()..date = DateTime(2026, 8, 26))
+      ..end = (gcal.EventDateTime()..date = DateTime(2026, 8, 27));
+    CalendarEventEditResult? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.dark,
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showEditCalendarEventSheet(
+              context,
+              event: event,
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(AppSwitch));
+    await tester.pumpAndSettle();
+    expect(find.text('9:00 AM'), findsOneWidget);
+    expect(find.text('10:00 AM'), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    final draft = result!.draft!;
+    expect(draft.isAllDay, isFalse);
+    expect(draft.start, DateTime(2026, 8, 26, 9));
+    expect(draft.end, DateTime(2026, 8, 26, 10));
   });
 
   test('moving the start keeps the event length', () {

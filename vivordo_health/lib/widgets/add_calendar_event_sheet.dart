@@ -708,8 +708,23 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                               ),
                               AppSwitch(
                                 value: _isAllDay,
-                                onChanged: (value) =>
-                                    setState(() => _isAllDay = value),
+                                onChanged: (value) => setState(() {
+                                  _isAllDay = value;
+                                  // An all-day event opens at midnight to
+                                  // midnight: give it a real hour instead.
+                                  if (!value &&
+                                      _minutesOf(_startTime) == 0 &&
+                                      _minutesOf(_endTime) == 0) {
+                                    _startTime = const TimeOfDay(
+                                      hour: 9,
+                                      minute: 0,
+                                    );
+                                    _endTime = const TimeOfDay(
+                                      hour: 10,
+                                      minute: 0,
+                                    );
+                                  }
+                                }),
                               ),
                             ],
                           ),

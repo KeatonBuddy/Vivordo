@@ -632,7 +632,19 @@ class CalendarService {
     }
     if (recurrence != null) updated.recurrence = recurrenceRules(recurrence);
     final api = await _authorizedCalendarApi();
-    var result = await api.events.patch(updated, sourceCalendarId, eventId);
+    gcal.Event result;
+    if (nextIsAllDay != originalIsAllDay) {
+      // A patch merges start and end, so the old date (or dateTime) stays
+      // beside the new one and Google refuses it. Replace the whole event.
+      final full = await api.events.get(sourceCalendarId, eventId)
+        ..start = updated.start
+        ..end = updated.end;
+      if (updated.summary != null) full.summary = updated.summary;
+      if (updated.recurrence != null) full.recurrence = updated.recurrence;
+      result = await api.events.update(full, sourceCalendarId, eventId);
+    } else {
+      result = await api.events.patch(updated, sourceCalendarId, eventId);
+    }
     final destinationCalendarId = calendarId;
     if (destinationCalendarId != null &&
         destinationCalendarId != sourceCalendarId) {
