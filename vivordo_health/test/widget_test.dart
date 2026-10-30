@@ -36,7 +36,11 @@ void main() {
       expect(create, lessThan(apple));
       expect(apple, lessThan(google));
       // Everyone agrees to the Terms before an account exists.
-      await tester.ensureVisible(find.text('Privacy Policy'));
+      // Below the fold in the test's small window: scroll it into view.
+      await tester.ensureVisible(
+        find.text('Privacy Policy', skipOffstage: false),
+      );
+      await tester.pumpAndSettle();
       final agree = tester.getTopLeft(find.text('Terms')).dy;
       expect(agree, greaterThan(google));
       expect(
