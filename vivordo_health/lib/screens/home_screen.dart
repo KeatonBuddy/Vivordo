@@ -52,7 +52,6 @@ import 'package:vivordo_health/widgets/energy_forecast_view.dart';
 import 'sleep_preferences_screen.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
-import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/activity_source.dart';
@@ -3592,123 +3591,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _editReachableEvent(gcal.Event event) async {
-    final originalStart = event.start?.dateTime?.toLocal();
-    final originalEnd = event.end?.dateTime?.toLocal();
-    if (originalStart == null || originalEnd == null) {
-      _showHomeCalendarMessage("All-day events can't be edited here yet.");
-      return;
-    }
-
-    final titleController = TextEditingController(text: event.summary ?? '');
-    var date = DateUtils.dateOnly(originalStart);
-    var startTime = TimeOfDay.fromDateTime(originalStart);
-    var endTime = TimeOfDay.fromDateTime(originalEnd);
-    final shouldSave = await showAppleSheet<bool>(
-      context,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => AppleFormSheet(
-          title: 'Edit event',
-          doneLabel: 'Save',
-          onDone: titleController.text.trim().isEmpty
-              ? null
-              : () => Navigator.pop(sheetContext, true),
-          children: [
-            AppleFormGroup(
-              children: [
-                AppleFormTextRow(
-                  controller: titleController,
-                  placeholder: 'Event title',
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  onChanged: (_) => setSheetState(() {}),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            AppleFormGroup(
-              children: [
-                AppleFormRow(
-                  label: 'Date',
-                  trailing: AppleValuePill(_formatCalendarDate(date)),
-                  onTap: () async {
-                    final picked = await showVivordoDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setSheetState(() => date = picked);
-                  },
-                ),
-                AppleFormRow(
-                  label: 'Starts',
-                  trailing: AppleValuePill(startTime.format(context)),
-                  onTap: () async {
-                    final picked = await showVivordoTimePicker(
-                      context: context,
-                      initialTime: startTime,
-                      title: 'Start Time',
-                    );
-                    if (picked != null) {
-                      setSheetState(() => startTime = picked);
-                    }
-                  },
-                ),
-                AppleFormRow(
-                  label: 'Ends',
-                  trailing: AppleValuePill(endTime.format(context)),
-                  onTap: () async {
-                    final picked = await showVivordoTimePicker(
-                      context: context,
-                      initialTime: endTime,
-                      title: 'End Time',
-                    );
-                    if (picked != null) setSheetState(() => endTime = picked);
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-    // Not disposed: the sheet's field still uses it while closing.
-    final title = titleController.text.trim();
-    if (shouldSave != true || !mounted) return;
-    if (title.isEmpty) {
-      _showHomeCalendarMessage('Enter an event title.');
-      return;
-    }
-
-    final start = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      startTime.hour,
-      startTime.minute,
-    );
-    var end = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      endTime.hour,
-      endTime.minute,
-    );
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-
+    final result = await showEditCalendarEventSheet(context, event: event);
+    if (result == null || !mounted) return;
     try {
-      await CalendarService.updateEvent(
-        event,
-        title: title,
-        start: start,
-        end: end,
-      );
+      if (result.action == CalendarEventEditAction.delete) {
+        await CalendarService.deleteEvent(event, scope: result.scope);
+      } else {
+        final draft = result.draft!;
+        await CalendarService.updateEvent(
+          event,
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          recurrence: result.recurrenceChanged ? draft.recurrence : null,
+          calendarId: draft.calendarId,
+          isAllDay: draft.isAllDay,
+          allEvents: result.scope == EventScope.allEvents,
+        );
+      }
       _refreshHomeCalendarCards();
-      _showHomeCalendarMessage('Event updated.');
+      _showHomeCalendarMessage(
+        result.action == CalendarEventEditAction.delete
+            ? 'Event deleted.'
+            : 'Event updated.',
+      );
     } catch (error) {
       debugPrint('Update calendar event failed: $error');
       _showHomeCalendarMessage(
-        "Couldn't update the event. Try again.",
+        "Couldn't save the event. Try again.",
         error: true,
       );
     }
@@ -3740,33 +3650,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (hours >= 7) return 'Good sleep last night';
     if (hours >= 6) return 'Moderate sleep last night';
     return 'Low sleep last night';
-  }
-
-  String _formatCalendarDate(DateTime dt) {
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
   }
 
   Future<void> _showMoodCheck() async {
