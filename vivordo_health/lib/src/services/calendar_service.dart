@@ -641,6 +641,9 @@ class CalendarService {
         ..end = updated.end;
       if (updated.summary != null) full.summary = updated.summary;
       if (updated.recurrence != null) full.recurrence = updated.recurrence;
+      // All-day events are Free by default, and Free events don't count:
+      // a timed one is Busy, as Google Calendar does.
+      if (!nextIsAllDay) full.transparency = 'opaque';
       result = await api.events.update(full, sourceCalendarId, eventId);
     } else {
       result = await api.events.patch(updated, sourceCalendarId, eventId);

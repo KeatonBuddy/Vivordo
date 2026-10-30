@@ -764,6 +764,8 @@ class OutlookCalendarService {
       body: {
         if (title?.trim().isNotEmpty == true) 'subject': title!.trim(),
         ..._times(start, end, allDay: allDay, zone: zone),
+        // An all-day event is Free by default; once timed it's Busy.
+        if (!allDay && event.start?.dateTime == null) 'showAs': 'busy',
         if (recurrence != null)
           'recurrence': graphRecurrence(recurrence, start, zone: zone)
         // A series that moved keeps its rule, starting from its new date.
