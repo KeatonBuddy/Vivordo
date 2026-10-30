@@ -3,17 +3,25 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		023A0725023489D019C790B5 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DFA22FC311BD6C9AAED001F3 /* Pods_Runner.framework */; };
+		04A2AE78994AEF019D282D16 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3181F6BE4FDE79825768400D /* Foundation.framework */; };
+		05120749C2AFA26F43A1653C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7A2C736C8D8592AB905B47CF /* Assets.xcassets */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		28A3D0E630866B4FC9C41DD7 /* VivordoLiveActivitiesBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19F98EC2C84D8D0D73454FD /* VivordoLiveActivitiesBundle.swift */; };
+		2B705A352A831855B941D03F /* WatchSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D5E64966EA527729A4D8F8 /* WatchSnapshotStore.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
+		35182E221860411FC6C79520 /* VivordoWatchComplications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 408B81B51A87ABDFBB466C4D /* VivordoWatchComplications.swift */; };
 		3899B501F05A35D7A1853C1C /* WorkoutLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 830C95670433898C5A39B2E8 /* WorkoutLiveActivity.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		4132A819774399AC33B294AE /* VivordoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FEF2D47FB28A2084B16CC075 /* VivordoWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		42099C236C5C38758D7DD9B2 /* ScoreRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */; };
+		42A7ECC075610C5F3E9D1594 /* VivordoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48DB359CA783BCDF84022B9 /* VivordoWatchApp.swift */; };
 		5A7EF5869E9B650071ABFB1B /* VivordoLiveActivities.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		5D01618231CDC959FBC70284 /* VivordoWatchComplications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		5E1A0C0F2E9B000100A1B2C2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5E1A0C0F2E9B000100A1B2C1 /* PrivacyInfo.xcprivacy */; };
 		5E1A0C0F2E9B000100A1B2C4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5E1A0C0F2E9B000100A1B2C3 /* PrivacyInfo.xcprivacy */; };
 		63F7D98CC55A0740D6225AEE /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB9FC009AD0191AD2D8D3219 /* Pods_RunnerTests.framework */; };
@@ -26,8 +34,14 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		9F519CC0929237EEDF569119 /* WatchSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */; };
 		A11B22C33D44E55F66000001 /* VivordoSiri.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11B22C33D44E55F66000002 /* VivordoSiri.swift */; };
 		BA644C2995CE208BC7A4E151 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9769B0E1461A63F68FE8B3C5 /* SwiftUI.framework */; };
+		CF092A7BC7FDA92CE5AD2A17 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3181F6BE4FDE79825768400D /* Foundation.framework */; };
+		D45E7AF08880A7FEC2C5669B /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297BF264381953EB62A48DAA /* TodayView.swift */; };
+		D4CA8C230FAB17E1E450DA9A /* ScoreRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */; };
+		DF1F84554B27D077E880C159 /* WatchSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */; };
+		EA69AD591C2E2EC76AAD0D3F /* WatchSnapshotBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A2425EC427CDDAD9FFA983 /* WatchSnapshotBridge.swift */; };
 		F3A3A110376E9A3FDE7A8F9A /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2324904A0C68F265553A812D /* WorkoutActivityAttributes.swift */; };
 /* End PBXBuildFile section */
 
@@ -39,6 +53,20 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
+		452D158AD8E779EBE9504668 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0ADB9F1D4E35536DCDE7DB22;
+			remoteInfo = VivordoWatch;
+		};
+		7F6A87A443A5E396E080225E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 63F01769365115EBA63C09C1;
+			remoteInfo = VivordoWatchComplications;
+		};
 		ECD44A6EF0C985431A83B85E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -49,6 +77,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		4EBC55D13D4CB8B6267CFD74 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				4132A819774399AC33B294AE /* VivordoWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9705A1C41CF9048500538489 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -70,31 +109,52 @@
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BEBB5B30868DE98FC614C779 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5D01618231CDC959FBC70284 /* VivordoWatchComplications.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		2324904A0C68F265553A812D /* WorkoutActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutActivityAttributes.swift; sourceTree = "<group>"; };
+		297BF264381953EB62A48DAA /* TodayView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		2CAE39E98202D4CC3FD3534C /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		3181F6BE4FDE79825768400D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VivordoLiveActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FD3968F644F6A67988533E5 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
+		408B81B51A87ABDFBB466C4D /* VivordoWatchComplications.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VivordoWatchComplications.swift; sourceTree = "<group>"; };
 		4ABAD92D3DE728E2E619DF90 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = "<group>"; };
+		52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VivordoWatchComplications.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		55D5E64966EA527729A4D8F8 /* WatchSnapshotStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSnapshotStore.swift; sourceTree = "<group>"; };
 		5AF6CF046BD310EB043B43F0 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		5E1A0C0F2E9B000100A1B2C1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5E1A0C0F2E9B000100A1B2C3 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		666666A711653B0B8B1246DE /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		6CB42B10A243A9A584D4D3BA /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
+		6FEF2950D00951151414E8ED /* VivordoWatchComplications.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VivordoWatchComplications.entitlements; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
+		7A2C736C8D8592AB905B47CF /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
 		8166DEB28E1F32860E94CDF6 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		830C95670433898C5A39B2E8 /* WorkoutLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutLiveActivity.swift; sourceTree = "<group>"; };
 		85745ED4CDF2758A0493D4F6 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
+		8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScoreRing.swift; sourceTree = "<group>"; };
+		93B933AF055E04A11863354D /* VivordoWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VivordoWatch.entitlements; sourceTree = "<group>"; };
+		9643BBEA14D7A4855D55FD8C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		9769B0E1461A63F68FE8B3C5 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = "<group>"; };
@@ -106,9 +166,14 @@
 		A11B22C33D44E55F66000002 /* VivordoSiri.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VivordoSiri.swift; sourceTree = "<group>"; };
 		A62C718CDCF9B02A16451E59 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B19F98EC2C84D8D0D73454FD /* VivordoLiveActivitiesBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VivordoLiveActivitiesBundle.swift; sourceTree = "<group>"; };
+		B7219B281A5B74845B0A87C6 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C48DB359CA783BCDF84022B9 /* VivordoWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VivordoWatchApp.swift; sourceTree = "<group>"; };
+		C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSnapshot.swift; sourceTree = "<group>"; };
 		C59D64EBFECA7171123966DB /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = "<group>"; };
 		DFA22FC311BD6C9AAED001F3 /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		E5A2425EC427CDDAD9FFA983 /* WatchSnapshotBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSnapshotBridge.swift; sourceTree = "<group>"; };
 		FB9FC009AD0191AD2D8D3219 /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		FEF2D47FB28A2084B16CC075 /* VivordoWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VivordoWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +205,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A96859A324FFEA18CA7DB3EF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF092A7BC7FDA92CE5AD2A17 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4BC971F1258563FE2F0FC07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				04A2AE78994AEF019D282D16 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -154,6 +235,16 @@
 				5AF6CF046BD310EB043B43F0 /* Pods-RunnerTests.profile.xcconfig */,
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		30CBD874D4ED9ADB603984C6 /* VivordoWatchShared */ = {
+			isa = PBXGroup;
+			children = (
+				C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */,
+				8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */,
+			);
+			name = VivordoWatchShared;
+			path = VivordoWatchShared;
 			sourceTree = "<group>";
 		};
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
@@ -198,6 +289,9 @@
 				0E92577B9BC7059E600A3006 /* Pods */,
 				EE70CC58BAC3A1CAF7C1912A /* Frameworks */,
 				85B9C69940AC9249DBA1958A /* VivordoLiveActivities */,
+				30CBD874D4ED9ADB603984C6 /* VivordoWatchShared */,
+				DF9F4E0431FF4C6081238CAA /* VivordoWatch */,
+				F2A4E9097C9A75937FC79DE2 /* VivordoWatchComplications */,
 			);
 			sourceTree = "<group>";
 		};
@@ -207,6 +301,8 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */,
+				FEF2D47FB28A2084B16CC075 /* VivordoWatch.app */,
+				52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -224,8 +320,31 @@
 				A11B22C33D44E55F66000002 /* VivordoSiri.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				5E1A0C0F2E9B000100A1B2C1 /* PrivacyInfo.xcprivacy */,
+				E5A2425EC427CDDAD9FFA983 /* WatchSnapshotBridge.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		99CC0E3DB0A15223AA53603A /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				3181F6BE4FDE79825768400D /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		DF9F4E0431FF4C6081238CAA /* VivordoWatch */ = {
+			isa = PBXGroup;
+			children = (
+				C48DB359CA783BCDF84022B9 /* VivordoWatchApp.swift */,
+				55D5E64966EA527729A4D8F8 /* WatchSnapshotStore.swift */,
+				297BF264381953EB62A48DAA /* TodayView.swift */,
+				9643BBEA14D7A4855D55FD8C /* Info.plist */,
+				93B933AF055E04A11863354D /* VivordoWatch.entitlements */,
+				7A2C736C8D8592AB905B47CF /* Assets.xcassets */,
+			);
+			name = VivordoWatch;
+			path = VivordoWatch;
 			sourceTree = "<group>";
 		};
 		E4170056850F2EE5B7F91802 /* iOS */ = {
@@ -245,8 +364,20 @@
 				4ABAD92D3DE728E2E619DF90 /* ActivityKit.framework */,
 				C59D64EBFECA7171123966DB /* WidgetKit.framework */,
 				9769B0E1461A63F68FE8B3C5 /* SwiftUI.framework */,
+				99CC0E3DB0A15223AA53603A /* watchOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		F2A4E9097C9A75937FC79DE2 /* VivordoWatchComplications */ = {
+			isa = PBXGroup;
+			children = (
+				408B81B51A87ABDFBB466C4D /* VivordoWatchComplications.swift */,
+				B7219B281A5B74845B0A87C6 /* Info.plist */,
+				6FEF2950D00951151414E8ED /* VivordoWatchComplications.entitlements */,
+			);
+			name = VivordoWatchComplications;
+			path = VivordoWatchComplications;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -269,6 +400,25 @@
 			productReference = 3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		0ADB9F1D4E35536DCDE7DB22 /* VivordoWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6C8672DF7B3CC12D894F8A9C /* Build configuration list for PBXNativeTarget "VivordoWatch" */;
+			buildPhases = (
+				753E889C322076E8250CC4BC /* Sources */,
+				E4BC971F1258563FE2F0FC07 /* Frameworks */,
+				A6104DD5FDECF7EB7697C62F /* Resources */,
+				BEBB5B30868DE98FC614C779 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AF2AD9E424448A200B132121 /* PBXTargetDependency */,
+			);
+			name = VivordoWatch;
+			productName = VivordoWatch;
+			productReference = FEF2D47FB28A2084B16CC075 /* VivordoWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		331C8080294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -288,6 +438,23 @@
 			productReference = 331C8081294A63A400263BE5 /* RunnerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		63F01769365115EBA63C09C1 /* VivordoWatchComplications */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5A6DD6A1A6803254B21871A1 /* Build configuration list for PBXNativeTarget "VivordoWatchComplications" */;
+			buildPhases = (
+				7548B4706BFB9CB07DC9DE33 /* Sources */,
+				A96859A324FFEA18CA7DB3EF /* Frameworks */,
+				0044C8348F0654037C0060AE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VivordoWatchComplications;
+			productName = VivordoWatchComplications;
+			productReference = 52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
@@ -299,6 +466,7 @@
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				9CA9DD207744B8FEA454530C /* Embed App Extensions */,
+				4EBC55D13D4CB8B6267CFD74 /* Embed Watch Content */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				A619171FA2D52C5BB261E335 /* [CP] Embed Pods Frameworks */,
 				1A53E76687D9A2819BBD2EC6 /* [CP] Copy Pods Resources */,
@@ -307,6 +475,7 @@
 			);
 			dependencies = (
 				0E777FE2E05A49B7CBAA852F /* PBXTargetDependency */,
+				77B883B6D245A32C55A48B75 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -351,7 +520,7 @@
 			);
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
-				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
+				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
 			projectDirPath = "";
@@ -360,11 +529,20 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				01359A1F77DD8CB4771B7592 /* VivordoLiveActivities */,
+				0ADB9F1D4E35536DCDE7DB22 /* VivordoWatch */,
+				63F01769365115EBA63C09C1 /* VivordoWatchComplications */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0044C8348F0654037C0060AE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C807F294A63A400263BE5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -381,6 +559,14 @@
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				5E1A0C0F2E9B000100A1B2C2 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A6104DD5FDECF7EB7697C62F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				05120749C2AFA26F43A1653C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -425,13 +611,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -499,13 +681,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -520,6 +698,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		753E889C322076E8250CC4BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42A7ECC075610C5F3E9D1594 /* VivordoWatchApp.swift in Sources */,
+				2B705A352A831855B941D03F /* WatchSnapshotStore.swift in Sources */,
+				D45E7AF08880A7FEC2C5669B /* TodayView.swift in Sources */,
+				DF1F84554B27D077E880C159 /* WatchSnapshot.swift in Sources */,
+				42099C236C5C38758D7DD9B2 /* ScoreRing.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7548B4706BFB9CB07DC9DE33 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				35182E221860411FC6C79520 /* VivordoWatchComplications.swift in Sources */,
+				9F519CC0929237EEDF569119 /* WatchSnapshot.swift in Sources */,
+				D4CA8C230FAB17E1E450DA9A /* ScoreRing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,6 +741,7 @@
 				A11B22C33D44E55F66000001 /* VivordoSiri.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				748FF297C354DC0FCEF4A47B /* WorkoutActivityAttributes.swift in Sources */,
+				EA69AD591C2E2EC76AAD0D3F /* WatchSnapshotBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -557,6 +758,18 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		77B883B6D245A32C55A48B75 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = VivordoWatch;
+			target = 0ADB9F1D4E35536DCDE7DB22 /* VivordoWatch */;
+			targetProxy = 452D158AD8E779EBE9504668 /* PBXContainerItemProxy */;
+		};
+		AF2AD9E424448A200B132121 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = VivordoWatchComplications;
+			target = 63F01769365115EBA63C09C1 /* VivordoWatchComplications */;
+			targetProxy = 7F6A87A443A5E396E080225E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -580,6 +793,33 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		04DE2687FD04B080FA02E3F0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp.complications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
 		0B025BDE83B58E185E7286DB /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -603,6 +843,36 @@
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
+		};
+		12F31B7AEABFC2DD77071C62 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
 		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
@@ -685,6 +955,34 @@
 			};
 			name = Profile;
 		};
+		27B86576E66B0EAC5305E3F4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp.complications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 		331C8088294A63A400263BE5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 666666A711653B0B8B1246DE /* Pods-RunnerTests.debug.xcconfig */;
@@ -732,6 +1030,64 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
+			};
+			name = Profile;
+		};
+		49C1ED7DD199B808B4B14A6B /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp.complications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Profile;
+		};
+		7ADC1F762C83F19AF01207BE /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Profile;
 		};
@@ -929,6 +1285,35 @@
 			};
 			name = Release;
 		};
+		B5B71A69F76188E728D91CBB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 60;
+				DEVELOPMENT_TEAM = A7H9K44LB4;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VivordoWatch/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vivordo.health.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
 		FBADA8283C94E01DD7852896 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -961,6 +1346,26 @@
 				331C8088294A63A400263BE5 /* Debug */,
 				331C8089294A63A400263BE5 /* Release */,
 				331C808A294A63A400263BE5 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5A6DD6A1A6803254B21871A1 /* Build configuration list for PBXNativeTarget "VivordoWatchComplications" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27B86576E66B0EAC5305E3F4 /* Release */,
+				04DE2687FD04B080FA02E3F0 /* Debug */,
+				49C1ED7DD199B808B4B14A6B /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6C8672DF7B3CC12D894F8A9C /* Build configuration list for PBXNativeTarget "VivordoWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				12F31B7AEABFC2DD77071C62 /* Release */,
+				B5B71A69F76188E728D91CBB /* Debug */,
+				7ADC1F762C83F19AF01207BE /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -998,7 +1403,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */ = {
+		781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "FlutterGeneratedPluginSwiftPackage" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage;
 		};

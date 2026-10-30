@@ -40,6 +40,8 @@ import WidgetKit
     application.registerForRemoteNotifications()
     // HealthKit only delivers in the background to queries started at launch.
     sleepObserver.start()
+    // Mirror the Siri/widget snapshot to the paired watch.
+    WatchSnapshotBridge.shared.activate()
 
     return launched
   }
@@ -166,6 +168,7 @@ import WidgetKit
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoTodayAgenda")
             }
             defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
+            WatchSnapshotBridge.shared.push()
 
             let stressKeys: Set<String> = ["stressScore"]
             let capacityKeys: Set<String> = [
