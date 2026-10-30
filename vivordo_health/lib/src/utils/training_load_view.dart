@@ -1,6 +1,12 @@
 /// Training load (docs/scores.md §4), as functions/training_load.js saves it
 /// in scores_daily/{day}.trainingLoad: this week's activity against the
 /// person's usual week. Words and rows for the Fitness and My Day cards.
+library;
+
+import 'package:intl/intl.dart';
+
+import 'day_key.dart';
+
 class TrainingLoadView {
   const TrainingLoadView({
     required this.dayKey,
@@ -20,6 +26,30 @@ class TrainingLoadView {
 
   static const version = 1;
   static const hardDay = 1.5;
+
+  /// How far back the details sheet goes.
+  static const historyWeeks = 12;
+
+  /// [latest] and the weeks before it, newest first, up to [historyWeeks]:
+  /// the record 7, 14... days earlier, or up to 3 days before that when a
+  /// morning didn't sync. Weeks without one (still learning) are skipped.
+  /// [records] maps scores_daily day keys to their trainingLoad.
+  static List<TrainingLoadView> weeks(
+    TrainingLoadView latest,
+    Map<String, Object?> records,
+  ) {
+    final day = DateTime.parse(latest.dayKey);
+    return [
+      latest,
+      for (var week = 1; week < historyWeeks; week++)
+        ?[
+          for (var back = 0; back <= 3; back++)
+            localDayKey(
+              DateTime(day.year, day.month, day.day - 7 * week - back),
+            ),
+        ].map((key) => fromMap(records[key], key)).nonNulls.firstOrNull,
+    ];
+  }
 
   /// The scores_daily day it was calculated for.
   final String dayKey;
@@ -81,6 +111,15 @@ class TrainingLoadView {
       restingHigh: (body['restingHigh'] as num?)?.toInt() ?? 0,
       restingHrChange: (body['restingHrChange'] as num?)?.toDouble(),
     );
+  }
+
+  /// The 7 days' dates: "Oct 23 – 29", or "Sep 25 – Oct 1".
+  String get dateRange {
+    if (days.isEmpty) return dayKey;
+    final first = DateTime.parse(days.first.day);
+    final last = DateTime.parse(days.last.day);
+    final end = DateFormat(first.month == last.month ? 'd' : 'MMM d');
+    return '${DateFormat('MMM d').format(first)} – ${end.format(last)}';
   }
 
   /// High or Strained: the only states shown on My Day.

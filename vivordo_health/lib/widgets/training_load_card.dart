@@ -85,10 +85,18 @@ VoidCallback? _planner(BuildContext context, TrainingLoadView view) {
 /// This week against the usual one: headline, the 7 days, and the rows
 /// behind the state. On Fitness, and in the details sheet.
 class TrainingLoadCard extends StatelessWidget {
-  const TrainingLoadCard({super.key, required this.view, this.onTap});
+  const TrainingLoadCard({
+    super.key,
+    required this.view,
+    this.onTap,
+    this.daysLabel = 'Last 7 days',
+  });
 
   final TrainingLoadView view;
   final VoidCallback? onTap;
+
+  /// "Those 7 days" for an earlier week in the details sheet.
+  final String daysLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +174,7 @@ class TrainingLoadCard extends StatelessWidget {
               _WeekChart(view: view),
               const SizedBox(height: 4),
               row(
-                'Last 7 days',
+                daysLabel,
                 view.vsUsual,
                 off: view.alert && view.percent >= 5,
               ),
@@ -395,20 +403,7 @@ Future<void> showTrainingLoadDetails(
                 ),
               ),
               const SizedBox(height: 10),
-              TrainingLoadCard(view: view),
-              if (view.bodyExplanation case final explanation?) ...[
-                const SizedBox(height: 22),
-                Text(
-                  'What your body is saying',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(explanation, style: secondary),
-              ],
+              _TrainingLoadWeeks(latest: view, secondary: secondary),
               if (view.alert) ...[
                 const SizedBox(height: 14),
                 Text(
@@ -451,4 +446,339 @@ Future<void> showTrainingLoadDetails(
       ),
     ),
   );
+}
+
+/// The details sheet's week: [latest] first, then up to 11 weeks before it
+/// (TrainingLoadView.weeks), changed by swiping the card, the arrows, or
+/// picking from the dates. The alert and the easier-week plan below it
+/// stay about the latest week.
+class _TrainingLoadWeeks extends StatefulWidget {
+  const _TrainingLoadWeeks({required this.latest, required this.secondary});
+
+  final TrainingLoadView latest;
+  final TextStyle secondary;
+
+  @override
+  State<_TrainingLoadWeeks> createState() => _TrainingLoadWeeksState();
+}
+
+class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
+  late var _weeks = [widget.latest];
+
+  /// Into _weeks; 0 is the latest.
+  var _index = 0;
+
+  /// The last move went to an earlier week, so the card slides right.
+  var _older = true;
+
+  /// Training load began at the oldest week (a learning record before it).
+  var _startsHere = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final day = DateTime.parse(widget.latest.dayKey);
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('scores_daily')
+          .where(
+            FieldPath.documentId,
+            isGreaterThanOrEqualTo: localDayKey(
+              DateTime(
+                day.year,
+                day.month,
+                day.day - 7 * TrainingLoadView.historyWeeks - 3,
+              ),
+            ),
+          )
+          .where(FieldPath.documentId, isLessThan: widget.latest.dayKey)
+          .get();
+      final records = {
+        for (final doc in snapshot.docs) doc.id: doc.data()['trainingLoad'],
+      };
+      final weeks = TrainingLoadView.weeks(widget.latest, records);
+      if (!mounted) return;
+      setState(() {
+        _weeks = weeks;
+        _startsHere =
+            weeks.length < TrainingLoadView.historyWeeks &&
+            records.entries.any(
+              (e) =>
+                  e.key.compareTo(weeks.last.dayKey) < 0 &&
+                  e.value is Map &&
+                  (e.value as Map)['state'] == 'learning',
+            );
+      });
+    } catch (error) {
+      // Firebase isn't set up in widget tests; the latest week still shows.
+      debugPrint('Training load history: $error');
+    }
+  }
+
+  void _go(int index) {
+    if (index < 0 || index >= _weeks.length || index == _index) return;
+    setState(() {
+      _older = index > _index;
+      _index = index;
+    });
+  }
+
+  String _ago(TrainingLoadView week) {
+    if (identical(week, widget.latest)) return 'Last 7 days';
+    final weeks =
+        (DateTime.parse(
+                  widget.latest.dayKey,
+                ).difference(DateTime.parse(week.dayKey)).inDays /
+                7)
+            .round();
+    return weeks == 1 ? '1 week ago' : '$weeks weeks ago';
+  }
+
+  /// "+62%", or "about usual" within 5%.
+  static String _change(TrainingLoadView week) => week.percent.abs() < 5
+      ? 'about usual'
+      : '${week.percent > 0 ? '+' : '−'}${week.percent.abs()}%';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final week = _weeks[_index];
+    Widget arrow(IconData icon, String tooltip, int to) {
+      final enabled = to >= 0 && to < _weeks.length;
+      return IconButton(
+        onPressed: enabled ? () => _go(to) : null,
+        tooltip: tooltip,
+        icon: Icon(icon, size: 20),
+        color: _purple,
+        disabledColor: colors.border,
+        style: IconButton.styleFrom(
+          backgroundColor: enabled ? _purple.withValues(alpha: .14) : null,
+          minimumSize: const Size(36, 36),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            arrow(Icons.chevron_left_rounded, 'Earlier week', _index + 1),
+            Expanded(
+              // A dropdown of the weeks, as wide as the space between the
+              // arrows.
+              child: LayoutBuilder(
+                builder: (context, constraints) => MenuAnchor(
+                  alignmentOffset: const Offset(0, 6),
+                  style: MenuStyle(
+                    backgroundColor: WidgetStatePropertyAll(colors.card),
+                    surfaceTintColor: const WidgetStatePropertyAll(
+                      Colors.transparent,
+                    ),
+                    elevation: const WidgetStatePropertyAll(12),
+                    padding: const WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(vertical: 6),
+                    ),
+                    minimumSize: WidgetStatePropertyAll(
+                      Size(constraints.maxWidth, 0),
+                    ),
+                    maximumSize: WidgetStatePropertyAll(
+                      Size(constraints.maxWidth, double.infinity),
+                    ),
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: colors.border),
+                      ),
+                    ),
+                  ),
+                  menuChildren: [
+                    for (final (i, option) in _weeks.indexed)
+                      MenuItemButton(
+                        onPressed: () => _go(i),
+                        style: MenuItemButton.styleFrom(
+                          backgroundColor: i == _index
+                              ? _purple.withValues(alpha: .14)
+                              : null,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          minimumSize: const Size.fromHeight(44),
+                        ),
+                        leadingIcon: SizedBox(
+                          width: 18,
+                          child: i == _index
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  size: 18,
+                                  color: _purple,
+                                )
+                              : null,
+                        ),
+                        trailingIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _stateColor(option.state),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${option.label} · ${_change(option)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          option.dateRange,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                  ],
+                  builder: (context, controller, _) => Semantics(
+                    button: _weeks.length > 1,
+                    label: 'Choose a week',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _weeks.length < 2
+                          ? null
+                          : controller.isOpen
+                          ? controller.close
+                          : controller.open,
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                week.dateRange,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.textPrimary,
+                                ),
+                              ),
+                              if (_weeks.length > 1)
+                                Icon(
+                                  controller.isOpen
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  size: 18,
+                                  color: _purple,
+                                ),
+                            ],
+                          ),
+                          Text(
+                            _ago(week),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            arrow(Icons.chevron_right_rounded, 'Later week', _index - 1),
+          ],
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          // Swipe right for the week before, as if paging back in time.
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity > 200) _go(_index + 1);
+            if (velocity < -200) _go(_index - 1);
+          },
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: [...previous, ?current],
+            ),
+            transitionBuilder: (child, animation) {
+              final incoming = child.key == ValueKey(_index);
+              final side = (_older ? 1.0 : -1.0) * (incoming ? -.25 : .25);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween(
+                    begin: Offset(side, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            child: TrainingLoadCard(
+              key: ValueKey(_index),
+              view: week,
+              daysLabel: _index == 0 ? 'Last 7 days' : 'Those 7 days',
+            ),
+          ),
+        ),
+        if (_weeks.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Oldest on the left, like the arrows.
+              for (var i = _weeks.length - 1; i >= 0; i--)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                  width: i == _index ? 16 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: i == _index ? _purple : colors.border,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+            ],
+          ),
+        ],
+        if (_startsHere && _index == _weeks.length - 1) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Training load starts here. Before this, Vivordo was still '
+            'learning your usual week.',
+            style: widget.secondary,
+          ),
+        ],
+        if (week.bodyExplanation case final explanation?) ...[
+          const SizedBox(height: 22),
+          Text(
+            'What your body is saying',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: colors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(explanation, style: widget.secondary),
+        ],
+      ],
+    );
+  }
 }

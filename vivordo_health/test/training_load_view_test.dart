@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/burnout_view.dart';
+import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/contextual_insight_bar.dart';
@@ -194,5 +195,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('What your body is saying'), findsOneWidget);
     expect(find.textContaining('HRV (heart rate variability)'), findsOneWidget);
+  });
+
+  test(
+    'earlier weeks: 7 days apart, a synced morning nearby, 12 weeks back',
+    () {
+      final latest = TrainingLoadView.fromMap(
+        record('building'),
+        '2026-10-30',
+      )!;
+      final weeks = TrainingLoadView.weeks(latest, {
+        '2026-10-23': record('steady'),
+        // Oct 16 didn't sync; Oct 14 is within 3 days.
+        '2026-10-14': record('high', ratio: 1.6),
+        '2026-10-09': {'version': 1, 'state': 'learning'},
+        for (var w = 4; w < 20; w++)
+          localDayKey(DateTime(2026, 10, 30 - 7 * w)): record(
+            'lighter',
+            ratio: .7,
+          ),
+      });
+      expect(weeks.first, same(latest));
+      expect(weeks[1].dayKey, '2026-10-23');
+      expect(weeks[2].dayKey, '2026-10-14');
+      // Oct 9 is still learning, so the next week is Oct 2.
+      expect(weeks[3].dayKey, '2026-10-02');
+      // 12 weeks back in time, less the one still learning; never older.
+      expect(weeks, hasLength(TrainingLoadView.historyWeeks - 1));
+
+      expect(TrainingLoadView.weeks(latest, const {}), [latest]);
+    },
+  );
+
+  test('date range across a month', () {
+    final view = TrainingLoadView.fromMap(record('steady'), '2026-09-30')!;
+    expect(view.dateRange, 'Sep 23 – 29');
+    final raw = record('steady');
+    raw['days'] = [
+      for (var i = 0; i < 7; i++)
+        {'day': localDayKey(DateTime(2026, 9, 25 + i)), 'value': 1.0},
+    ];
+    expect(
+      TrainingLoadView.fromMap(raw, '2026-10-02')!.dateRange,
+      'Sep 25 – Oct 1',
+    );
   });
 }
