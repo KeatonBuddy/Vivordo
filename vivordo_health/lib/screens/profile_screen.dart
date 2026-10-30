@@ -52,6 +52,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isUpdatingWhoop = false;
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
+
+  /// iOS has Vivordo's notifications off; the switches can't deliver.
+  bool _notificationsOff = false;
   bool _isUpdatingCircleNotifications = false;
   bool _isUpdatingFitnessNotifications = false;
 
@@ -71,6 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_checkNotificationPermission());
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _userDocStream = uid != null
@@ -634,8 +638,43 @@ class _SettingsScreenState extends State<SettingsScreen>
     }, SetOptions(merge: true));
   }
 
-  /// Runs a settings change, saying so if it fails.
-  Future<void> _setPreferenceWith(Future<void> Function() change) async {
+  Future<void> _checkNotificationPermission() async {
+    final off = await NotificationService().turnedOffInSettings();
+    if (mounted && off != _notificationsOff) {
+      setState(() => _notificationsOff = off);
+    }
+  }
+
+  /// Before a notification switch turns on: asks iOS the first time, and
+  /// when notifications are off there, says so and offers iOS Settings.
+  Future<bool> _notificationsAllowed() async {
+    if (await NotificationService().requestPermission()) {
+      if (mounted && _notificationsOff) {
+        setState(() => _notificationsOff = false);
+      }
+      return true;
+    }
+    if (!mounted) return false;
+    setState(() => _notificationsOff = true);
+    final open = await confirmAction(
+      context,
+      title: 'Notifications are off',
+      message: 'Turn on notifications for Vivordo in Settings to get this.',
+      confirmLabel: 'Open Settings',
+      cancelLabel: 'Not Now',
+      destructive: false,
+    );
+    if (open) unawaited(launchUrl(Uri.parse('app-settings:')));
+    return false;
+  }
+
+  /// Runs a settings change, saying so if it fails. [enabling] is true when
+  /// it turns a notification on, which needs iOS permission first.
+  Future<void> _setPreferenceWith(
+    Future<void> Function() change, {
+    bool enabling = false,
+  }) async {
+    if (enabling && !await _notificationsAllowed()) return;
     try {
       await change();
     } catch (_) {
@@ -650,6 +689,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _setWindDownReminder(bool enabled) async {
+    if (enabled && !await _notificationsAllowed()) return;
     try {
       await WindDownReminders.setEnabled(enabled);
     } catch (_) {
@@ -683,6 +723,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (isUpdating) {
       return;
     }
+    if (enabled && !await _notificationsAllowed()) return;
 
     setState(() {
       if (isScanReminder) {
@@ -856,6 +897,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     // where they tap the verification link while the app is already open
     if (state == AppLifecycleState.resumed) {
       _checkEmailSync();
+      unawaited(_checkNotificationPermission());
       if (OutlookCalendarService.enabled) {
         _refreshOutlookCalendarConnection();
       }
@@ -1285,6 +1327,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const _SectionLabel('Notifications'),
                 _SettingsCard(
                   children: [
+                    if (_notificationsOff)
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.bell_slash,
+                          appleRed,
+                        ),
+                        title: 'Notifications are off',
+                        subtitle: 'Turn them on in iOS Settings to get these.',
+                        trailing: Text(
+                          'Open Settings',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: appleTint(context),
+                          ),
+                        ),
+                        onTap: () =>
+                            unawaited(launchUrl(Uri.parse('app-settings:'))),
+                      ),
                     Column(
                       children: [
                         _SettingsRow(
@@ -1347,6 +1408,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         value: checkInMorningReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => CheckInReminders.setEnabled(value),
+                          enabling: value,
                         ),
                       ),
                     ),
@@ -1361,6 +1423,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         value: weeklyReviewReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => WeeklyReviewService.setReminder(value),
+                          enabling: value,
                         ),
                       ),
                     ),
@@ -1378,6 +1441,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'burnoutNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),
@@ -1395,6 +1459,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'trainingLoadNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),
@@ -1412,6 +1477,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'achievementNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -189,6 +190,7 @@ class ClaudeService {
     String? askedFrom,
     Map<String, String> context = const {},
     bool workoutCoach = false,
+    String? turnId,
   }) async {
     // The server keeps the thread (users/{uid}/messages): it loads the
     // conversation's earlier messages and saves this one with the reply.
@@ -196,6 +198,7 @@ class ClaudeService {
     final result = await _call(_assistantFn, {
       'message': userMessage,
       'askedFrom': ?askedFrom,
+      'turnId': ?turnId,
       'context': {
         for (final entry in context.entries)
           if (entry.value.trim().isNotEmpty) entry.key: entry.value,
@@ -210,5 +213,18 @@ class ClaudeService {
       'capabilities': const ['workout'],
     });
     return PandaPrompts.parseTurnReply(jsonEncode(result.data));
+  }
+
+  /// Stops the turn sent with [turnId]. The server checks for this before
+  /// each step and saves nothing once it's there.
+  Future<void> stopTurn(String turnId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('assistant_stops')
+        .doc(turnId)
+        .set({'at': FieldValue.serverTimestamp()});
   }
 }

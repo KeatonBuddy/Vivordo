@@ -25,6 +25,7 @@ import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
 import 'package:vivordo_health/src/services/subscription_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/achievement_banner.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/launch_splash.dart';
@@ -194,7 +195,8 @@ class _MyAppState extends State<MyApp> {
   bool _openingWidget = false;
   StreamSubscription<AchievementUnlock>? _achievementUnlockSubscription;
   final List<AchievementUnlock> _pendingAchievementUnlocks = [];
-  bool _showingAchievementUnlock = false;
+  Timer? _achievementBannerDelay;
+  OverlayEntry? _achievementBanner;
 
   @override
   void initState() {
@@ -210,47 +212,71 @@ class _MyAppState extends State<MyApp> {
 
   void _queueAchievementUnlock(AchievementUnlock achievement) {
     _pendingAchievementUnlocks.add(achievement);
-    unawaited(_showNextAchievementUnlock());
+    // Unlocks that land together (one sync) share one banner.
+    _achievementBannerDelay?.cancel();
+    _achievementBannerDelay = Timer(
+      const Duration(milliseconds: 600),
+      _showAchievementBanner,
+    );
   }
 
-  Future<void> _showNextAchievementUnlock() async {
-    if (_showingAchievementUnlock || _pendingAchievementUnlocks.isEmpty) return;
-    final navigatorContext = navigatorKey.currentContext;
-    if (navigatorContext == null) {
+  void _showAchievementBanner() {
+    if (_pendingAchievementUnlocks.isEmpty) return;
+    final overlay = navigatorKey.currentState?.overlay;
+    if (overlay == null) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => unawaited(_showNextAchievementUnlock()),
+        (_) => _showAchievementBanner(),
       );
       return;
     }
-    _showingAchievementUnlock = true;
-    final achievement = _pendingAchievementUnlocks.removeAt(0);
-    await showGeneralDialog<void>(
-      context: navigatorContext,
-      barrierDismissible: false,
-      barrierLabel: 'Achievement unlocked',
-      barrierColor: Colors.black.withValues(alpha: .82),
-      transitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
-          AchievementUnlockedDialog(
-            achievement: achievement,
-            onDismiss: () => Navigator.of(dialogContext).pop(),
-          ),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutBack,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: curved, child: child),
-        );
-      },
+    final unlocks = List.of(_pendingAchievementUnlocks);
+    _pendingAchievementUnlocks.clear();
+    _achievementBanner?.remove();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => AchievementBanner(
+        unlocks: unlocks,
+        onOpen: () => unawaited(_celebrateAchievements(unlocks)),
+        onDismissed: () {
+          if (_achievementBanner != entry) return;
+          _achievementBanner = null;
+          entry.remove();
+        },
+      ),
     );
-    _showingAchievementUnlock = false;
-    if (_pendingAchievementUnlocks.isNotEmpty) {
-      await Future<void>.delayed(const Duration(milliseconds: 180));
-      unawaited(_showNextAchievementUnlock());
+    _achievementBanner = entry;
+    overlay.insert(entry);
+  }
+
+  /// The full celebration, one achievement after another, from the banner.
+  Future<void> _celebrateAchievements(List<AchievementUnlock> unlocks) async {
+    for (final achievement in unlocks) {
+      final context = navigatorKey.currentContext;
+      if (context == null) return;
+      await showGeneralDialog<void>(
+        context: context,
+        // Opened on purpose from the banner, so a tap outside can close it.
+        barrierDismissible: true,
+        barrierLabel: 'Achievement unlocked',
+        barrierColor: Colors.black.withValues(alpha: .82),
+        transitionDuration: const Duration(milliseconds: 320),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+            AchievementUnlockedDialog(
+              achievement: achievement,
+              onDismiss: () => Navigator.of(dialogContext).pop(),
+            ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: curved, child: child),
+          );
+        },
+      );
     }
   }
 
@@ -352,6 +378,7 @@ class _MyAppState extends State<MyApp> {
     WorkoutLiveActivityService.clearLaunchHandler();
     HomeWidgetService.clearLaunchHandler();
     _achievementUnlockSubscription?.cancel();
+    _achievementBannerDelay?.cancel();
     super.dispose();
   }
 

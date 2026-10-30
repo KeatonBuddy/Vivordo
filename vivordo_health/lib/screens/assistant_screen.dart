@@ -6,7 +6,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart'
-    show CupertinoActivityIndicator, CupertinoIcons;
+    show CupertinoActivityIndicator, CupertinoButton, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -34,11 +34,15 @@ const _brand = VivordoTheme.brand;
 /// Something shown in the thread that isn't a saved message: the card the
 /// chat was opened with, a check-in card, or a message that failed to send.
 class _LocalItem {
-  _LocalItem(this.kind, {this.text, int? t})
+  _LocalItem(this.kind, {this.text, this.note, this.askedFrom, int? t})
     : t = t ?? DateTime.now().millisecondsSinceEpoch;
   final String kind; // opening | checkin | unsent
   final int t;
   String? text;
+
+  /// Unsent: why (an error, or "Stopped"); [askedFrom] goes with a retry.
+  final String? note;
+  final String? askedFrom;
 }
 
 /// One row of the thread, server message or local item, in time order.
@@ -91,6 +95,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   bool _sending = false;
   String? _pendingText;
+
+  /// The turn being answered, so Stop can cancel it on the server.
+  ({String id, String text, String? askedFrom})? _turn;
   Set<String> _idsBeforeSend = const {};
 
   // Context only the app has, sent with each message.
@@ -169,16 +176,18 @@ class _AssistantScreenState extends State<AssistantScreen> {
               _idsBeforeOpening = {for (final m in _messages) m.id};
             }
             _ready = true;
-            final pending = _pendingText;
-            if (pending != null &&
-                _messages.any(
-                  (m) =>
-                      !_idsBeforeSend.contains(m.id) &&
-                      m.data()?['role'] == 'user' &&
-                      m.data()?['text'] == pending,
-                )) {
-              _pendingText = null;
-            }
+            final sent = {
+              for (final m in _messages)
+                if (!_idsBeforeSend.contains(m.id) &&
+                    m.data()?['role'] == 'user')
+                  m.data()?['text'],
+            };
+            if (sent.contains(_pendingText)) _pendingText = null;
+            // Stop came too late and the server kept the turn: drop the
+            // stopped copy, the real message and its reply are here.
+            _local.removeWhere(
+              (item) => item.note == 'Stopped' && sent.contains(item.text),
+            );
           });
         }, onError: (Object _) => setState(() => _ready = true));
     unawaited(_loadContext());
@@ -397,7 +406,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
     }
     if (!mounted) return;
     _input.clear();
+    final turnId = '${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
+      _turn = (id: turnId, text: text, askedFrom: askedFrom);
       if (_openedBeforeLoad) {
         _openedBeforeLoad = false;
         _idsBeforeOpening = {for (final m in _messages) m.id};
@@ -424,16 +435,58 @@ class _AssistantScreenState extends State<AssistantScreen> {
             askedFrom: askedFrom,
             context: await _turnContext(),
             workoutCoach: _screen?.screen == 'workout_summary',
+            turnId: turnId,
           )
           .timeout(const Duration(seconds: 120));
     } catch (error) {
-      if (!mounted) return;
+      // A stopped turn already shows as stopped.
+      if (!mounted || _turn?.id != turnId) return;
       setState(() {
         _pendingText = null;
-        _local.add(_LocalItem('unsent', text: '$text\n\n${_errorText(error)}'));
+        _local.add(
+          _LocalItem(
+            'unsent',
+            text: text,
+            note: _errorText(error),
+            askedFrom: askedFrom,
+          ),
+        );
       });
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted && _turn?.id == turnId) {
+        setState(() {
+          _sending = false;
+          _turn = null;
+        });
+      }
+    }
+  }
+
+  /// Stops waiting for the reply and tells the server to drop it, so it
+  /// never turns up later. The message stays, marked Stopped, with Retry.
+  Future<void> _stop() async {
+    final turn = _turn;
+    if (turn == null) return;
+    setState(() {
+      // Already in the thread (the server saved it): nothing to mark.
+      if (_pendingText != null) {
+        _local.add(
+          _LocalItem(
+            'unsent',
+            text: turn.text,
+            note: 'Stopped',
+            askedFrom: turn.askedFrom,
+          ),
+        );
+      }
+      _turn = null;
+      _sending = false;
+      _pendingText = null;
+    });
+    try {
+      await _svc.stopTurn(turn.id);
+    } catch (error) {
+      debugPrint('Stopping the reply failed: $error');
     }
   }
 
@@ -828,13 +881,48 @@ class _AssistantScreenState extends State<AssistantScreen> {
   Widget _localWidget(_LocalItem item) {
     switch (item.kind) {
       case 'unsent':
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            item.text ?? '',
-            textAlign: TextAlign.right,
-            style: TextStyle(color: Colors.redAccent.shade100, height: 1.4),
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AssistantBubble(text: item.text ?? '', mine: true),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Icon(
+                  CupertinoIcons.exclamationmark_circle,
+                  size: 15,
+                  color: appleRed,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    item.note ?? 'Not sent',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: context.vivordoColors.textSecondary,
+                    ),
+                  ),
+                ),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size(44, 44),
+                  onPressed: _sending
+                      ? null
+                      : () => _send(item.text, item.askedFrom),
+                  child: Text(
+                    'Retry',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: appleTint(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         );
       case 'checkin':
         return _checkinCard();
@@ -1027,37 +1115,54 @@ class _AssistantScreenState extends State<AssistantScreen> {
         color: colors.card,
         border: Border(top: BorderSide(color: colors.border)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _input,
-              minLines: 1,
-              maxLines: 4,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: 'Ask Vivordo AI anything',
-                filled: true,
-                fillColor: colors.input,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                  borderSide: BorderSide.none,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _input,
+                  minLines: 1,
+                  maxLines: 4,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    hintText: 'Ask Vivordo AI anything',
+                    filled: true,
+                    fillColor: colors.input,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onSubmitted: (_) => _send(),
                 ),
               ),
-              onSubmitted: (_) => _send(),
-            ),
+              const SizedBox(width: 8),
+              // While a reply is coming, Send becomes Stop.
+              IconButton.filled(
+                tooltip: _sending ? 'Stop' : 'Send',
+                onPressed: _sending ? _stop : _send,
+                style: IconButton.styleFrom(backgroundColor: _brand),
+                icon: Icon(
+                  _sending
+                      ? CupertinoIcons.stop_fill
+                      : Icons.arrow_upward_rounded,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: 'Send',
-            onPressed: _sending ? null : _send,
-            style: IconButton.styleFrom(backgroundColor: _brand),
-            icon: const Icon(Icons.arrow_upward_rounded, color: Colors.white),
+          const SizedBox(height: 6),
+          Text(
+            'Vivordo AI can make mistakes. Not medical advice.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
       ),

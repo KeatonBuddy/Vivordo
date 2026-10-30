@@ -20,6 +20,8 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
@@ -2506,6 +2508,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ? await _refreshTrackedDistance(force: true)
         : null;
     if (!mounted) return;
+    for (final set in exercises.expand((exercise) => exercise.sets)) {
+      set.invalid = false;
+    }
     var assignedTrackedDistance = false;
     final records = <WorkoutExerciseRecord>[];
     for (final exercise in exercises) {
@@ -2539,14 +2544,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
       final sets = <WorkoutSetRecord>[];
       for (final set in exercise.sets) {
+        // Untouched rows are dropped; half-filled ones are outlined.
+        if (set.isEmpty) continue;
         final weight = double.tryParse(set.lbs);
         final reps = int.tryParse(set.reps);
         if (weight == null || weight < 0 || reps == null || reps <= 0) {
-          showToast(
-            context,
-            'Enter a valid weight and reps for every ${exercise.name} set.',
-          );
-          return;
+          set.invalid = true;
+          continue;
         }
         // Typed in Settings → Units, saved in lb (weightLbs).
         sets.add(
@@ -2557,6 +2561,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
         );
       }
+      if (sets.isEmpty) continue;
       records.add(
         WorkoutExerciseRecord(
           name: exercise.definition.name,
@@ -2564,6 +2569,34 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           sets: sets,
         ),
       );
+    }
+
+    final firstInvalid = exercises
+        .expand((exercise) => exercise.sets)
+        .where((set) => set.invalid)
+        .firstOrNull;
+    if (firstInvalid != null) {
+      setState(() {});
+      HapticFeedback.heavyImpact();
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        'Add weight and reps to the outlined sets',
+        Directionality.of(context),
+      );
+      if (firstInvalid.rowKey.currentContext case final row? when row.mounted) {
+        unawaited(
+          Scrollable.ensureVisible(
+            row,
+            alignment: .3,
+            duration: const Duration(milliseconds: 300),
+          ),
+        );
+      }
+      return;
+    }
+    if (records.isEmpty) {
+      showToast(context, 'Log at least one set first.');
+      return;
     }
 
     setState(() => saving = true);
@@ -2827,7 +2860,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 _updateSetCount();
                 unawaited(draft.persist());
               },
-              onRemove: () {
+              onRemove: () async {
+                final filled = exercise.sets.where((set) => !set.isEmpty);
+                if (filled.isNotEmpty &&
+                    !await confirmAction(
+                      context,
+                      title: 'Remove ${exercise.name}?',
+                      message: filled.length == 1
+                          ? 'Its set will be deleted.'
+                          : 'Its ${filled.length} sets will be deleted.',
+                      confirmLabel: 'Remove',
+                    )) {
+                  return;
+                }
+                if (!mounted) return;
                 setState(() => exercises.remove(exercise));
                 _updateSetCount();
                 unawaited(draft.persist());
@@ -3278,6 +3324,14 @@ class _WorkoutSet {
   /// When reps were first entered: roughly when the set was done.
   DateTime? loggedAt;
 
+  /// Half filled in when Finish was tapped; outlined until edited.
+  bool invalid = false;
+
+  /// Finds the row to scroll to when [invalid].
+  final rowKey = GlobalKey();
+
+  bool get isEmpty => lbs.trim().isEmpty && reps.trim().isEmpty;
+
   Map<String, dynamic> toJson() => {
     'lbs': lbs,
     'reps': reps,
@@ -3621,7 +3675,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
           const SizedBox(height: 8),
           for (var index = 0; index < exercise.sets.length; index++) ...[
             _WorkoutSetRow(
-              key: ObjectKey(exercise.sets[index]),
+              key: exercise.sets[index].rowKey,
               number: index + 1,
               set: exercise.sets[index],
               repsHint: exercise.definition.targetReps,
@@ -3678,6 +3732,13 @@ class _WorkoutSetRow extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
+  /// Red while the set is half filled in after Finish; the theme's otherwise.
+  InputBorder? get _invalidBorder => set.invalid
+      ? const OutlineInputBorder(
+          borderSide: BorderSide(color: appleRed, width: 1.5),
+        )
+      : null;
+
   @override
   Widget build(BuildContext context) => Row(
     children: [
@@ -3708,12 +3769,14 @@ class _WorkoutSetRow extends StatelessWidget {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             textAlign: TextAlign.center,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
+              enabledBorder: _invalidBorder,
             ),
             onChanged: (value) {
               set.lbs = value;
+              set.invalid = false;
               onChanged();
             },
             onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
@@ -3734,11 +3797,13 @@ class _WorkoutSetRow extends StatelessWidget {
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
+              enabledBorder: _invalidBorder,
               hintText: repsHint,
               hintStyle: const TextStyle(color: _muted),
             ),
             onChanged: (value) {
               set.reps = value;
+              set.invalid = false;
               if (value.isNotEmpty) set.loggedAt ??= DateTime.now();
               onChanged();
             },

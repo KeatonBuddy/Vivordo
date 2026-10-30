@@ -105,6 +105,28 @@ void main() {
     expect(undone, isTrue);
   });
 
+  testWidgets('Undo toast lasts 8 s, and until dismissed with VoiceOver', (
+    tester,
+  ) async {
+    final context = await pumpApp(tester);
+    showToast(context, 'Moved', actionLabel: 'Undo', onAction: () {});
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 7));
+    expect(find.text('Moved'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Moved'), findsNothing);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(accessibleNavigation: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pump();
+    showToast(context, 'Kept', actionLabel: 'Undo', onAction: () {});
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('Kept'), findsOneWidget);
+  });
+
   testWidgets('form sheet Done and info sheet button work', (tester) async {
     final context = await pumpApp(tester);
     final controller = TextEditingController();

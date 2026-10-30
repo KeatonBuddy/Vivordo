@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
 import '../src/utils/ppg_algorithm.dart';
@@ -44,6 +45,9 @@ class _ScanScreenState extends State<ScanScreen>
   final List<double> _redValues = [];
   bool _isProcessingFrame = false;
   int _fingerDetectedFrames = 0;
+
+  /// The finger came off mid-scan; says so until it's back.
+  bool _fingerLifted = false;
   static const double _fingerRedThreshold = 140.0;
   static const int _requiredFingerFrames = 10;
   DateTime? _scanStartTime;
@@ -382,8 +386,10 @@ class _ScanScreenState extends State<ScanScreen>
   void _startScan() {
     if (_showTutorial) return;
     if (!mounted) return;
+    HapticFeedback.lightImpact();
     setState(() {
       _scanState = ScanState.scanning;
+      _fingerLifted = false;
       _redValues.clear();
       _fingerDetectedFrames = 0;
       _scanStartTime = DateTime.now();
@@ -409,8 +415,10 @@ class _ScanScreenState extends State<ScanScreen>
     if (!mounted) return;
     _scanTimer?.cancel();
     _spinController.stop();
+    HapticFeedback.heavyImpact();
     setState(() {
       _scanState = ScanState.idle;
+      _fingerLifted = true;
       _progress = 0.0;
     });
   }
@@ -462,6 +470,7 @@ class _ScanScreenState extends State<ScanScreen>
     if (bpmResult > 0) {
       await _saveToFirestore(bpmResult.round(), qualityScore);
       if (mounted && !_showTutorial) {
+        HapticFeedback.mediumImpact();
         setState(() {
           _finalBpm = bpmResult;
           _scanState = ScanState.success;
@@ -469,6 +478,7 @@ class _ScanScreenState extends State<ScanScreen>
       }
     } else {
       if (mounted && !_showTutorial) {
+        HapticFeedback.heavyImpact();
         setState(() {
           _errorTitle = 'Poor signal detected';
           _errorBody =
@@ -679,6 +689,7 @@ class _ScanScreenState extends State<ScanScreen>
       _finalBpm = 0.0;
       _redValues.clear();
       _fingerDetectedFrames = 0;
+      _fingerLifted = false;
       _errorTitle = 'Camera unavailable';
       _errorBody = 'Please allow camera access in Settings\nand try again.';
       _cameraDenied = false;
@@ -1062,22 +1073,30 @@ class _ScanScreenState extends State<ScanScreen>
                 ),
               ),
               const SizedBox(height: 28),
-              Text(
-                _scanArmed
-                    ? 'Place your finger on the camera'
-                    : 'Ready to scan?',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.3,
+              // Live, so VoiceOver reads "Finger lifted" when it appears.
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  !_scanArmed
+                      ? 'Ready to scan?'
+                      : _fingerLifted
+                      ? 'Finger lifted'
+                      : 'Place your finger on the camera',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.3,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                _scanArmed
-                    ? 'Cover the rear camera and hold still. The scan begins when your finger is detected.'
-                    : 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.',
+                !_scanArmed
+                    ? 'Tap Start Scan to turn on the torch, then cover the rear camera with your fingertip.'
+                    : _fingerLifted
+                    ? 'Place it back on the camera to restart the scan. Keep it still until the scan finishes.'
+                    : 'Cover the rear camera and hold still. The scan begins when your finger is detected.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,

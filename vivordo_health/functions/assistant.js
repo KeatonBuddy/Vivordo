@@ -391,6 +391,9 @@ function validateAssistantRequest(data) {
     message, history, context, today: data.today, now: data.now,
     utcOffsetMinutes: offset, workoutCoach: data?.workoutCoach === true,
     conversationId,
+    // Names this turn so the app's Stop can cancel it (see runAssistant).
+    turnId: typeof data?.turnId === "string" &&
+      /^[A-Za-z0-9_-]{1,40}$/.test(data.turnId) ? data.turnId : null,
     // The insight card the message was sent from, if any.
     askedFrom: typeof data?.askedFrom === "string" && data.askedFrom.trim() ?
       data.askedFrom.trim().slice(0, 80) : null,
@@ -1514,6 +1517,17 @@ async function runAssistant({client, db, uid, request: input, now,
   const memoryState = {facts: memory.facts, pending: []};
   const actions = [];
   const lookups = []; // data tool calls that returned data, for source chips
+  // Stop in the app writes users/{uid}/assistant_stops/{turnId}. Checked
+  // before each model call and before saving: a stopped turn saves nothing,
+  // so the reply never turns up in the thread later.
+  const stopRef = request.turnId ? db.collection("users").doc(uid)
+      .collection("assistant_stops").doc(request.turnId) : null;
+  const stopped = async () => {
+    if (!stopRef || !(await stopRef.get()).exists) return null;
+    await stopRef.delete().catch(() => {});
+    return {usage, reply: {intent: "chitchat", message: "", stopped: true,
+      blocks: [], suggestions: []}, memoryChanges: 0};
+  };
   // save_memory and the propose_* tools change nothing yet: they are checked
   // now and applied after the reply (memory) or confirmed in the app.
   const deferred = {
@@ -1556,6 +1570,8 @@ async function runAssistant({client, db, uid, request: input, now,
     }
   };
   const finish = async (reply) => {
+    const stop = await stopped();
+    if (stop) return stop;
     // A crisis turn takes no actions, whatever the model proposed.
     const proposed = reply.crisis ? [] : actions;
     if (proposed.length) {
@@ -1588,6 +1604,8 @@ async function runAssistant({client, db, uid, request: input, now,
   };
 
   for (let call = 0; call < MAX_ROUNDS; call++) {
+    const stop = await stopped();
+    if (stop) return stop;
     const response = await client.beta.messages.create({
       model: MODEL,
       max_tokens: 8000,
@@ -1603,6 +1621,8 @@ async function runAssistant({client, db, uid, request: input, now,
     // Fallback replies are text only: no memory or proposals, but they
     // still go in the thread.
     const plain = async (cleaned) => {
+      const stop = await stopped();
+      if (stop) return stop;
       const reply = {...cleaned, suggestions: [],
         blocks: [{type: "text", text: cleaned.message}]};
       await keep(reply);

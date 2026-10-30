@@ -398,12 +398,19 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
   final shownIcon = icon ?? defaultIcon;
   return messenger.showSnackBar(
     SnackBar(
+      // A toast with a button (Undo) gets longer, and with VoiceOver on it
+      // stays until it's used or dismissed: reaching it takes time.
       duration:
           duration ??
           Duration(
-            seconds: kind == ToastKind.error || actionLabel != null ? 5 : 3,
+            seconds: actionLabel != null
+                ? 8
+                : kind == ToastKind.error
+                ? 5
+                : 3,
           ),
-      persist: false,
+      persist:
+          actionLabel != null && MediaQuery.accessibleNavigationOf(context),
       content: Row(
         children: [
           if (shownIcon != null) ...[

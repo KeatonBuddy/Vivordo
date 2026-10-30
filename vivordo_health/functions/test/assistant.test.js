@@ -17,7 +17,9 @@ function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversatio
   const lists = {workouts, memory, conversations, messages};
   const snap = (path) => ({id: path.split("/").pop(), exists: path in docs, data: () => docs[path]});
   const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`),
-    get: async () => snap(path)});
+    get: async () => snap(path), delete: async () => {
+      delete docs[path];
+    }});
   const query = (path, filters) => ({
     where: (field, op, value) => query(path, [...filters, (d) => d[field] === value]),
     get: async () => {
@@ -38,6 +40,7 @@ function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversatio
   });
   return {
     writes,
+    docsForTest: docs,
     collection: (name) => collectionRef(name),
     getAll: async (...refs) => refs.map((ref) => {
       const [collection, day] = ref.path.split("/").slice(-2);
@@ -677,4 +680,26 @@ test("routines are only offered to builds that can save them", async () => {
   const old = await run(undefined);
   assert.ok(!old.client.requests[0].tools.some((t) => t.name === "propose_workout"));
   assert.ok(!old.client.requests[0].system.some((block) => /WORKOUT ROUTINES/.test(block.text)));
+});
+
+test("a turn stopped in the app saves nothing and returns stopped", async () => {
+  const stop = "users/u1/assistant_stops/turn1";
+  const db = fakeDb({docs: {[stop]: {at: 1}}});
+  const client = fakeClient([]);
+  const {reply} = await runAssistant({client, db, uid: "u1", now: () => 0,
+    request: validateAssistantRequest({...base, turnId: "turn1"})});
+  assert.equal(reply.stopped, true);
+  assert.equal(client.requests.length, 0);
+  assert.equal(db.writes.length, 0);
+
+  // Stopped while the model was working: the reply isn't kept either.
+  const later = fakeDb();
+  const slow = {requests: [], beta: {messages: {create: async () => {
+    later.docsForTest["users/u1/assistant_stops/turn2"] = {at: 1};
+    return {stop_reason: "end_turn", usage: {}, content: [{type: "text", text: "Hi"}]};
+  }}}};
+  const second = await runAssistant({client: slow, db: later, uid: "u1", now: () => 0,
+    request: validateAssistantRequest({...base, turnId: "turn2"})});
+  assert.equal(second.reply.stopped, true);
+  assert.equal(later.writes.length, 0);
 });

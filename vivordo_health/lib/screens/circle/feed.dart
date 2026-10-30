@@ -1206,11 +1206,7 @@ Future<void> _reportPost(BuildContext context, CircleActivity activity) async {
     ),
   );
   if (submitted == true && context.mounted) {
-    _showSnack(
-      context,
-      'Report sent. Thanks for letting us know.',
-      kind: ToastKind.success,
-    );
+    await _offerBlock(context, activity.profile.uid, activity.profile.username);
   }
 }
 
@@ -1242,11 +1238,39 @@ Future<void> _reportComment(
     ),
   );
   if (sent == true && context.mounted) {
-    _showSnack(
-      context,
-      'Report sent. Thanks for letting us know.',
-      kind: ToastKind.success,
-    );
+    await _offerBlock(context, comment.authorUid, comment.authorName);
+  }
+}
+
+/// After a report: confirms it was sent and offers to block [username] too.
+Future<void> _offerBlock(
+  BuildContext context,
+  String uid,
+  String username,
+) async {
+  final block = await confirmAction(
+    context,
+    title: 'Report sent',
+    message:
+        'Thanks for letting us know. You can also block $username: this '
+        'removes your friendship and hides their posts, and they can’t find '
+        'or add you. They aren’t told.',
+    confirmLabel: 'Block',
+    cancelLabel: 'Not Now',
+  );
+  if (!block || !context.mounted) return;
+  try {
+    await CircleProfileService.blockUser(uid);
+    if (context.mounted) showToast(context, '$username is blocked.');
+  } catch (error) {
+    debugPrint('Block user failed: $error');
+    if (context.mounted) {
+      _showSnack(
+        context,
+        "Couldn't block $username. Try again.",
+        kind: ToastKind.error,
+      );
+    }
   }
 }
 
