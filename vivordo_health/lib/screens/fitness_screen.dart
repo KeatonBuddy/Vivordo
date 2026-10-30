@@ -273,143 +273,150 @@ class _FitnessScreenState extends State<FitnessScreen> {
     final colors = context.vivordoColors;
     return Scaffold(
       backgroundColor: colors.page,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // At large text the actions go under the title, so the
-              // title keeps the width.
-              Builder(
-                builder: (context) {
-                  final title = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      body: CollapsingTitle(
+        title: 'Fitness',
+        threshold: 48,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // At large text the actions go under the title, so the
+                // title keeps the width.
+                Builder(
+                  builder: (context) {
+                    final title = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Fitness',
+                          // Large titles stop growing at 1.5x, as in iOS.
+                          textScaler: MediaQuery.textScalerOf(
+                            context,
+                          ).clamp(maxScaleFactor: 1.5),
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                          style: TextStyle(color: colors.textSecondary),
+                        ),
+                      ],
+                    );
+                    final actions = Row(
+                      key: widget.actionsKey,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: _WorkoutStreakPill(),
+                        ),
+                        IconButton(
+                          onPressed: _openGoals,
+                          tooltip: 'Goals',
+                          icon: const Icon(
+                            Icons.track_changes_rounded,
+                            color: _purple,
+                          ),
+                        ),
+                      ],
+                    );
+                    return MediaQuery.textScalerOf(context).scale(34) > 46
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [title, actions],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: title),
+                              actions,
+                            ],
+                          );
+                  },
+                ),
+                const SizedBox(height: 18),
+                KeyedSubtree(
+                  key: widget.ringsKey,
+                  child: _TodayActivityRings(onTap: _openMonthlyRings),
+                ),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<bool>(
+                  key: widget.buttonsKey,
+                  valueListenable: FitnessWorkoutTimerState.isRunning,
+                  builder: (context, isWorkoutRunning, _) => Row(
                     children: [
-                      Text(
-                        'Fitness',
-                        // Large titles stop growing at 1.5x, as in iOS.
-                        textScaler: MediaQuery.textScalerOf(
-                          context,
-                        ).clamp(maxScaleFactor: 1.5),
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          color: colors.textPrimary,
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: FilledButton.icon(
+                            onPressed: _startWorkout,
+                            icon: Icon(
+                              isWorkoutRunning && _activeWorkoutDraft != null
+                                  ? Icons.timer_outlined
+                                  : Icons.fitness_center_rounded,
+                            ),
+                            label: _WorkoutButtonLabel(
+                              draft: isWorkoutRunning
+                                  ? _activeWorkoutDraft
+                                  : null,
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _purple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                        style: TextStyle(color: colors.textSecondary),
-                      ),
-                    ],
-                  );
-                  final actions = Row(
-                    key: widget.actionsKey,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: _WorkoutStreakPill(),
-                      ),
-                      IconButton(
-                        onPressed: _openGoals,
-                        tooltip: 'Goals',
-                        icon: const Icon(
-                          Icons.track_changes_rounded,
-                          color: _purple,
-                        ),
-                      ),
-                    ],
-                  );
-                  return MediaQuery.textScalerOf(context).scale(34) > 46
-                      ? Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [title, actions],
-                        )
-                      : Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: title),
-                            actions,
-                          ],
-                        );
-                },
-              ),
-              const SizedBox(height: 18),
-              KeyedSubtree(
-                key: widget.ringsKey,
-                child: _TodayActivityRings(onTap: _openMonthlyRings),
-              ),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<bool>(
-                key: widget.buttonsKey,
-                valueListenable: FitnessWorkoutTimerState.isRunning,
-                builder: (context, isWorkoutRunning, _) => Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
+                      const SizedBox(width: 10),
+                      SizedBox(
                         height: 52,
-                        child: FilledButton.icon(
-                          onPressed: _startWorkout,
-                          icon: Icon(
-                            isWorkoutRunning && _activeWorkoutDraft != null
-                                ? Icons.timer_outlined
-                                : Icons.fitness_center_rounded,
+                        child: OutlinedButton.icon(
+                          onPressed: _logActivity,
+                          icon: const Icon(CupertinoIcons.add),
+                          label: const Text(
+                            'Log activity',
+                            style: TextStyle(fontWeight: FontWeight.w800),
                           ),
-                          label: _WorkoutButtonLabel(
-                            draft: isWorkoutRunning
-                                ? _activeWorkoutDraft
-                                : null,
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _purple,
-                            foregroundColor: Colors.white,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _purple,
+                            side: BorderSide(
+                              color: _purple.withValues(alpha: .45),
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      height: 52,
-                      child: OutlinedButton.icon(
-                        onPressed: _logActivity,
-                        icon: const Icon(CupertinoIcons.add),
-                        label: const Text(
-                          'Log activity',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _purple,
-                          side: BorderSide(
-                            color: _purple.withValues(alpha: .45),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const _SuggestRoutineRow(),
-              const SizedBox(height: 24),
-              KeyedSubtree(
-                key: widget.weekKey,
-                child: _ThisWeekCard(strengthGoals: _strengthGoals),
-              ),
-              const _TrainingLoadSection(),
-              const SizedBox(height: 24),
-              KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
-              const SizedBox(height: 24),
-              KeyedSubtree(key: widget.bodyKey, child: _BodyCard(_recentDays)),
-            ],
+                const _SuggestRoutineRow(),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.weekKey,
+                  child: _ThisWeekCard(strengthGoals: _strengthGoals),
+                ),
+                const _TrainingLoadSection(),
+                const SizedBox(height: 24),
+                KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.bodyKey,
+                  child: _BodyCard(_recentDays),
+                ),
+              ],
+            ),
           ),
         ),
       ),

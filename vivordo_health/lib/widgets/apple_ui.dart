@@ -1362,3 +1362,95 @@ class AppleChoiceRow extends StatelessWidget {
     ),
   );
 }
+
+// ── Large titles ─────────────────────────────────────────────────────────────
+
+/// iOS large-title behaviour for a tab: once the page's own big title has
+/// scrolled [threshold] points away, [title] shows small and centred in a
+/// bar across the top, as in Apple's apps. Wraps the tab's whole body.
+class CollapsingTitle extends StatefulWidget {
+  const CollapsingTitle({
+    super.key,
+    required this.title,
+    required this.child,
+    this.threshold = 52,
+  });
+
+  final String title;
+  final Widget child;
+
+  /// How far the page scrolls before its big title is out of view.
+  final double threshold;
+
+  @override
+  State<CollapsingTitle> createState() => _CollapsingTitleState();
+}
+
+class _CollapsingTitleState extends State<CollapsingTitle> {
+  bool _shown = false;
+
+  bool _onScroll(ScrollUpdateNotification notification) {
+    // The page's own vertical scroll, not a sideways row inside it.
+    if (notification.depth == 0 && notification.metrics.axis == Axis.vertical) {
+      final shown = notification.metrics.pixels > widget.threshold;
+      if (shown != _shown) setState(() => _shown = shown);
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return NotificationListener<ScrollUpdateNotification>(
+      onNotification: _onScroll,
+      child: Stack(
+        children: [
+          widget.child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              ignoring: !_shown,
+              child: ExcludeSemantics(
+                // VoiceOver reads the big title; this is only its echo.
+                child: AnimatedOpacity(
+                  opacity: _shown ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 160),
+                  child: Container(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.paddingOf(context).top,
+                    ),
+                    height: MediaQuery.paddingOf(context).top + 44,
+                    decoration: BoxDecoration(
+                      color: colors.page,
+                      border: Border(
+                        bottom: BorderSide(color: colors.border, width: .5),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.3),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

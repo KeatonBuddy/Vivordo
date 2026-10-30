@@ -442,111 +442,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
     context.select<ThemeController, Units>((c) => c.units);
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () => _refreshHealthMetricsFromHealth(showFeedback: true),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 26),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Large titles stop growing at 1.5x, as in iOS,
-                          // and shrink rather than break mid-word.
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Metrics',
-                              maxLines: 1,
-                              textScaler: MediaQuery.textScalerOf(
-                                context,
-                              ).clamp(maxScaleFactor: 1.5),
-                              style: TextStyle(
-                                fontSize: 34,
-                                fontWeight: FontWeight.w900,
-                                color: context.vivordoColors.textPrimary,
-                                letterSpacing: -1,
+      body: CollapsingTitle(
+        title: 'Metrics',
+        threshold: 48,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () =>
+                _refreshHealthMetricsFromHealth(showFeedback: true),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 26),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Large titles stop growing at 1.5x, as in iOS,
+                            // and shrink rather than break mid-word.
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Metrics',
+                                maxLines: 1,
+                                textScaler: MediaQuery.textScalerOf(
+                                  context,
+                                ).clamp(maxScaleFactor: 1.5),
+                                style: TextStyle(
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w900,
+                                  color: context.vivordoColors.textPrimary,
+                                  letterSpacing: -1,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          VisibleStreamBuilder<
-                            QuerySnapshot<Map<String, dynamic>>
-                          >(
-                            stream: _allMetricsStream,
-                            builder: (context, snapshot) {
-                              final style = TextStyle(
-                                fontSize: 15,
-                                color: context.vivordoColors.textSecondary,
-                              );
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _lastManualHealthRefresh == null
-                                        ? 'Synced automatically'
-                                        : _manualRefreshLabel().replaceFirst(
-                                            'Updated',
-                                            'Synced',
-                                          ),
-                                    style: style,
-                                  ),
-                                  // Its own line, under the sync time.
-                                  if (_hasVisibleWhoopData(snapshot.data)) ...[
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        Text('Data includes', style: style),
-                                        const SizedBox(width: 7),
-                                        const WhoopSourceBadge(compact: true),
-                                      ],
+                            const SizedBox(height: 2),
+                            VisibleStreamBuilder<
+                              QuerySnapshot<Map<String, dynamic>>
+                            >(
+                              stream: _allMetricsStream,
+                              builder: (context, snapshot) {
+                                final style = TextStyle(
+                                  fontSize: 15,
+                                  color: context.vivordoColors.textSecondary,
+                                );
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _lastManualHealthRefresh == null
+                                          ? 'Synced automatically'
+                                          : _manualRefreshLabel().replaceFirst(
+                                              'Updated',
+                                              'Synced',
+                                            ),
+                                      style: style,
                                     ),
+                                    // Its own line, under the sync time.
+                                    if (_hasVisibleWhoopData(
+                                      snapshot.data,
+                                    )) ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Text('Data includes', style: style),
+                                          const SizedBox(width: 7),
+                                          const WhoopSourceBadge(compact: true),
+                                        ],
+                                      ),
+                                    ],
                                   ],
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton.icon(
-                      key: widget.customizeKey,
-                      onPressed: _isLoadingMetricOrder
-                          ? null
-                          : _showLayoutEditor,
-                      icon: const Icon(Icons.tune_rounded, size: 18),
-                      label: const Text('Customize'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: accentPurple,
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-                VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _allMetricsStream,
-                  builder: (_, metricsSnap) => _buildMetricsOverview(
-                    metricsSnap.data,
-                    loading:
-                        metricsSnap.connectionState == ConnectionState.waiting,
+                      TextButton.icon(
+                        key: widget.customizeKey,
+                        onPressed: _isLoadingMetricOrder
+                            ? null
+                            : _showLayoutEditor,
+                        icon: const Icon(Icons.tune_rounded, size: 18),
+                        label: const Text('Customize'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: accentPurple,
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 28),
+                  VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _allMetricsStream,
+                    builder: (_, metricsSnap) => _buildMetricsOverview(
+                      metricsSnap.data,
+                      loading:
+                          metricsSnap.connectionState ==
+                          ConnectionState.waiting,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -123,8 +123,8 @@ void main() {
     expect(numbers.map((i) => i.text), contains(contains('averaged 55')));
   });
 
-  test('onboarding asks about scores before notifications', () {
-    final steps = onboardingSteps(const {});
+  test('setup asks about scores before notifications', () {
+    const steps = setupSteps;
     expect(
       steps.indexOf(OnboardingStep.scores),
       steps.indexOf(OnboardingStep.notifications) - 1,

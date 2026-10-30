@@ -6,6 +6,7 @@ import '../src/services/metrics_repository.dart';
 import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/meeting_patterns_view.dart';
+import '../widgets/finish_setup_card.dart';
 import '../src/services/meeting_patterns_service.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1230,121 +1231,129 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            _refreshHomeCalendarCards();
-            await _hourlyHeartKey.currentState?.refresh(force: true);
-          },
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const SizedBox(height: 20),
-                GestureDetector(
-                  key: widget.rightNowKey,
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _push(const StressDetailScreen()),
-                  child: Selector<ThemeController, bool>(
-                    selector: (_, c) => c.showScoreNumbers,
-                    builder: (context, showNumbers, _) => HomeStressCard(
-                      score: stressScore,
-                      updatedAt: stressUpdatedAt,
-                      usual: stressUsual,
-                      drivers: stressDrivers,
-                      steps: steps,
-                      loading: stressLoading,
-                      updating: stressUpdating,
-                      revealScore: widget.revealStress,
-                      onInfoTap: _showStressScoreExplanation,
-                      showWhoopBadge:
-                          sleepIsWhoop ||
-                          latestHeartRate?.source == 'whoop_ble',
-                      showNumbers: showNumbers,
-                      onScanTap: widget.onScanTap,
+      body: CollapsingTitle(
+        title: 'Home',
+        threshold: 60,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              _refreshHomeCalendarCards();
+              await _hourlyHeartKey.currentState?.refresh(force: true);
+            },
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 20),
+                  const FinishSetupCard(),
+                  GestureDetector(
+                    key: widget.rightNowKey,
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _push(const StressDetailScreen()),
+                    child: Selector<ThemeController, bool>(
+                      selector: (_, c) => c.showScoreNumbers,
+                      builder: (context, showNumbers, _) => HomeStressCard(
+                        score: stressScore,
+                        updatedAt: stressUpdatedAt,
+                        usual: stressUsual,
+                        drivers: stressDrivers,
+                        steps: steps,
+                        loading: stressLoading,
+                        updating: stressUpdating,
+                        revealScore: widget.revealStress,
+                        onInfoTap: _showStressScoreExplanation,
+                        showWhoopBadge:
+                            sleepIsWhoop ||
+                            latestHeartRate?.source == 'whoop_ble',
+                        showNumbers: showNumbers,
+                        onScanTap: widget.onScanTap,
+                      ),
                     ),
                   ),
-                ),
-                _buildCheckIn(checkIn),
-                const SizedBox(height: 12),
-                KeyedSubtree(
-                  key: widget.vitalsKey,
-                  child: _buildVitals(
-                    sleepHours: sleepHours,
-                    heartRate: latestHeartRate?.bpm,
-                    moodScore: moodScore,
-                    loading: metricsLoading,
-                    hrLoading: hrLoading,
+                  _buildCheckIn(checkIn),
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: widget.vitalsKey,
+                    child: _buildVitals(
+                      sleepHours: sleepHours,
+                      heartRate: latestHeartRate?.bpm,
+                      moodScore: moodScore,
+                      loading: metricsLoading,
+                      hrLoading: hrLoading,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                noActivitySource
-                    ? _connectActivityCard()
-                    : _buildActivityCard(
-                        steps: steps,
-                        activeCalories: activeCalories,
-                        exerciseMinutes: exerciseMinutes,
-                      ),
-                const SizedBox(height: 12),
-                KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
-                KeyedSubtree(
-                  key: widget.yourDayKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle(
-                        "Your day",
-                        trailing: [
-                          _infoButton(
-                            label: 'How Your Day works',
-                            onTap: _showReachableWindowsInfo,
-                          ),
-                          TextButton(
-                            onPressed: widget.onMyDayTap,
-                            style: TextButton.styleFrom(
-                              foregroundColor: accentPurple,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              minimumSize: const Size(0, 36),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              textStyle: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
+                  const SizedBox(height: 12),
+                  noActivitySource
+                      ? _connectActivityCard()
+                      : _buildActivityCard(
+                          steps: steps,
+                          activeCalories: activeCalories,
+                          exerciseMinutes: exerciseMinutes,
+                        ),
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: widget.circleKey,
+                    child: _buildCircleCard(),
+                  ),
+                  KeyedSubtree(
+                    key: widget.yourDayKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle(
+                          "Your day",
+                          trailing: [
+                            _infoButton(
+                              label: 'How Your Day works',
+                              onTap: _showReachableWindowsInfo,
                             ),
-                            child: const Text('Open My Day ›'),
-                          ),
-                        ],
-                      ),
-                      _buildDayLoad(
-                        sleepNights,
-                        healthMinutes: healthExerciseMinutes,
-                        calories: activeCalories.toDouble(),
-                      ),
-                      _publishPatternEvents(),
-                    ],
+                            TextButton(
+                              onPressed: widget.onMyDayTap,
+                              style: TextButton.styleFrom(
+                                foregroundColor: accentPurple,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
+                                minimumSize: const Size(0, 36),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              child: const Text('Open My Day ›'),
+                            ),
+                          ],
+                        ),
+                        _buildDayLoad(
+                          sleepNights,
+                          healthMinutes: healthExerciseMinutes,
+                          calories: activeCalories.toDouble(),
+                        ),
+                        _publishPatternEvents(),
+                      ],
+                    ),
                   ),
-                ),
-                KeyedSubtree(
-                  key: widget.insightsKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle('Insights'),
-                      _buildInsights(
-                        sleepHours: sleepHours,
-                        hasHeartRate: latestHeartRate != null,
-                      ),
-                    ],
+                  KeyedSubtree(
+                    key: widget.insightsKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle('Insights'),
+                        _buildInsights(
+                          sleepHours: sleepHours,
+                          hasHeartRate: latestHeartRate != null,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

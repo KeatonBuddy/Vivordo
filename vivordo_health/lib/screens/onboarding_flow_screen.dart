@@ -51,11 +51,26 @@ enum OnboardingStep {
   history,
 }
 
-/// The steps for this user: people who finished the old onboarding see a
-/// "what's changed" intro first.
+/// The required steps for this user, kept short so people see what Vivordo
+/// found before the paywall: people who finished the old onboarding see a
+/// "what's changed" intro first. The rest is [setupSteps], afterwards.
 List<OnboardingStep> onboardingSteps(Map<String, dynamic>? userDoc) => [
   if (userDoc?['onboardingCompleted'] == true) OnboardingStep.intro,
-  ...OnboardingStep.values.where((step) => step != OnboardingStep.intro),
+  OnboardingStep.about,
+  OnboardingStep.health,
+  OnboardingStep.history,
+];
+
+/// Optional setup after onboarding, from Home's "Finish setting up" card
+/// (`setupPending` on the user doc) and all of it also in Settings.
+const setupSteps = [
+  OnboardingStep.wrapUp,
+  OnboardingStep.sleep,
+  OnboardingStep.calendar,
+  OnboardingStep.wearables,
+  OnboardingStep.ai,
+  OnboardingStep.scores,
+  OnboardingStep.notifications,
 ];
 
 const _purple = VivordoTheme.brand;
@@ -69,10 +84,14 @@ class OnboardingFlowScreen extends StatefulWidget {
     super.key,
     required this.userDoc,
     required this.onFinished,
+    this.setup = false,
   });
 
   final Map<String, dynamic>? userDoc;
   final Future<void> Function() onFinished;
+
+  /// The optional [setupSteps] after onboarding, which can be closed.
+  final bool setup;
 
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
@@ -80,7 +99,9 @@ class OnboardingFlowScreen extends StatefulWidget {
 
 class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   final _pages = PageController();
-  late final List<OnboardingStep> _steps = onboardingSteps(widget.userDoc);
+  late final List<OnboardingStep> _steps = widget.setup
+      ? setupSteps
+      : onboardingSteps(widget.userDoc);
   int _index = 0;
   bool _busy = false;
 
@@ -193,11 +214,24 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       await save?.call();
       if (_index == _steps.length - 1) {
         await _userRef.set({
-          'onboardingVersion': kOnboardingVersion,
-          'onboardingCompleted': true,
-          'onboardingCompletedAt': FieldValue.serverTimestamp(),
+          if (widget.setup)
+            'setupPending': false
+          else ...{
+            'onboardingVersion': kOnboardingVersion,
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            // Home offers the rest of setup until it's done or dismissed.
+            'setupPending': true,
+          },
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        // A calendar connected during setup: read its last 4 weeks now, as
+        // the history step does during onboarding.
+        if (widget.setup) {
+          unawaited(
+            HealthService().syncWithHistory(recent: false, calendar: true),
+          );
+        }
         await widget.onFinished();
         return;
       }
@@ -254,22 +288,36 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
               child: Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Back',
-                    onPressed: _index == 0 || _busy
-                        ? null
-                        : () => _pages.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          ),
-                    icon: Icon(
-                      CupertinoIcons.back,
-                      size: 18,
-                      color: _index == 0
-                          ? Colors.transparent
-                          : context.vivordoColors.textPrimary,
+                  // Setup is optional: its first step closes instead.
+                  if (widget.setup && _index == 0)
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.maybePop(context),
+                      icon: Icon(
+                        CupertinoIcons.xmark,
+                        size: 18,
+                        color: context.vivordoColors.textPrimary,
+                      ),
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Back',
+                      onPressed: _index == 0 || _busy
+                          ? null
+                          : () => _pages.previousPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            ),
+                      icon: Icon(
+                        CupertinoIcons.back,
+                        size: 18,
+                        color: _index == 0
+                            ? Colors.transparent
+                            : context.vivordoColors.textPrimary,
+                      ),
                     ),
-                  ),
                   Expanded(
                     child: Row(
                       children: [
@@ -716,7 +764,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       // Existing users already have these scores, and with Health connected
       // the next step reads them from the history.
       children: [
-        if (_steps.first != OnboardingStep.intro &&
+        // Only for someone new without Health; setup comes after the
+        // history step, which already said what's next.
+        if (!widget.setup &&
+            _steps.first != OnboardingStep.intro &&
             !_healthConnected) ...const [
           SizedBox(height: 4),
           Text(
@@ -754,7 +805,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         body:
             'Connect $_healthName or a calendar any time in Settings, and '
             'Vivordo will read your history then.',
-        primary: 'Show me my day',
+        primary: 'Continue',
         onPrimary: _busy ? null : () => _next(),
       );
     }
@@ -813,7 +864,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                   'usual over the next couple of weeks. Your first Capacity '
                   'arrives tomorrow.'
             : 'Vivordo will learn your usual over the next couple of weeks.',
-        primary: 'Show me my day',
+        primary: 'Continue',
         onPrimary: _busy ? null : () => _next(),
       );
     }
@@ -821,7 +872,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       kicker: 'All set',
       title: "Here's what we found",
       body: 'Your scores compare with these from today.',
-      primary: 'Show me my day',
+      primary: 'Continue',
       onPrimary: _busy ? null : () => _next(),
       children: [
         Container(

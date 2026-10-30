@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
+import '../widgets/apple_ui.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -726,62 +727,66 @@ class _ScanScreenState extends State<ScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 48),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Heart Scan',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
+      body: CollapsingTitle(
+        title: 'Heart Scan',
+        threshold: 84,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 48),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Heart Scan',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    key: widget.helpKey,
-                    tooltip: 'Show tutorial',
-                    onPressed: _showScannerTutorial,
-                    icon: const Icon(
-                      Icons.help_outline_rounded,
-                      color: accentPurple,
+                    IconButton(
+                      key: widget.helpKey,
+                      tooltip: 'Show tutorial',
+                      onPressed: _showScannerTutorial,
+                      icon: const Icon(
+                        Icons.help_outline_rounded,
+                        color: accentPurple,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '15-second physiological assessment',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: context.vivordoColors.textSecondary,
+                  ],
                 ),
-              ),
-              const SizedBox(height: 40),
-              if (!_hasTorch && _scanState != ScanState.initializing) ...[
-                _buildNoTorchWarning(),
-                const SizedBox(height: 16),
+                const SizedBox(height: 4),
+                Text(
+                  '15-second bpm scan',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: context.vivordoColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                if (!_hasTorch && _scanState != ScanState.initializing) ...[
+                  _buildNoTorchWarning(),
+                  const SizedBox(height: 16),
+                ],
+                if (_showTutorial && _scanState == ScanState.idle) ...[
+                  _buildFirstScanTutorial(),
+                  const SizedBox(height: 20),
+                ],
+                if (_scanState == ScanState.initializing) _buildInitializing(),
+                if (_scanState == ScanState.idle) _buildIdle(),
+                if (_scanState == ScanState.scanning) _buildScanning(),
+                if (_scanState == ScanState.processing) _buildProcessing(),
+                if (_scanState == ScanState.success) _buildSuccess(),
+                if (_scanState == ScanState.error) _buildError(),
+                const SizedBox(height: 120),
               ],
-              if (_showTutorial && _scanState == ScanState.idle) ...[
-                _buildFirstScanTutorial(),
-                const SizedBox(height: 20),
-              ],
-              if (_scanState == ScanState.initializing) _buildInitializing(),
-              if (_scanState == ScanState.idle) _buildIdle(),
-              if (_scanState == ScanState.scanning) _buildScanning(),
-              if (_scanState == ScanState.processing) _buildProcessing(),
-              if (_scanState == ScanState.success) _buildSuccess(),
-              if (_scanState == ScanState.error) _buildError(),
-              const SizedBox(height: 120),
-            ],
+            ),
           ),
         ),
       ),
@@ -1408,19 +1413,17 @@ class _ScanScreenState extends State<ScanScreen>
     final bpm = _finalBpm.round();
     // One reading says how fast your heart is beating, not how stressed you
     // are, so the label describes the heart rate (App Review 1.4.1).
+    // Plain bands, all one calm colour: 80–100 is a normal resting rate, so
+    // nothing here reads as a warning.
     final heartLabel = bpm < 65
-        ? 'Calm'
+        ? 'Resting'
         : bpm < 80
         ? 'Typical'
-        : 'Elevated';
+        : 'Higher';
     // Status colours here are text on the result cards, so they use the
     // theme's readable status tones.
     final status = context.vivordoColors;
-    final heartColor = bpm < 65
-        ? status.success
-        : bpm < 80
-        ? status.warning
-        : status.danger;
+    const heartColor = accentPurple;
     final qualityScore = PpgAlgorithm.calculateQuality(
       _redValues,
       _scanDurationSeconds.toDouble(),
@@ -1528,16 +1531,16 @@ class _ScanScreenState extends State<ScanScreen>
             Expanded(
               child: _buildMetricCard(
                 Icons.favorite_rounded,
-                'Heart Rate',
+                'Heart rate',
                 '$bpm bpm',
-                status.danger,
+                heartColor,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _buildMetricCard(
                 Icons.show_chart_rounded,
-                'Signal Quality',
+                'Signal quality',
                 qualityLabel,
                 qualityColor,
               ),
@@ -1546,7 +1549,7 @@ class _ScanScreenState extends State<ScanScreen>
             Expanded(
               child: _buildMetricCard(
                 Icons.favorite_border_rounded,
-                'Heart rate',
+                'Range',
                 heartLabel,
                 heartColor,
               ),
@@ -1585,10 +1588,10 @@ class _ScanScreenState extends State<ScanScreen>
               const SizedBox(height: 8),
               Text(
                 bpm < 65
-                    ? 'Your heart rate is calm right now.'
+                    ? 'Your heart rate is at a resting pace right now.'
                     : bpm < 80
                     ? 'Your heart rate is in a typical resting range.'
-                    : 'Your heart rate is elevated right now. Caffeine, movement and stress can all raise it; a short break or a few slow breaths may help.',
+                    : 'Your heart rate is a little higher right now. Caffeine, movement and stress can all raise it; a short break or a few slow breaths may help.',
                 style: TextStyle(
                   fontSize: 13,
                   color: context.vivordoColors.textSecondary,
