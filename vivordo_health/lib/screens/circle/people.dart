@@ -265,12 +265,11 @@ class _FriendCodeCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'YOUR FRIEND CODE',
+          'Your friend code',
           style: TextStyle(
             color: context.circle.accent,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
-            letterSpacing: 1.4,
           ),
         ),
         const SizedBox(height: 4),
@@ -311,7 +310,7 @@ class _FriendCodeCard extends StatelessWidget {
                   _inviteText(profile),
                   'Invite copied to clipboard',
                 ),
-                icon: const Icon(Icons.ios_share_rounded, size: 17),
+                icon: const Icon(CupertinoIcons.share, size: 17),
                 label: const Text('Copy invite'),
                 style: _primaryButtonStyle(height: 44),
               ),
@@ -391,7 +390,7 @@ class _FriendRowState extends State<_FriendRow> {
                 : const SizedBox.shrink(),
           ),
           const SizedBox(width: 6),
-          Icon(Icons.chevron_right_rounded, color: context.muted),
+          Icon(CupertinoIcons.chevron_right, color: context.muted),
         ],
       ),
     ),

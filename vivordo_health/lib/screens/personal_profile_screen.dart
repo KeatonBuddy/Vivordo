@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
@@ -92,7 +93,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
       centerTitle: true,
       leading: IconButton(
         tooltip: 'Back',
-        icon: const Icon(Icons.arrow_back_ios_new_rounded),
+        icon: const Icon(CupertinoIcons.back),
         onPressed: () => Navigator.pop(context),
       ),
       title: const Text(
@@ -185,7 +186,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                         ),
                         title: 'Add Measurement',
                       ),
-                      icon: const Icon(Icons.add_rounded),
+                      icon: const Icon(CupertinoIcons.add),
                       label: const Text(
                         'Add measurement',
                         style: TextStyle(fontWeight: FontWeight.w800),
@@ -200,7 +201,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const _SectionLabel('TRENDS'),
+                  const _SectionLabel('Trends'),
                   const SizedBox(height: 10),
                   _TrendCard(
                     metric: selectedMetric,
@@ -213,7 +214,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                   ),
                   if (history.isNotEmpty) ...[
                     const SizedBox(height: 24),
-                    const _SectionLabel('HISTORY'),
+                    const _SectionLabel('History'),
                     const SizedBox(height: 10),
                     _Panel(
                       padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -328,38 +329,45 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
-    backgroundColor: context.vivordoColors.page,
+    backgroundColor: raisedColors(context).page,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
-    builder: (_) => SafeArea(
-      child: Padding(
-        // Bottom room keeps the note clear of the assistant bubble.
-        padding: const EdgeInsets.fromLTRB(18, 22, 18, 84),
-        child: StreamBuilder<PersonalProfile>(
-          stream: PersonalProfileService.watch(),
-          builder: (sheetContext, snapshot) {
-            final profile = snapshot.data ?? const PersonalProfile();
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Your profile',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 14),
-                _AboutYou(
-                  profile: profile,
-                  onEditBody: () => _openMeasurementEditor(
-                    sheetContext,
-                    profile: profile,
-                    title: 'Update Measurement',
-                  ),
-                ),
-              ],
-            );
-          },
+    builder: (_) => RaisedSheetTheme(
+      child: Builder(
+        builder: (_) => SafeArea(
+          child: Padding(
+            // Bottom room keeps the note clear of the assistant bubble.
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 84),
+            child: StreamBuilder<PersonalProfile>(
+              stream: PersonalProfileService.watch(),
+              builder: (sheetContext, snapshot) {
+                final profile = snapshot.data ?? const PersonalProfile();
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your profile',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _AboutYou(
+                      profile: profile,
+                      onEditBody: () => _openMeasurementEditor(
+                        sheetContext,
+                        profile: profile,
+                        title: 'Update Measurement',
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     ),
@@ -478,11 +486,10 @@ class _ProfileHero extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  'CURRENT WEIGHT',
+                  'Current weight',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1.3,
                     color: subtle,
                   ),
                 ),
@@ -613,7 +620,7 @@ class _AboutYou extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
           ],
         ),
       ),
@@ -677,7 +684,6 @@ class _SectionLabel extends StatelessWidget {
     style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.3,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -1448,17 +1454,16 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                     IconButton(
                       tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(CupertinoIcons.xmark),
                     ),
                   ],
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'MEASUREMENTS',
+                  'Measurements',
                   style: TextStyle(
                     color: colors.textPrimary,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1520,11 +1525,10 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                 ),
                 const SizedBox(height: 22),
                 Text(
-                  'DATE',
+                  'Date',
                   style: TextStyle(
                     color: colors.textPrimary,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 1.1,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -1537,7 +1541,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                       child: Row(
                         children: [
                           const Icon(
-                            Icons.calendar_month_rounded,
+                            CupertinoIcons.calendar,
                             color: Color(0xFFAA9AFF),
                             size: 27,
                           ),
@@ -1562,7 +1566,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          const Icon(Icons.chevron_right),
+                          const Icon(CupertinoIcons.chevron_right),
                         ],
                       ),
                     ),

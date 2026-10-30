@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -64,12 +65,12 @@ class _CalendarEventSummarySheet extends StatelessWidget {
   (String, Color) get _status {
     final now = DateTime.now();
     if (!now.isBefore(event.end)) {
-      return ('COMPLETED', const Color(0xFF20A968));
+      return ('Completed', const Color(0xFF20A968));
     }
     if (!now.isBefore(event.start)) {
-      return ('IN PROGRESS', const Color(0xFFFF9F0A));
+      return ('In progress', const Color(0xFFFF9F0A));
     }
-    return ('UPCOMING', _summaryPurple);
+    return ('Upcoming', _summaryPurple);
   }
 
   @override
@@ -115,7 +116,7 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(CupertinoIcons.xmark),
                     tooltip: 'Close',
                   ),
                 ],
@@ -145,7 +146,7 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(18),
                             ),
                             child: const Icon(
-                              Icons.calendar_month_rounded,
+                              CupertinoIcons.calendar,
                               color: _summaryPurple,
                               size: 36,
                             ),
@@ -177,9 +178,8 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                                     status.$1,
                                     style: TextStyle(
                                       color: status.$2,
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w900,
-                                      letterSpacing: .8,
                                     ),
                                   ),
                                 ),
@@ -190,12 +190,12 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const _SummarySectionLabel('DETAILS'),
+                    const _SummarySectionLabel('Details'),
                     const SizedBox(height: 10),
                     _SummarySurface(
                       children: [
                         _SummaryDetailRow(
-                          icon: Icons.calendar_today_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Date',
                           value: DateFormat('MMMM d, y').format(event.start),
                         ),
@@ -224,12 +224,12 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                       EventTypeSection(event: typeEvent),
                     ],
                     const SizedBox(height: 24),
-                    const _SummarySectionLabel('CALENDAR'),
+                    const _SummarySectionLabel('Calendar'),
                     const SizedBox(height: 10),
                     _SummarySurface(
                       children: [
                         _SummaryDetailRow(
-                          icon: Icons.calendar_month_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Calendar',
                           value: event.calendarName,
                           valueDotColor: event.color,
@@ -280,7 +280,7 @@ class _CalendarEventSummarySheet extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          icon: const Icon(Icons.delete_outline_rounded),
+                          icon: const Icon(CupertinoIcons.delete),
                           label: const Text('Delete'),
                         ),
                       ),
@@ -317,9 +317,8 @@ class _SummarySectionLabel extends StatelessWidget {
     label,
     style: const TextStyle(
       color: _summaryPurple,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w900,
-      letterSpacing: 1.2,
     ),
   );
 }

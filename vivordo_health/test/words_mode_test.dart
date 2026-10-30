@@ -157,7 +157,7 @@ void main() {
     expect(find.text('Moderate'), findsOneWidget);
     expect(find.text('About usual'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
-    expect(find.text('STRESS'), findsNothing);
+    expect(find.text('Stress'), findsNothing);
   });
 
   testWidgets('My Day brief: state rows instead of rings', (tester) async {

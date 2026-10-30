@@ -6,6 +6,7 @@ import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
@@ -1070,11 +1071,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final glassSettings = _glassSettings();
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     const items = [
-      (Icons.home_rounded, 'Home'),
-      (Icons.calendar_month_rounded, 'My Day'),
+      (CupertinoIcons.house_fill, 'Home'),
+      (CupertinoIcons.calendar_today, 'My Day'),
       (Icons.fingerprint_rounded, 'Scan'),
       (Icons.fitness_center_rounded, 'Fitness'),
-      (Icons.bar_chart_rounded, 'Metrics'),
+      (CupertinoIcons.chart_bar_fill, 'Metrics'),
     ];
 
     // Apple's iOS 26 tab bar shape and size, measured from Files: a 62pt

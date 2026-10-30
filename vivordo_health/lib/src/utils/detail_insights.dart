@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
@@ -19,7 +20,7 @@ class DetailInsight {
 /// The icon and colour a screen's insight card uses for [tone].
 (IconData, Color) insightStyle(InsightTone tone) => switch (tone) {
   InsightTone.good => (Icons.trending_up_rounded, const Color(0xFF20B26B)),
-  InsightTone.concern => (Icons.info_outline_rounded, const Color(0xFFE08600)),
+  InsightTone.concern => (CupertinoIcons.info, const Color(0xFFE08600)),
   InsightTone.neutral => (Icons.insights_rounded, const Color(0xFF6B55F5)),
 };
 

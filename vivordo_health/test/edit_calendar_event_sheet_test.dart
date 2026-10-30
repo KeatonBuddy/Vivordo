@@ -37,9 +37,9 @@ void main() {
     expect(find.text('Start time'), findsOneWidget);
     expect(find.text('End time'), findsOneWidget);
     expect(find.text('All-day event'), findsOneWidget);
-    expect(find.text('Repeat'), findsOneWidget);
+    expect(find.text('Repeat'), findsNWidgets(2));
     expect(find.text('Every 2 weeks on Mon, Wed'), findsOneWidget);
-    expect(find.text('Save Changes'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
     expect(find.text('Delete Event'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Custom'));

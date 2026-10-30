@@ -148,12 +148,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Text(
-        label.toUpperCase(),
+        label,
         style: TextStyle(
           color: context.muted,
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.4,
         ),
       ),
       if (badge > 0) ...[const SizedBox(width: 8), _CountBadge(count: badge)],
@@ -301,7 +300,7 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _IconCircleButton(
-    icon: Icons.chevron_left_rounded,
+    icon: CupertinoIcons.chevron_left,
     tooltip: 'Back',
     onTap: () => Navigator.maybePop(context),
   );

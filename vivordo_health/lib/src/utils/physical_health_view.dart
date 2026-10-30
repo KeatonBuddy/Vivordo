@@ -50,8 +50,8 @@ class PhysicalHealthView {
   /// Null while building.
   final int? score;
 
-  /// While building, how far along: (6, 14, 'DAYS') in the first 2 weeks,
-  /// then (2, 3, 'NEEDED') until 3 ingredients have data. Shown in the ring.
+  /// While building, how far along: (6, 14, 'days') in the first 2 weeks,
+  /// then (2, 3, 'needed') until 3 ingredients have data. Shown in the ring.
   final (int done, int of, String unit)? building;
 
   /// "Excellent", "Good", "Fair", "Needs attention" or "Building".
@@ -68,7 +68,7 @@ class PhysicalHealthView {
   /// The Metrics hero's line, following the actual gaps.
   String get heroLine {
     if (building case (final done, final of, final unit)) {
-      if (unit == 'DAYS') {
+      if (unit == 'days') {
         final left = of - done;
         return 'Your score appears in $left ${left == 1 ? 'day' : 'days'}.';
       }
@@ -123,8 +123,8 @@ class PhysicalHealthView {
       final daysOfData = (latest['daysOfData'] as num? ?? 0).toInt();
       final counted = parts.values.where((v) => v != null).length;
       building = daysOfData < 14
-          ? (daysOfData, 14, 'DAYS')
-          : (math.min(counted, 3), 3, 'NEEDED');
+          ? (daysOfData, 14, 'days')
+          : (math.min(counted, 3), 3, 'needed');
       note = daysOfData < 14
           ? 'Based on $daysOfData of 14 days so far'
           : '$counted of 5 ingredients so far; it needs 3';

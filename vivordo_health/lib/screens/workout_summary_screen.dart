@@ -243,12 +243,11 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        'EXERCISES',
+                        'Exercises',
                         style: TextStyle(
                           color: colors.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.3,
                         ),
                       ),
                     ),
@@ -296,6 +295,7 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
     final controller = TextEditingController(text: workout.customName ?? '');
     final name = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AppleAlert(
         title: 'Rename workout',
         message: 'Leave it empty to call it $generated.',
@@ -551,11 +551,10 @@ class _SummaryCard extends StatelessWidget {
               Icon(Icons.auto_awesome_rounded, color: _summaryPurple, size: 21),
               SizedBox(width: 8),
               Text(
-                'VIVORDO SUMMARY',
+                'Vivordo summary',
                 style: TextStyle(
                   color: _summaryPurple,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 1.1,
                 ),
               ),
             ],
@@ -645,10 +644,10 @@ class _TrendBreakdown extends StatelessWidget {
     }
     final fresh = where(null);
     final groups = [
-      ('UP', 'up', up, _improvedColor(context)),
-      ('SAME', 'same', same, _summaryPurple),
-      ('LOWER', 'lower', down, _declinedColor(context)),
-      ('NEW', 'new', fresh, colors.textSecondary),
+      ('Up', 'up', up, _improvedColor(context)),
+      ('Same', 'same', same, _summaryPurple),
+      ('Lower', 'lower', down, _declinedColor(context)),
+      ('New', 'new', fresh, colors.textSecondary),
     ].where((group) => group.$3.isNotEmpty).toList(growable: false);
     final compared = groups.where((group) => group.$2 != 'new').toList();
     return Column(
@@ -712,9 +711,8 @@ class _TrendBreakdown extends StatelessWidget {
                 group.$1,
                 style: TextStyle(
                   color: group.$4,
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 1.1,
                 ),
               ),
             ],
@@ -985,7 +983,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
             }, style: TextStyle(color: colors.textSecondary)),
           ] else ...[
             const SizedBox(height: 12),
-            _SetRow(set: 'SET', weight: 'WEIGHT', reps: 'REPS', header: true),
+            _SetRow(set: 'Set', weight: 'Weight', reps: 'Reps', header: true),
             const SizedBox(height: 6),
             for (var index = 0; index < exercise.sets.length; index++) ...[
               Divider(color: colors.border, height: 1),
@@ -1073,11 +1071,10 @@ class _HeartRateCardState extends State<_HeartRateCard> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'HEART RATE',
+                        'Heart rate',
                         style: TextStyle(
                           color: colors.textSecondary,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 1.1,
                         ),
                       ),
                       const Spacer(),
@@ -1196,7 +1193,7 @@ class _HeartRateCardState extends State<_HeartRateCard> {
                             ),
                           ),
                           const Icon(
-                            Icons.chevron_right_rounded,
+                            CupertinoIcons.chevron_right,
                             color: _summaryPurple,
                             size: 20,
                           ),
@@ -1758,9 +1755,8 @@ class _SetRow extends StatelessWidget {
           : highlight
           ? _personalBestColor(context)
           : Theme.of(context).colorScheme.onSurface,
-      fontSize: header ? 12 : 15,
+      fontSize: header ? 13 : 15,
       fontWeight: header || highlight ? FontWeight.w800 : FontWeight.w600,
-      letterSpacing: header ? .7 : 0,
     );
     return Row(
       children: [

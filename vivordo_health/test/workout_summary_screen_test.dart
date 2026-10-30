@@ -168,10 +168,10 @@ void main() {
         ],
       ),
     );
-    for (final label in ['2 up', '1 same', '2 lower', 'UP', 'SAME', 'LOWER']) {
+    for (final label in ['2 up', '1 same', '2 lower', 'Up', 'Same', 'Lower']) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
-    expect(find.text('NEW'), findsOneWidget);
+    expect(find.text('New'), findsOneWidget);
     for (final chip in ['+5 lbs', '+2 reps', 'Matched', '−1 lbs', '−2 reps']) {
       expect(find.text(chip), findsOneWidget, reason: chip);
     }

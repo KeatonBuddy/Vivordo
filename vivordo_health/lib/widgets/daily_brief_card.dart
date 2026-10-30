@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../src/utils/day_effort.dart';
@@ -102,11 +103,10 @@ class DailyBriefCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'YOUR DAILY BRIEF',
+                'Your daily brief',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 11,
-                  letterSpacing: 2.4,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -155,7 +155,7 @@ class DailyBriefCard extends StatelessWidget {
                   builder: (context, constraints) {
                     final capacity = _tappable(
                       _BriefScore(
-                        title: 'CAPACITY',
+                        title: 'Capacity',
                         semanticTitle: 'Daily capacity',
                         score: capacityScore,
                         label: capacityLabel,
@@ -165,7 +165,7 @@ class DailyBriefCard extends StatelessWidget {
                     );
                     final schedule = _tappable(
                       _BriefScore(
-                        title: 'DEMAND',
+                        title: 'Demand',
                         semanticTitle: 'Schedule demand',
                         score: scheduleScore,
                         label: scheduleLabel,
@@ -201,7 +201,7 @@ class DailyBriefCard extends StatelessWidget {
                   child: Row(
                     children: [
                       const Icon(
-                        Icons.info_outline_rounded,
+                        CupertinoIcons.info,
                         color: Color(0xFFE8E0FF),
                         size: 15,
                       ),
@@ -443,8 +443,7 @@ class _BriefScore extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: Color(0xFFE8E0FF),
-                    fontSize: 10,
-                    letterSpacing: 1.4,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

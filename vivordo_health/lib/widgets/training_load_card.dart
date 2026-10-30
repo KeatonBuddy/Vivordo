@@ -294,10 +294,9 @@ class TrainingLoadAlert extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'TRAINING LOAD · ${view.label.toUpperCase()}',
+                'Training load · ${view.label}',
                 style: const TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .8,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: _coral,
                 ),
@@ -384,10 +383,9 @@ Future<void> showTrainingLoadDetails(
               ),
               const SizedBox(height: 16),
               Text(
-                'TRAINING LOAD',
+                'Training load',
                 style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .8,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: colors.textSecondary,
                 ),
@@ -397,10 +395,9 @@ Future<void> showTrainingLoadDetails(
               if (view.bodyExplanation case final explanation?) ...[
                 const SizedBox(height: 22),
                 Text(
-                  'WHAT YOUR BODY IS SAYING',
+                  'What your body is saying',
                   style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: .8,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: colors.textSecondary,
                   ),

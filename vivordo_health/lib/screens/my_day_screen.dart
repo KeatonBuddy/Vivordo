@@ -1100,7 +1100,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         onPressed: _openCalendar,
                         tooltip: 'Calendar',
                         icon: const Icon(
-                          Icons.calendar_month_rounded,
+                          CupertinoIcons.calendar,
                           color: MyDayScreen.purple,
                         ),
                       ),
@@ -1143,7 +1143,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SectionLabel('NOW'),
+                    const _SectionLabel('Now'),
                     const SizedBox(height: 10),
                     _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
                   ],
@@ -1164,14 +1164,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     Row(
                       children: [
                         const Expanded(
-                          child: _SectionLabel("TODAY'S TIMELINE"),
+                          child: _SectionLabel("Today's timeline"),
                         ),
                         IconButton(
                           onPressed: _isLoading ? null : _createGoogleEvent,
                           tooltip: 'Add event',
                           visualDensity: VisualDensity.compact,
                           icon: const Icon(
-                            Icons.add_rounded,
+                            CupertinoIcons.add,
                             color: MyDayScreen.purple,
                           ),
                         ),
@@ -1363,7 +1363,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         Icon(
-                          Icons.chevron_right_rounded,
+                          CupertinoIcons.chevron_right,
                           color: colors.textSecondary,
                         ),
                       ],
@@ -1875,7 +1875,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void _showCapacityEstimate(int? score, String? emptyWord, String? why) =>
       showScoreBreakdown(
         context,
-        kicker: 'CAPACITY TODAY',
+        kicker: 'Capacity today',
         score: score ?? 0,
         // Nothing to score yet: the empty state's word stands in.
         words: score == null
@@ -1897,7 +1897,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final diff = usual == null ? 0 : server.score - usual;
     showScoreBreakdown(
       context,
-      kicker: 'CAPACITY TODAY',
+      kicker: 'Capacity today',
       score: server.score,
       words: words,
       history: ScoreHistory(
@@ -1994,7 +1994,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           };
     showScoreBreakdown(
       context,
-      kicker: evening ? 'TOMORROW\'S DEMAND' : 'DEMAND STILL AHEAD',
+      kicker: evening ? 'Tomorrow\'s demand' : 'Demand still ahead',
       history: const ScoreHistory(kind: ScoreHistoryKind.plannedVsActual),
       empty: evening
           ? 'Nothing planned for tomorrow yet.'
@@ -2008,7 +2008,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           : 'Against ${evening ? 'your usual' : 'your'} Capacity of $capacity · $fit',
       sections: [
         (heading: null, rows: result.rows),
-        if (leftOut.isNotEmpty) (heading: 'NOT COUNTED', rows: leftOut),
+        if (leftOut.isNotEmpty) (heading: 'Not counted', rows: leftOut),
       ],
       footer:
           '${words != null ? 'Heaviest first, each event on its own' : 'Each event\'s points on its own'}; '
@@ -2949,7 +2949,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ],
             if (hidden > 0) ...[
               _ListAction(
-                icon: Icons.more_horiz_rounded,
+                icon: CupertinoIcons.ellipsis,
                 label: '$hidden more',
                 muted: true,
                 onTap: _openAllPriorities,
@@ -2975,7 +2975,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const Divider(height: 1),
             ],
             _ListAction(
-              icon: Icons.add_rounded,
+              icon: CupertinoIcons.add,
               label: 'Add a priority',
               onTap: _addManualPriority,
             ),
@@ -2983,8 +2983,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const Divider(height: 1),
               _ListAction(
                 icon: _showCompleted
-                    ? Icons.expand_more_rounded
-                    : Icons.chevron_right_rounded,
+                    ? CupertinoIcons.chevron_down
+                    : CupertinoIcons.chevron_right,
                 label: '${done.length} completed',
                 muted: true,
                 onTap: () => setState(() => _showCompleted = !_showCompleted),
@@ -3001,7 +3001,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         children: [
           Row(
             children: [
-              const Expanded(child: _SectionLabel('TODAY’S PLAN')),
+              const Expanded(child: _SectionLabel('Today’s plan')),
               TextButton(
                 onPressed: _openAllPriorities,
                 child: const Text('View all'),
@@ -3021,7 +3021,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.fromLTRB(18, 12, 16, 2),
                   child: Row(
                     children: [
-                      const Expanded(child: _SubLabel('PRIORITIES')),
+                      const Expanded(child: _SubLabel('Priorities')),
                       if (priorities.isNotEmpty)
                         Text(
                           '${done.length} of ${priorities.length}',
@@ -3059,7 +3059,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const _SubLabel('HABITS'),
+                  const _SubLabel('Habits'),
                   Text(
                     '$done of ${habits.length}',
                     style: TextStyle(
@@ -3513,8 +3513,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   if (earlier.isNotEmpty)
                     _ListAction(
                       icon: _showEarlier
-                          ? Icons.expand_more_rounded
-                          : Icons.chevron_right_rounded,
+                          ? CupertinoIcons.chevron_down
+                          : CupertinoIcons.chevron_right,
                       label:
                           '${earlier.length} earlier ${onlyEvents ? (earlier.length == 1 ? 'event' : 'events') : (earlier.length == 1 ? 'item' : 'items')}',
                       muted: true,
@@ -3633,9 +3633,8 @@ class _SubLabel extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     style: TextStyle(
-      fontSize: 11,
+      fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.2,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -3650,7 +3649,6 @@ class _SectionLabel extends StatelessWidget {
     style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.3,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -3768,7 +3766,7 @@ class _PriorityRow extends StatelessWidget {
                         ),
                         child: priority.completed
                             ? const Icon(
-                                Icons.check_rounded,
+                                CupertinoIcons.checkmark,
                                 color: Colors.white,
                                 size: 18,
                               )
@@ -3842,12 +3840,12 @@ class _EventSummarySheet extends StatelessWidget {
   (String, Color) get _status {
     final now = DateTime.now();
     if (!now.isBefore(event.end)) {
-      return ('COMPLETED', const Color(0xFF20A968));
+      return ('Completed', const Color(0xFF20A968));
     }
     if (!now.isBefore(event.start)) {
-      return ('IN PROGRESS', const Color(0xFFFF9F0A));
+      return ('In progress', const Color(0xFFFF9F0A));
     }
-    return ('UPCOMING', MyDayScreen.purple);
+    return ('Upcoming', MyDayScreen.purple);
   }
 
   @override
@@ -3893,7 +3891,7 @@ class _EventSummarySheet extends StatelessWidget {
                   ),
                   IconButton.filledTonal(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(CupertinoIcons.xmark),
                     tooltip: 'Close',
                   ),
                 ],
@@ -3923,7 +3921,7 @@ class _EventSummarySheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(18),
                             ),
                             child: const Icon(
-                              Icons.calendar_month_rounded,
+                              CupertinoIcons.calendar,
                               color: MyDayScreen.purple,
                               size: 36,
                             ),
@@ -3955,9 +3953,8 @@ class _EventSummarySheet extends StatelessWidget {
                                     status.$1,
                                     style: TextStyle(
                                       color: status.$2,
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w900,
-                                      letterSpacing: .8,
                                     ),
                                   ),
                                 ),
@@ -3968,12 +3965,12 @@ class _EventSummarySheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const _SummarySectionLabel('DETAILS'),
+                    const _SummarySectionLabel('Details'),
                     const SizedBox(height: 10),
                     _SummarySurface(
                       children: [
                         _SummaryDetailRow(
-                          icon: Icons.calendar_today_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Date',
                           value: DateFormat('MMMM d, y').format(event.start),
                         ),
@@ -3999,7 +3996,7 @@ class _EventSummarySheet extends StatelessWidget {
                     ),
                     if (reaction case final reaction?) ...[
                       const SizedBox(height: 24),
-                      const _SummarySectionLabel('HOW YOUR BODY REACTED'),
+                      const _SummarySectionLabel('How your body reacted'),
                       const SizedBox(height: 10),
                       _SummarySurface(
                         children: [
@@ -4024,12 +4021,12 @@ class _EventSummarySheet extends StatelessWidget {
                       EventTypeSection(event: typeEvent),
                     ],
                     const SizedBox(height: 24),
-                    const _SummarySectionLabel('CALENDAR'),
+                    const _SummarySectionLabel('Calendar'),
                     const SizedBox(height: 10),
                     _SummarySurface(
                       children: [
                         _SummaryDetailRow(
-                          icon: Icons.calendar_month_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Calendar',
                           value: CalendarService.isOutlook(event.event)
                               ? 'Outlook'
@@ -4073,7 +4070,7 @@ class _EventSummarySheet extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        icon: const Icon(Icons.delete_outline_rounded),
+                        icon: const Icon(CupertinoIcons.delete),
                         label: const Text('Delete'),
                       ),
                     ),
@@ -4098,9 +4095,8 @@ class _SummarySectionLabel extends StatelessWidget {
     label,
     style: const TextStyle(
       color: MyDayScreen.purple,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w900,
-      letterSpacing: 1.2,
     ),
   );
 }
@@ -4194,7 +4190,7 @@ class _SummaryDetailRow extends StatelessWidget {
                 if (onTap != null) ...[
                   const SizedBox(width: 6),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_right,
                     size: 20,
                     color: colors.textSecondary,
                   ),

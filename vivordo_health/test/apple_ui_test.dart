@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
@@ -190,7 +191,7 @@ void main() {
     await tester.tap(find.text('6M'));
     await tester.pumpAndSettle();
     expect(range, '6M');
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
   });
 
   testWidgets('a long info sheet closes when pulled down from the top', (
@@ -226,23 +227,23 @@ void main() {
     // took the drag before.
     showScoreBreakdown(
       context,
-      kicker: 'EFFORT SO FAR',
+      kicker: 'Effort so far',
       score: 18,
       summary: 'Heavier than usual',
       sections: [
         (
-          heading: 'SCHEDULE · 18',
+          heading: 'Schedule · 18',
           rows: [BreakdownRow('3 priorities ticked off', '', points: 18)],
         ),
       ],
       footer: 'Schedule is what your events and priorities took.',
     );
     await tester.pumpAndSettle();
-    expect(find.text('EFFORT SO FAR'), findsOneWidget);
+    expect(find.text('Effort so far'), findsOneWidget);
 
     await tester.drag(find.text('Heavier than usual'), const Offset(0, 300));
     await tester.pumpAndSettle();
-    expect(find.text('EFFORT SO FAR'), findsNothing);
+    expect(find.text('Effort so far'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -377,7 +378,7 @@ void main() {
     final context = await pumpApp(tester);
     showScoreBreakdown(
       context,
-      kicker: 'CAPACITY TODAY',
+      kicker: 'Capacity today',
       score: 78,
       words: (word: 'Recovering', tone: BriefTone.low),
       summary: 'A bit below your usual',

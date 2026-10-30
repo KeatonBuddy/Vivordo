@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -50,12 +51,11 @@ class AchievementUnlockedDialog extends StatelessWidget {
                   children: [
                     const Spacer(),
                     Text(
-                      'ACHIEVEMENT UNLOCKED',
+                      'Achievement unlocked',
                       style: TextStyle(
                         color: accentText,
                         fontSize: 15,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
                       ),
                     ),
                     Expanded(
@@ -69,7 +69,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                             side: BorderSide(color: colors.border),
                           ),
                           icon: Icon(
-                            Icons.close_rounded,
+                            CupertinoIcons.xmark,
                             color: colors.textPrimary,
                           ),
                         ),

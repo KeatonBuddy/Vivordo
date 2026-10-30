@@ -29,14 +29,14 @@ void main() {
 
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
-    expect(find.text('PRIORITY'), findsOneWidget);
+    expect(find.text('Priority'), findsNWidgets(2));
     expect(find.text('10:00 AM'), findsOneWidget);
     // A title typed in one form carries over to the other.
     await tester.enterText(find.byType(TextField).first, 'Plan launch');
 
     await tester.tap(find.text('Event'));
     await tester.pumpAndSettle();
-    expect(find.text('PRIORITY'), findsNothing);
+    expect(find.text('Priority'), findsOneWidget);
     expect(find.text('Start time'), findsOneWidget);
     // A 20-minute opening ends the event at the opening, not an hour later.
     expect(find.text('10:20 AM'), findsOneWidget);
@@ -45,7 +45,7 @@ void main() {
 
     await tester.tap(find.text('Priority'));
     await tester.pumpAndSettle();
-    expect(find.text('PRIORITY'), findsOneWidget);
+    expect(find.text('Priority'), findsNWidgets(2));
     expect(find.text('Plan launch review'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

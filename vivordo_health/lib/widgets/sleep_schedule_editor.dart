@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
@@ -145,7 +146,7 @@ class _TimeRow extends StatelessWidget {
             ),
           ),
           Icon(
-            Icons.chevron_right_rounded,
+            CupertinoIcons.chevron_right,
             color: context.vivordoColors.textSecondary,
           ),
         ],

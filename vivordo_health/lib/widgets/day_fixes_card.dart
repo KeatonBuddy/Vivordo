@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -54,11 +55,10 @@ class DayFixesCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   tomorrow
-                      ? 'WAYS TO LIGHTEN TOMORROW'
-                      : 'WAYS TO LIGHTEN TODAY',
+                      ? 'Ways to lighten tomorrow'
+                      : 'Ways to lighten today',
                   style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: .8,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: colors.textSecondary,
                   ),
@@ -70,7 +70,7 @@ class DayFixesCard extends StatelessWidget {
                     : 'Hide until tomorrow',
                 visualDensity: VisualDensity.compact,
                 onPressed: onHide,
-                icon: Icon(Icons.close_rounded, color: colors.textSecondary),
+                icon: Icon(CupertinoIcons.xmark, color: colors.textSecondary),
               ),
             ],
           ),
@@ -275,7 +275,7 @@ class BriefFix extends StatelessWidget {
                     : 'Hide until tomorrow',
                 visualDensity: VisualDensity.compact,
                 onPressed: onHide,
-                icon: const Icon(Icons.close_rounded, size: 18, color: ink),
+                icon: const Icon(CupertinoIcons.xmark, size: 18, color: ink),
               ),
             ],
           ),

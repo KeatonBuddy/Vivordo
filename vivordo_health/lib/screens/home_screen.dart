@@ -152,7 +152,7 @@ class _HomeCircleProfileButton extends StatelessWidget {
             ),
           )
         : const Icon(
-            Icons.person_rounded,
+            CupertinoIcons.person_fill,
             color: _HomeScreenState.accentPurple,
             size: 22,
           );
@@ -1295,7 +1295,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildSectionTitle(
-                        "YOUR DAY",
+                        "Your day",
                         trailing: [
                           _infoButton(
                             label: 'How Your Day works',
@@ -1333,7 +1333,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionTitle('INSIGHTS'),
+                      _buildSectionTitle('Insights'),
                       _buildInsights(
                         sleepHours: sleepHours,
                         hasHeartRate: latestHeartRate != null,
@@ -1503,7 +1503,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   child: const Icon(
-                    Icons.settings_rounded,
+                    CupertinoIcons.gear,
                     color: accentPurple,
                     size: 22,
                   ),
@@ -1719,7 +1719,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
           ],
         ),
       ),
@@ -1806,7 +1806,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(width: 8),
             const _HomeWorkoutStreakBadge(),
-            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
           ],
         ),
       ),
@@ -1873,7 +1873,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1.3,
                     color: context.vivordoColors.textSecondary,
                   ),
                 ),
@@ -1890,77 +1889,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onPressed: onTap,
         visualDensity: VisualDensity.compact,
         icon: Icon(
-          Icons.info_outline_rounded,
+          CupertinoIcons.info,
           size: 19,
           color: context.vivordoColors.textSecondary,
         ),
       );
 
-  Future<void> _showReachableWindowsInfo() => showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: dialogContext.vivordoColors.card,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: accentPurple.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.psychology_alt_rounded,
-              color: accentPurple,
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'How Your Day works',
-              style: TextStyle(
-                color: dialogContext.vivordoColors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
+  Future<void> _showReachableWindowsInfo() => showInfoSheet(
+    context,
+    icon: CupertinoIcons.chart_bar_alt_fill,
+    title: 'How Your Day works',
+    summary:
+        'Each bar is one hour, 7 AM to 10 PM. Taller, warmer bars are busier '
+        'hours. Effort and ratings are estimates.',
+    items: const [
+      AppleInfoItem(
+        'Solid and outlined bars',
+        'Solid is what the day has taken so far (Effort); outlined is what\'s '
+            'still planned (Demand). Workouts are teal.',
+        icon: CupertinoIcons.chart_bar,
       ),
-      content: SingleChildScrollView(
-        child: Text(
-          'Each bar is one hour of your day, 7 AM to 10 PM, stretched to fit anything earlier or later. Solid bars are what the day has taken so far (Effort); outlined bars are what\'s still planned (Demand). Taller, warmer bars are busier hours.\n\n'
-          '• Calendar events are rated by how demanding they look. Ones that can\'t be rated count as moderate.\n'
-          '• Priorities count once you tick them off, in their time slot, or as a small mark at the hour you finished them.\n'
-          '• Workouts are shown in teal.\n\n'
-          'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
-          'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
-          'The line is your energy forecast from your sleep and body clock, with last night above it. Tap either to see what shaped today.\n\n'
-          'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
-          'Effort and ratings are estimates.',
-          style: TextStyle(
-            color: dialogContext.vivordoColors.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
+      AppleInfoItem(
+        'What counts',
+        'Calendar events are rated by how demanding they look; ones that '
+            'can\'t be rated count as moderate. Priorities count once ticked '
+            'off. Long items, overlaps, back-to-back runs and anything after '
+            'your end-of-day time make an hour busier.',
+        icon: CupertinoIcons.calendar,
       ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          style: FilledButton.styleFrom(
-            backgroundColor: accentPurple,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Got it'),
-        ),
-      ],
-    ),
+      AppleInfoItem(
+        'So far',
+        'Compares today with your usual by this time of day, once there are '
+            '14 days to compare with.',
+        icon: CupertinoIcons.clock,
+      ),
+      AppleInfoItem(
+        'Energy line',
+        'Your energy forecast from your sleep and body clock, with last '
+            'night above it. Tap either to see what shaped today.',
+        icon: CupertinoIcons.waveform_path,
+      ),
+      AppleInfoItem(
+        'Next free stretch',
+        'Your next 30+ minutes free. Tap Plan it to fill it, or tap a bar '
+            'to see its busiest event.',
+        icon: CupertinoIcons.sparkles,
+      ),
+    ],
   );
 
   Widget _buildCircleCard() {
@@ -2062,7 +2037,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+                Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
               ],
             );
           },
@@ -2371,7 +2346,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final mental = result.total - physical;
       showScoreBreakdown(
         context,
-        kicker: 'EFFORT SO FAR',
+        kicker: 'Effort so far',
         history: const ScoreHistory(kind: ScoreHistoryKind.effort),
         empty: 'Nothing has taken effort yet today.',
         score: result.total.round(),
@@ -2388,11 +2363,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : null,
         sections: [
           (
-            heading: words ? 'YOUR SCHEDULE' : 'SCHEDULE · ${mental.round()}',
+            heading: words ? 'Your schedule' : 'Schedule · ${mental.round()}',
             rows: result.mental,
           ),
           (
-            heading: words ? 'YOUR ACTIVITY' : 'ACTIVITY · ${physical.round()}',
+            heading: words ? 'Your activity' : 'Activity · ${physical.round()}',
             rows: [
               if (physical > 0)
                 BreakdownRow(
@@ -2415,7 +2390,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final ahead = effort.aheadMinutes > 0
         ? _effortStat(
-            'STILL AHEAD',
+            'Still ahead',
             '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
             [
               switch (effort.aheadLevel) {
@@ -2432,7 +2407,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             builder: (context, snapshot) {
               final plan = snapshot.data;
               return _effortStat(
-                'TOMORROW',
+                'Tomorrow',
                 plan == null
                     ? snapshot.connectionState == ConnectionState.done
                           ? 'Couldn\'t load'
@@ -2484,7 +2459,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               onTap: () => showEffort(words: true),
                               borderRadius: BorderRadius.circular(10),
                               child: _effortStat(
-                                'SO FAR',
+                                'So far',
                                 soFar,
                                 'See what it took ›',
                               ),
@@ -2678,11 +2653,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontSize: 11,
-            letterSpacing: .6,
-            color: colors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 13, color: colors.textSecondary),
         ),
         const SizedBox(height: 3),
         Text(
@@ -2727,12 +2698,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           children: [
             Expanded(
               child: Text(
-                'EFFORT SO FAR',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .6,
-                  color: colors.textSecondary,
-                ),
+                'Effort so far',
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
             ),
             Text(
@@ -3283,7 +3250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return Column(
             children: [
               const HomeInsightRow(
-                icon: Icons.calendar_today_rounded,
+                icon: CupertinoIcons.calendar,
                 color: Color(0xFF007AFF),
                 title: 'Reviewing your schedule',
                 subtitle: 'Checking today’s calendar load for useful timing.',
@@ -3321,7 +3288,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
       if (sleepHours == null && !hasHeartRate)
         HomeInsightRow(
-          icon: Icons.info_outline_rounded,
+          icon: CupertinoIcons.info,
           color: textGrey,
           title: 'No sleep or heart data yet',
           subtitle:
@@ -3477,7 +3444,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (scheduledMinutes >= 240 || events.length >= 5) {
       return _ScheduleInsight(
-        icon: Icons.calendar_month_rounded,
+        icon: CupertinoIcons.calendar,
         color: orangeColor,
         title: 'Heavy day ahead',
         subtitle:

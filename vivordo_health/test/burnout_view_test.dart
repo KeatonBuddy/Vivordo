@@ -170,7 +170,7 @@ void main() {
       'level': 'watch',
       'areas': {'capacity': area(elevated: true, score: 1.4)},
     });
-    expect(find.text('BURNOUT CHECK · WORTH WATCHING'), findsOneWidget);
+    expect(find.text('Burnout check · worth watching'), findsOneWidget);
     expect(find.text('Burnout check'), findsNothing);
   });
 }

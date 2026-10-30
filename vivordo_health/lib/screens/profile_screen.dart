@@ -1239,7 +1239,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _connectionRow(
                       leading: const _IconBadge(
-                        Icons.calendar_month_rounded,
+                        CupertinoIcons.calendar,
                         Color(0xFF4285F4),
                       ),
                       name: 'Google Calendar',
@@ -1251,7 +1251,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     if (OutlookCalendarService.enabled)
                       _connectionRow(
                         leading: const _IconBadge(
-                          Icons.calendar_month_rounded,
+                          CupertinoIcons.calendar,
                           Color(0xFF0078D4),
                         ),
                         name: 'Outlook Calendar',
@@ -1660,7 +1660,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         padding: EdgeInsets.symmetric(vertical: 16),
                         child: Center(
                           child: Text(
-                            'Log out',
+                            'Sign Out',
                             style: TextStyle(
                               color: VivordoTheme.brand,
                               fontSize: 15,
@@ -1719,11 +1719,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final name = user.displayName?.trim() ?? '';
     final photoUrl = user.photoUrl;
     final fallback = name.isEmpty
-        ? const Icon(
-            Icons.person_outline_rounded,
-            color: Colors.white,
-            size: 26,
-          )
+        ? const Icon(CupertinoIcons.person, color: Colors.white, size: 26)
         : Text(
             name[0].toUpperCase(),
             style: const TextStyle(
@@ -1857,68 +1853,72 @@ class _SettingsScreenState extends State<SettingsScreen>
     context: context,
     useRootNavigator: true,
     showDragHandle: true,
-    backgroundColor: context.vivordoColors.page,
-    builder: (sheetContext) {
-      void edit(String field, String current) {
-        Navigator.pop(sheetContext);
-        _showEditDialog(context, field, current);
-      }
+    backgroundColor: raisedColors(context).page,
+    builder: (_) => RaisedSheetTheme(
+      child: Builder(
+        builder: (sheetContext) {
+          void edit(String field, String current) {
+            Navigator.pop(sheetContext);
+            _showEditDialog(context, field, current);
+          }
 
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Account',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: sheetContext.vivordoColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              _SettingsCard(
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.person_outline_rounded,
-                      VivordoTheme.brand,
+                  Text(
+                    'Account',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: sheetContext.vivordoColors.textPrimary,
                     ),
-                    title: 'Name',
-                    subtitle: user.displayName ?? 'Set your name',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Name', user.displayName ?? ''),
                   ),
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.mail_outline_rounded,
-                      VivordoTheme.brand,
-                    ),
-                    title: 'Email',
-                    subtitle: user.email ?? 'Set your email',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Email', user.email ?? ''),
-                  ),
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.lock_outline_rounded,
-                      VivordoTheme.brand,
-                    ),
-                    title: 'Password',
-                    subtitle: '••••••••',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Password', ''),
+                  const SizedBox(height: 14),
+                  _SettingsCard(
+                    children: [
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.person,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Name',
+                        subtitle: user.displayName ?? 'Set your name',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Name', user.displayName ?? ''),
+                      ),
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          Icons.mail_outline_rounded,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Email',
+                        subtitle: user.email ?? 'Set your email',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Email', user.email ?? ''),
+                      ),
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.lock,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Password',
+                        subtitle: '••••••••',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Password', ''),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      );
-    },
+            ),
+          );
+        },
+      ),
+    ),
   );
 
   /// A wearable or calendar row. Connected rows open their actions; others
@@ -2052,87 +2052,94 @@ class _SettingsScreenState extends State<SettingsScreen>
     useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
-    backgroundColor: context.vivordoColors.page,
-    builder: (sheetContext) {
-      var sending = false;
-      return StatefulBuilder(
-        builder: (sheetContext, setSheetState) {
-          final colors = sheetContext.vivordoColors;
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              0,
-              20,
-              20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Report a bug',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Tell us what went wrong and we’ll look into it.',
-                    style: TextStyle(fontSize: 13, color: colors.textSecondary),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _bugReportController,
-                    autofocus: true,
-                    minLines: 4,
-                    maxLines: 8,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      hintText: 'Describe the bug…',
-                      contentPadding: EdgeInsets.all(14),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _bugReportController,
-                    builder: (context, value, _) => FilledButton(
-                      onPressed: sending || value.text.trim().isEmpty
-                          ? null
-                          : () async {
-                              setSheetState(() => sending = true);
-                              final sent = await _submitBugReport();
-                              if (sent && sheetContext.mounted) {
-                                Navigator.pop(sheetContext);
-                              } else if (sheetContext.mounted) {
-                                setSheetState(() => sending = false);
-                              }
-                            },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: VivordoTheme.brand,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+    backgroundColor: raisedColors(context).page,
+    builder: (_) => RaisedSheetTheme(
+      child: Builder(
+        builder: (sheetContext) {
+          var sending = false;
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              final colors = sheetContext.vivordoColors;
+              return Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  0,
+                  20,
+                  20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Report a bug',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: colors.textPrimary,
                         ),
                       ),
-                      child: Text(sending ? 'Sending…' : 'Send report'),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tell us what went wrong and we’ll look into it.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _bugReportController,
+                        autofocus: true,
+                        minLines: 4,
+                        maxLines: 8,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          hintText: 'Describe the bug…',
+                          contentPadding: EdgeInsets.all(14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _bugReportController,
+                        builder: (context, value, _) => FilledButton(
+                          onPressed: sending || value.text.trim().isEmpty
+                              ? null
+                              : () async {
+                                  setSheetState(() => sending = true);
+                                  final sent = await _submitBugReport();
+                                  if (sent && sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  } else if (sheetContext.mounted) {
+                                    setSheetState(() => sending = false);
+                                  }
+                                },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: VivordoTheme.brand,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          child: Text(sending ? 'Sending…' : 'Send report'),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
-      );
-    },
+      ),
+    ),
   );
 }
 
@@ -2401,7 +2408,7 @@ class _SettingsHeader extends StatelessWidget {
                 width: 40,
                 height: 40,
                 child: Icon(
-                  Icons.arrow_back_ios_new_rounded,
+                  CupertinoIcons.back,
                   size: 16,
                   color: colors.textPrimary,
                   semanticLabel: 'Back',
@@ -2442,11 +2449,10 @@ class _SectionLabel extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              text.toUpperCase(),
+              text,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
                 color: context.vivordoColors.textSecondary,
               ),
             ),
@@ -2671,7 +2677,7 @@ class _Chevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    Icons.chevron_right_rounded,
+    CupertinoIcons.chevron_right,
     color: context.vivordoColors.textSecondary,
   );
 }
@@ -3067,7 +3073,7 @@ class _SlideToDeleteState extends State<SlideToDelete> {
                             : null,
                       ),
                       child: const Icon(
-                        Icons.chevron_right_rounded,
+                        CupertinoIcons.chevron_right,
                         color: Colors.white,
                         size: 30,
                       ),

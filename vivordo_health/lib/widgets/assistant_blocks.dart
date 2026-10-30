@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -288,7 +289,7 @@ class ActionCard extends StatelessWidget {
         workout
             ? Icons.fitness_center_rounded
             : calendar
-            ? Icons.calendar_month_rounded
+            ? CupertinoIcons.calendar
             : Icons.check_box_outlined,
         workout
             ? 'Saved workout'

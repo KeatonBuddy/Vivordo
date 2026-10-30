@@ -80,10 +80,10 @@ void main() {
         await tester.pumpAndSettle();
         // Overdue counts toward today's work.
         expect(find.text('3 left today'), findsOneWidget);
-        expect(find.text('OVERDUE'), findsOneWidget);
+        expect(find.text('Overdue'), findsOneWidget);
         expect(find.textContaining('From '), findsOneWidget);
-        expect(find.text('TODAY · 1 OF 3'), findsOneWidget);
-        expect(find.text('TOMORROW'), findsOneWidget);
+        expect(find.text('Today · 1 of 3'), findsOneWidget);
+        expect(find.text('Tomorrow'), findsOneWidget);
         // Repeating ones appear once, on their first day.
         expect(find.text('Morning planning'), findsOneWidget);
         expect(find.text('Next planning'), findsNothing);
@@ -171,7 +171,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Repeating · 2'), findsOneWidget);
-    expect(find.text('HABITS'), findsOneWidget);
+    expect(find.text('Habits'), findsOneWidget);
     expect(find.text('Every day · 8 a day'), findsOneWidget);
     expect(find.text('Stopped'), findsNothing);
     await tester.tap(find.text('Water'));

@@ -51,10 +51,10 @@ void main() {
     expect(find.text('Week of Oct 4 – 10'), findsOneWidget);
     expect(find.text('A heavy week you handled well'), findsOneWidget);
     expect(find.text('Last week you mentioned: Travel.'), findsOneWidget);
-    expect(find.text('THE WEEK AT A GLANCE'), findsOneWidget);
-    expect(find.text('WHAT DRAINED YOU'), findsOneWidget);
+    expect(find.text('The week at a glance'), findsOneWidget);
+    expect(find.text('What drained you'), findsOneWidget);
 
-    await tester.scrollUntilVisible(find.text('NEXT WEEK'), 300);
+    await tester.scrollUntilVisible(find.text('Next week'), 300);
     expect(find.text('Lighter than this one'), findsOneWidget);
     expect(find.text('Busy'), findsNWidgets(2));
 
@@ -98,7 +98,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('YOUR WEEK · OCT 4 – 10'), findsOneWidget);
+    expect(find.text('Your week · Oct 4 – 10'), findsOneWidget);
     expect(find.text('Remind me on Sundays'), findsOneWidget);
     expect(find.text('3 heavy days'), findsOneWidget);
 

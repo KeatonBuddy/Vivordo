@@ -51,7 +51,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Today'), findsOneWidget);
         expect(find.text('Optional'), findsOneWidget);
-        await tester.tap(find.text('Date'));
+        await tester.tap(find.text('Date').last);
         await tester.pumpAndSettle();
         await tester.tap(find.text('1').last);
         await tester.tap(find.text('Done'));

@@ -50,10 +50,9 @@ class TomorrowPreview extends StatelessWidget {
           spacing: 12,
           children: [
             Text(
-              'TOMORROW',
+              'Tomorrow',
               style: TextStyle(
                 color: colors.textSecondary,
-                letterSpacing: 1.4,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -145,15 +144,14 @@ class TomorrowPreview extends StatelessWidget {
       text,
       style: TextStyle(
         color: context.vivordoColors.textSecondary,
-        fontSize: 11,
-        letterSpacing: 1,
+        fontSize: 13,
       ),
     ),
   );
   Widget _schedule(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _heading(context, 'SCHEDULE'),
+      _heading(context, 'Schedule'),
       if (events.isEmpty)
         const Text('No events scheduled', style: TextStyle(fontSize: 12)),
       for (final event in events.take(2))
@@ -211,7 +209,7 @@ class TomorrowPreview extends StatelessWidget {
   Widget _priorities(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _heading(context, 'PRIORITIES'),
+      _heading(context, 'Priorities'),
       if (priorities.isEmpty)
         const Text('No priorities planned', style: TextStyle(fontSize: 12)),
       for (final priority in priorities.take(2))

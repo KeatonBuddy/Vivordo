@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/vivordo_theme.dart';
@@ -220,7 +221,7 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
               IconButton.outlined(
                 tooltip: 'Add 15 seconds',
                 onPressed: () => _adjust(15),
-                icon: const Icon(Icons.add),
+                icon: const Icon(CupertinoIcons.add),
                 style: adjustStyle,
               ),
               TextButton(

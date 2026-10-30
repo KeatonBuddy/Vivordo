@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -341,7 +342,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
                 onPressed: _back >= pages - 1
                     ? null
                     : () => _go(_back + 1, pages),
-                icon: const Icon(Icons.chevron_left_rounded),
+                icon: const Icon(CupertinoIcons.chevron_left),
                 color: _purple,
               ),
               Expanded(
@@ -357,7 +358,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
               IconButton(
                 tooltip: 'Later',
                 onPressed: _back == 0 ? null : () => _go(_back - 1, pages),
-                icon: const Icon(Icons.chevron_right_rounded),
+                icon: const Icon(CupertinoIcons.chevron_right),
                 color: _purple,
               ),
             ],

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -341,7 +342,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             decoration:
                                 _inputDecoration(
                                   hintText: '••••••••',
-                                  icon: Icons.lock_outline_rounded,
+                                  icon: CupertinoIcons.lock,
                                 ).copyWith(
                                   suffixIcon: IconButton(
                                     tooltip: _obscurePassword
@@ -607,11 +608,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.lock_outline_rounded,
-                            size: 13,
-                            color: textGrey,
-                          ),
+                          Icon(CupertinoIcons.lock, size: 13, color: textGrey),
                           const SizedBox(width: 5),
                           Text(
                             'All data is encrypted and securely stored.',

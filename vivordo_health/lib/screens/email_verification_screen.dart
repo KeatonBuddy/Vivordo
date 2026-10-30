@@ -232,7 +232,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: _logout,
-                child: const Text('Log out', style: TextStyle(color: textGrey)),
+                child: const Text(
+                  'Sign Out',
+                  style: TextStyle(color: textGrey),
+                ),
               ),
             ],
           ),

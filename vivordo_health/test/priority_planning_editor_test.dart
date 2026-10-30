@@ -64,8 +64,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save Changes'));
-    await tester.tap(find.text('Save Changes'));
+    await tester.ensureVisible(find.text('Save'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(result?.planning['minutes'], 90);
     expect(result?.reminderTimeMinutes, isNull);

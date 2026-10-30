@@ -125,7 +125,7 @@ void main() {
     })!;
     expect(view.note, '2 of 5 ingredients so far; it needs 3');
     // The ring shows how far along; the hero names what's missing.
-    expect(view.building, (2, 3, 'NEEDED'));
+    expect(view.building, (2, 3, 'needed'));
     expect(buildingProgress(view.building!), closeTo(66.7, .1));
     expect(
       view.heroLine,

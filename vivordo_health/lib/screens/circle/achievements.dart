@@ -299,7 +299,7 @@ class _AchievementsLinkCardState extends State<_AchievementsLinkCard> {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: context.muted),
+            Icon(CupertinoIcons.chevron_right, color: context.muted),
           ],
         ),
       );
@@ -512,12 +512,11 @@ class _AchievementsPageState extends State<_AchievementsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'UP NEXT',
+                      'Up next',
                       style: TextStyle(
                         color: context.circle.accent,
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 1.4,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -837,7 +836,7 @@ class _OneTimeAchievementTile extends StatelessWidget {
             Icon(
               achievement.earned
                   ? Icons.check_circle_rounded
-                  : Icons.lock_rounded,
+                  : CupertinoIcons.lock_fill,
               size: 13,
               color: achievement.earned
                   ? context.circle.success

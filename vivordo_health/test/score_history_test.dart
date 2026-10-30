@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -131,7 +132,7 @@ void main() {
     expect(
       tester
           .widget<IconButton>(
-            find.widgetWithIcon(IconButton, Icons.chevron_left_rounded),
+            find.widgetWithIcon(IconButton, CupertinoIcons.chevron_left),
           )
           .onPressed,
       isNull,

@@ -674,12 +674,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'PHYSICAL HEALTH',
+                      'Physical health',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: .8,
                       ),
                     ),
                     const SizedBox(height: 10),

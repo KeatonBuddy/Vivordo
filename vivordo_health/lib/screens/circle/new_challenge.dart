@@ -252,7 +252,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                 Row(
                   children: [
                     _IconCircleButton(
-                      icon: Icons.close_rounded,
+                      icon: CupertinoIcons.xmark,
                       tooltip: 'Close',
                       onTap: () => Navigator.maybePop(context),
                     ),
@@ -322,7 +322,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.info_outline_rounded,
+                        CupertinoIcons.info,
                         size: 20,
                         color: context.circle.accent,
                       ),
@@ -672,7 +672,7 @@ class _TargetPicker extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_down_rounded, color: context.muted),
+                Icon(CupertinoIcons.chevron_down, color: context.muted),
               ],
             ),
           ),
@@ -737,7 +737,7 @@ class _FriendChoice extends StatelessWidget {
                         ),
                       ),
                       child: const Icon(
-                        Icons.check_rounded,
+                        CupertinoIcons.checkmark,
                         size: 13,
                         color: Colors.white,
                       ),
@@ -874,7 +874,7 @@ class _SpecificExerciseSearchSheetState
                     ),
                   ),
                   _IconCircleButton(
-                    icon: Icons.close_rounded,
+                    icon: CupertinoIcons.xmark,
                     tooltip: 'Close',
                     onTap: () => Navigator.maybePop(context),
                   ),
@@ -1060,7 +1060,7 @@ class _SearchField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: context.muted),
-        prefixIcon: Icon(Icons.search_rounded, color: context.muted),
+        prefixIcon: Icon(CupertinoIcons.search, color: context.muted),
         filled: true,
         fillColor: colors.input,
         contentPadding: const EdgeInsets.symmetric(vertical: 14),

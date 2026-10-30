@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/screens/home_screen.dart';
@@ -610,12 +609,6 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
               // Onboarding covers what's new, so skip this release's recap.
               await _persistWhatsNewSeen(user.uid);
               if (!mounted) return;
-              // Onboarding forces a dark status bar; hand back the app's.
-              SystemChrome.setSystemUIOverlayStyle(
-                Theme.of(this.context).brightness == Brightness.dark
-                    ? SystemUiOverlayStyle.light
-                    : SystemUiOverlayStyle.dark,
-              );
               // Re-reads the user document, which now passes the check.
               setState(() => _userDocUid = null);
             },

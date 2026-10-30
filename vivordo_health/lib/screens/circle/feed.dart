@@ -409,7 +409,7 @@ class _AddFriendRing extends StatelessWidget {
                 color: context.circle.accentTint,
                 border: Border.all(color: _brand, width: 2),
               ),
-              child: Icon(Icons.add_rounded, color: context.circle.accent),
+              child: Icon(CupertinoIcons.add, color: context.circle.accent),
             ),
             const SizedBox(height: 6),
             Text(

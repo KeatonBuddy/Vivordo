@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -30,11 +31,11 @@ class AssistantMemoryScreen extends StatelessWidget {
   const AssistantMemoryScreen({super.key});
 
   static const _sections = [
-    ('stressor', 'STRESSORS'),
-    ('helps', 'WHAT HELPS'),
-    ('pattern', 'PATTERNS'),
-    ('context', 'ABOUT YOU'),
-    ('preference', 'HOW YOU LIKE TO TALK'),
+    ('stressor', 'Stressors'),
+    ('helps', 'What helps'),
+    ('pattern', 'Patterns'),
+    ('context', 'About you'),
+    ('preference', 'How you like to talk'),
   ];
 
   DocumentReference<Map<String, dynamic>> get _user => FirebaseFirestore
@@ -140,7 +141,7 @@ class AssistantMemoryScreen extends StatelessWidget {
                   ),
               if (chats.isNotEmpty)
                 _Section(
-                  heading: 'RECENT CHATS',
+                  heading: 'Recent chats',
                   rows: [
                     for (final chat in chats)
                       _Row(
@@ -222,9 +223,8 @@ class _Section extends StatelessWidget {
             heading,
             style: TextStyle(
               color: colors.textSecondary,
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
             ),
           ),
           const SizedBox(height: 8),
@@ -289,7 +289,7 @@ class _Row extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Forget',
-              icon: Icon(Icons.close_rounded, color: colors.textSecondary),
+              icon: Icon(CupertinoIcons.xmark, color: colors.textSecondary),
               onPressed: onForget,
             ),
           ],

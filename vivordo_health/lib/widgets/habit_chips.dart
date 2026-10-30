@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -136,7 +137,7 @@ class _HabitChip extends StatelessWidget {
                     ),
                     child: done
                         ? const Icon(
-                            Icons.check_rounded,
+                            CupertinoIcons.checkmark,
                             color: Colors.white,
                             size: 18,
                           )

@@ -2,7 +2,8 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -107,7 +108,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _label(context, 'LAST 4 WEEKS'),
+                          _label(context, 'Last 4 weeks'),
                           const SizedBox(height: 6),
                           Text(
                             view.status,
@@ -161,7 +162,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              _label(context, 'WHAT MAKES IT UP'),
+              _label(context, 'What makes it up'),
               const SizedBox(height: 8),
               _Card(
                 child: Column(
@@ -175,7 +176,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              _label(context, 'INSIGHTS'),
+              _label(context, 'Insights'),
               const SizedBox(height: 8),
               _Card(
                 child: Column(
@@ -212,7 +213,6 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
     style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: .8,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -274,7 +274,7 @@ class _IngredientRow extends StatelessWidget {
                   ),
                 ),
                 const Icon(
-                  Icons.chevron_right_rounded,
+                  CupertinoIcons.chevron_right,
                   size: 18,
                   color: VivordoTheme.brand,
                 ),

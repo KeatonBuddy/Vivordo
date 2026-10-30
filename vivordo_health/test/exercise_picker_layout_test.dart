@@ -23,7 +23,7 @@ Widget _pickerLayout({required int customCount, required int defaultCount}) {
         child: CustomScrollView(
           slivers: [
             if (customCount > 0) ...[
-              const SliverToBoxAdapter(child: Text('YOUR EXERCISES')),
+              const SliverToBoxAdapter(child: Text('Your exercises')),
               SliverToBoxAdapter(
                 child: Container(
                   clipBehavior: Clip.antiAlias,
@@ -39,7 +39,7 @@ Widget _pickerLayout({required int customCount, required int defaultCount}) {
                 ),
               ),
             ],
-            const SliverToBoxAdapter(child: Text('ALL EXERCISES')),
+            const SliverToBoxAdapter(child: Text('All exercises')),
             SliverFillRemaining(
               child: Container(
                 clipBehavior: Clip.antiAlias,

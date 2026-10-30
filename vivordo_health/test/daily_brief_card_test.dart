@@ -32,7 +32,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('YOUR DAILY BRIEF'), findsOneWidget);
+      expect(find.text('Your daily brief'), findsOneWidget);
       expect(find.text('62'), findsOneWidget);
       expect(find.text('74'), findsOneWidget);
       expect(tester.takeException(), isNull);

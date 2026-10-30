@@ -5,7 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -581,7 +582,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           if (widget.onClose != null)
             IconButton(
               tooltip: 'Close',
-              icon: const Icon(Icons.close_rounded),
+              icon: const Icon(CupertinoIcons.xmark),
               onPressed: widget.onClose,
             ),
           const VivordoRobot(size: 40),
@@ -858,8 +859,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             label,
             style: const TextStyle(
               color: _brand,
-              fontSize: 11,
-              letterSpacing: 1.2,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -910,7 +910,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _ => ['What does this mean?', 'What can I do about it?'],
     };
     return _card(
-      label: screen.title.toUpperCase(),
+      label: screen.title,
       children: [
         if (opening != null && opening.busy)
           const Padding(
@@ -941,7 +941,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final done = _question >= _questions.length;
     if (done) {
       return _card(
-        label: 'CHECK-IN',
+        label: 'Check-in',
         children: [
           Text(
             _answers.values.every((a) => a == 'skipped')
@@ -954,7 +954,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     }
     final question = _questions[_question];
     return _card(
-      label: 'CHECK-IN · ${_question + 1} OF ${_questions.length}',
+      label: 'Check-in · ${_question + 1} of ${_questions.length}',
       children: [
         Text(
           question.prompt,

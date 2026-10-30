@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
-import 'onboarding_flow_screen.dart' show onboardingLight;
+import 'onboarding_flow_screen.dart' show onboardingTheme;
 import '../widgets/privacy_support_links.dart';
 
 /// Creating an account: email first, then Apple or Google. Everything after
@@ -43,9 +44,6 @@ final List<_PasswordRequirement> _passwordRequirements = [
 ];
 
 const _purple = VivordoTheme.brand;
-const _ink = Color(0xFF1C1C1E);
-const _grey = Color(0xFF8E8E93);
-const _line = Color(0xFFE5E5EA);
 
 class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -60,6 +58,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _appleLoading = false;
   bool _googleLoading = false;
 
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
   bool get _busy => _emailLoading || _appleLoading || _googleLoading;
   bool get _showApple => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
@@ -118,13 +117,13 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => onboardingLight(
+  Widget build(BuildContext context) => onboardingTheme(
     Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: _ink,
+        foregroundColor: context.vivordoColors.textPrimary,
       ),
       body: SafeArea(
         top: false,
@@ -138,28 +137,27 @@ class _SignupScreenState extends State<SignupScreen> {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               children: [
                 const Text(
-                  'ACCOUNT',
+                  'Account',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: .9,
                     color: _purple,
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   'Create your account',
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    color: _ink,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 22),
                 _field(
                   controller: _name,
                   hint: 'First name',
-                  icon: Icons.person_outline_rounded,
+                  icon: CupertinoIcons.person,
                   capitalization: TextCapitalization.words,
                   autofill: AutofillHints.givenName,
                   validator: (v) =>
@@ -178,7 +176,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 _field(
                   controller: _password,
                   hint: 'Password',
-                  icon: Icons.lock_outline_rounded,
+                  icon: CupertinoIcons.lock,
                   obscure: !_showPassword,
                   autofill: AutofillHints.newPassword,
                   action: TextInputAction.done,
@@ -188,7 +186,7 @@ class _SignupScreenState extends State<SignupScreen> {
                       _showPassword
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
-                      color: _grey,
+                      color: context.vivordoColors.textSecondary,
                     ),
                     onPressed: () =>
                         setState(() => _showPassword = !_showPassword),
@@ -224,16 +222,25 @@ class _SignupScreenState extends State<SignupScreen> {
                   color: _purple,
                   onPressed: _createWithEmail,
                 ),
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
                   child: Row(
                     children: [
-                      Expanded(child: Divider(color: Color(0xFFD1D1D6))),
+                      Expanded(
+                        child: Divider(color: context.vivordoColors.border),
+                      ),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('or', style: TextStyle(color: _grey)),
+                        child: Text(
+                          'or',
+                          style: TextStyle(
+                            color: context.vivordoColors.textSecondary,
+                          ),
+                        ),
                       ),
-                      Expanded(child: Divider(color: Color(0xFFD1D1D6))),
+                      Expanded(
+                        child: Divider(color: context.vivordoColors.border),
+                      ),
                     ],
                   ),
                 ),
@@ -241,7 +248,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   _button(
                     label: 'Continue with Apple',
                     loading: _appleLoading,
-                    color: Colors.black,
+                    // Apple's button is white on a dark page.
+                    color: _dark ? Colors.white : Colors.black,
+                    foreground: _dark ? Colors.black : Colors.white,
                     leading: const Icon(Icons.apple, size: 25),
                     onPressed: () => _social(
                       AuthService.signInWithApple,
@@ -305,17 +314,23 @@ class _SignupScreenState extends State<SignupScreen> {
       textInputAction: action,
       autocorrect: false,
       validator: validator,
-      style: const TextStyle(color: _ink),
+      style: TextStyle(color: context.vivordoColors.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFFC7C7CC)),
-        prefixIcon: Icon(icon, color: const Color(0xFFC7C7CC), size: 20),
+        hintStyle: TextStyle(
+          color: context.vivordoColors.textSecondary.withValues(alpha: .6),
+        ),
+        prefixIcon: Icon(
+          icon,
+          color: context.vivordoColors.textSecondary.withValues(alpha: .6),
+          size: 20,
+        ),
         suffixIcon: suffix,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: context.vivordoColors.card,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _line),
+          borderSide: BorderSide(color: context.vivordoColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -338,6 +353,7 @@ class _SignupScreenState extends State<SignupScreen> {
     required bool loading,
     required Color color,
     required VoidCallback onPressed,
+    Color foreground = Colors.white,
     Widget? leading,
   }) => SizedBox(
     width: double.infinity,
@@ -347,18 +363,15 @@ class _SignupScreenState extends State<SignupScreen> {
       style: FilledButton.styleFrom(
         backgroundColor: color,
         disabledBackgroundColor: color.withValues(alpha: .62),
-        foregroundColor: Colors.white,
-        disabledForegroundColor: Colors.white,
+        foregroundColor: foreground,
+        disabledForegroundColor: foreground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       child: loading
-          ? const SizedBox(
+          ? SizedBox(
               width: 22,
               height: 22,
-              child: CupertinoActivityIndicator(
-                color: Colors.white,
-                radius: 11,
-              ),
+              child: CupertinoActivityIndicator(color: foreground, radius: 11),
             )
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -385,7 +398,9 @@ class _Requirement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = met ? context.vivordoColors.success : _grey;
+    final color = met
+        ? context.vivordoColors.success
+        : context.vivordoColors.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

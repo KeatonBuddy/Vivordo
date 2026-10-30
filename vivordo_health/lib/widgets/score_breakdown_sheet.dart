@@ -57,8 +57,7 @@ Future<void> showScoreBreakdown(
               Text(
                 kicker,
                 style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: 1.1,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: colors.textSecondary,
                 ),
@@ -93,8 +92,7 @@ Future<void> showScoreBreakdown(
                       child: Text(
                         heading,
                         style: TextStyle(
-                          fontSize: 12,
-                          letterSpacing: 1,
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: colors.textSecondary,
                         ),

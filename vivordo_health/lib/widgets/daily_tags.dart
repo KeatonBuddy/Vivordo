@@ -170,11 +170,7 @@ class _NightTagsCardState extends State<NightTagsCard> {
         children: [
           Text(
             widget.title,
-            style: TextStyle(
-              color: colors.textSecondary,
-              fontSize: 11,
-              letterSpacing: .7,
-            ),
+            style: TextStyle(color: colors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 10),
           if (tags == null)

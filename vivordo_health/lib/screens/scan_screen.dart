@@ -3,7 +3,8 @@ import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
@@ -1148,11 +1149,7 @@ class _ScanScreenState extends State<ScanScreen>
             children: [
               const Row(
                 children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 15,
-                    color: accentPurple,
-                  ),
+                  Icon(CupertinoIcons.info, size: 15, color: accentPurple),
                   SizedBox(width: 6),
                   Text(
                     'How it works',

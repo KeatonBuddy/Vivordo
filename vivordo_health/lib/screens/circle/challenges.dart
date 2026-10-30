@@ -290,7 +290,7 @@ class _PresetButton extends StatelessWidget {
     final colors = context.vivordoColors;
     final visual = type == null
         ? (
-            icon: Icons.add_rounded,
+            icon: CupertinoIcons.add,
             color: colors.textPrimary,
             tint: colors.card,
           )
@@ -513,7 +513,7 @@ class _FinishedChallengeRow extends StatelessWidget {
                 background: palette.goldTint,
               ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, color: context.muted),
+            Icon(CupertinoIcons.chevron_right, color: context.muted),
           ],
         ),
       ),
@@ -593,7 +593,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                   const SizedBox(width: 10),
                   if (canCancel)
                     _IconCircleButton(
-                      icon: Icons.more_horiz_rounded,
+                      icon: CupertinoIcons.ellipsis,
                       tooltip: 'Challenge options',
                       onTap: _showOptions,
                     )

@@ -5,7 +5,8 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
@@ -160,7 +161,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: purple),
+          icon: const Icon(CupertinoIcons.back, color: purple),
         ),
         title: const Text(
           'Heart Rate',
@@ -389,14 +390,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final live = bleState.isPaired && (bleState.isConnected || busy);
     final collapsed = _wearableCollapsed ?? false;
     final statusLabel = switch (bleState.status) {
-      WhoopBleStatus.unpaired => 'NOT PAIRED',
-      WhoopBleStatus.scanning => 'SCANNING',
-      WhoopBleStatus.connecting => 'CONNECTING',
-      WhoopBleStatus.connected when hasReading => 'LIVE',
-      WhoopBleStatus.connected => 'CONNECTED',
-      WhoopBleStatus.disconnected => 'PAUSED',
-      WhoopBleStatus.unavailable => 'UNAVAILABLE',
-      WhoopBleStatus.error => 'CONNECTION ISSUE',
+      WhoopBleStatus.unpaired => 'Not paired',
+      WhoopBleStatus.scanning => 'Scanning',
+      WhoopBleStatus.connecting => 'Connecting',
+      WhoopBleStatus.connected when hasReading => 'Live',
+      WhoopBleStatus.connected => 'Connected',
+      WhoopBleStatus.disconnected => 'Paused',
+      WhoopBleStatus.unavailable => 'Unavailable',
+      WhoopBleStatus.error => 'Connection issue',
     };
     final statusColor = switch (bleState.status) {
       WhoopBleStatus.connected when hasReading => red,
@@ -454,7 +455,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'LIVE WEARABLE HEART RATE',
+                            'Live wearable heart rate',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -490,9 +491,8 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             statusLabel,
                             style: TextStyle(
                               color: statusColor,
-                              fontSize: 10,
+                              fontSize: 13,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: .5,
                             ),
                           ),
                         ],
@@ -503,7 +503,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                       turns: collapsed ? 0 : .5,
                       duration: const Duration(milliseconds: 200),
                       child: Icon(
-                        Icons.expand_more_rounded,
+                        CupertinoIcons.chevron_down,
                         color: context.vivordoColors.textSecondary,
                       ),
                     ),

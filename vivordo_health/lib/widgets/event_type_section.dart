@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -137,12 +138,11 @@ class _EventTypeSectionState extends State<EventTypeSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'EVENT TYPE',
+          'Event type',
           style: TextStyle(
             color: _purple,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
           ),
         ),
         const SizedBox(height: 10),
@@ -191,7 +191,7 @@ class _EventTypeSectionState extends State<EventTypeSection> {
                     )
                   else
                     Icon(
-                      Icons.chevron_right_rounded,
+                      CupertinoIcons.chevron_right,
                       color: colors.textSecondary,
                     ),
                 ],

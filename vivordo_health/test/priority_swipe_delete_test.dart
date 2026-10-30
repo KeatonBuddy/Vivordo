@@ -50,8 +50,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('30 min before'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save Changes'));
-    await tester.tap(find.text('Save Changes'));
+    await tester.ensureVisible(find.text('Save'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(result?.title, 'Review notes');
     expect(result?.reminderMinutes, 30);
@@ -93,8 +93,8 @@ void main() {
       expect(find.text('Time'), findsOneWidget);
       await tester.ensureVisible(find.text('Mark as completed'));
       await tester.tap(find.text('Mark as completed'));
-      await tester.ensureVisible(find.text('Save Changes'));
-      await tester.tap(find.text('Save Changes'));
+      await tester.ensureVisible(find.text('Save'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(result?.completed, isTrue);
       expect(result?.date, DateTime(2026, 9, 1));
@@ -105,7 +105,8 @@ void main() {
       await tester.ensureVisible(find.text('Delete Priority'));
       await tester.tap(find.text('Delete Priority'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
+      // The alert's Cancel, above the sheet's.
+      await tester.tap(find.text('Cancel').last);
       await tester.pumpAndSettle();
       expect(result, isNull);
       await tester.tap(find.text('Delete Priority'));

@@ -27,9 +27,8 @@ class BuildingRingCentre extends StatelessWidget {
           Text(
             building.$3,
             style: TextStyle(
-              fontSize: 9,
+              fontSize: 13,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1,
               color: Theme.of(context).textTheme.bodySmall?.color,
             ),
           ),

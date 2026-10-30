@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -37,7 +38,7 @@ class WhatsNewScreen extends StatelessWidget {
           'Follow the day in order, open events directly and jump into the full calendar.',
     ),
     _WhatsNewFeature(
-      icon: Icons.add_rounded,
+      icon: CupertinoIcons.add,
       colors: [Color(0xFFA697FF), Color(0xFF6752EF)],
       title: 'Add plans without leaving My Day',
       description:
@@ -106,6 +107,11 @@ class WhatsNewScreen extends StatelessWidget {
                       child: Image.asset(
                         'assets/vivordo_logo_long.png',
                         fit: BoxFit.contain,
+                        // Ink-coloured on a dark page, as on sign-in.
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? colors.textPrimary
+                            : null,
+                        colorBlendMode: BlendMode.srcIn,
                       ),
                     ),
                   ),
@@ -145,12 +151,11 @@ class WhatsNewScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: const Text(
-                        'MY DAY UPDATE',
+                        'My Day update',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: 0.25,
                         ),
                       ),
                     ),

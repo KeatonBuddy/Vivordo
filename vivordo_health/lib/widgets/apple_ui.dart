@@ -13,7 +13,8 @@ import '../theme/vivordo_theme.dart';
 const appleRed = Color(0xFFFF3B30);
 const _purple = Color(0xFF534AB7);
 
-Color _tint(BuildContext context) =>
+/// Vivordo's purple for text buttons and checkmarks, lighter in dark mode.
+Color appleTint(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
     ? const Color(0xFFAFA9EC)
     : _purple;
@@ -80,7 +81,7 @@ class AppleAlert extends StatelessWidget {
                 ? colors.textSecondary.withValues(alpha: .5)
                 : b.destructive
                 ? appleRed
-                : _tint(context),
+                : appleTint(context),
           ),
         ),
       ),
@@ -209,6 +210,8 @@ Future<T?> showAppleAlert<T>(
   required List<AppleAlertAction<T>> actions,
 }) => showDialog<T>(
   context: context,
+  // An iOS alert stays until a button is tapped.
+  barrierDismissible: false,
   builder: (dialogContext) => AppleAlert(
     title: title,
     message: message,
@@ -239,7 +242,9 @@ Future<bool> confirmAction(
       title: title,
       message: message,
       actions: [
-        AppleAlertAction(cancelLabel, false, bold: !destructive),
+        // iOS bolds the likely choice: the action, or Cancel when the
+        // action is destructive.
+        AppleAlertAction(cancelLabel, false, bold: destructive),
         AppleAlertAction(
           confirmLabel,
           true,
@@ -294,7 +299,7 @@ class AppleAlertField extends StatelessWidget {
         border: _fieldBorder(colors.border),
         enabledBorder: _fieldBorder(colors.border),
         disabledBorder: _fieldBorder(colors.border),
-        focusedBorder: _fieldBorder(_tint(context)),
+        focusedBorder: _fieldBorder(appleTint(context)),
       ),
     );
   }
@@ -335,7 +340,7 @@ Future<T?> showAppleActionSheet<T>(
   builder: (sheetContext) => CupertinoTheme(
     data: CupertinoThemeData(
       brightness: Theme.of(context).brightness,
-      primaryColor: _tint(context),
+      primaryColor: appleTint(context),
     ),
     child: CupertinoActionSheet(
       title: title == null ? null : Text(title),
@@ -417,7 +422,39 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
 
-/// A modal sheet with a grabber and rounded top corners on the page colour.
+/// iOS raises sheets in dark mode: a shade lighter than the page, with the
+/// sheet's own cards and fields lighter again. Light mode is unchanged.
+VivordoColors raisedColors(BuildContext context) {
+  final colors = context.vivordoColors;
+  if (Theme.of(context).brightness == Brightness.light) return colors;
+  Color lift(Color color) =>
+      Color.alphaBlend(Colors.white.withValues(alpha: .07), color);
+  return colors.copyWith(
+    page: colors.card,
+    card: lift(colors.card),
+    cardMuted: lift(colors.cardMuted),
+    input: lift(colors.input),
+    border: lift(colors.border),
+  );
+}
+
+/// Gives [child] the [raisedColors], for the body of a sheet.
+class RaisedSheetTheme extends StatelessWidget {
+  const RaisedSheetTheme({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(extensions: [raisedColors(context)]),
+      child: child,
+    );
+  }
+}
+
+/// A modal sheet with a grabber and rounded top corners on the raised page colour.
 Future<T?> showAppleSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -430,15 +467,17 @@ Future<T?> showAppleSheet<T>(
   useSafeArea: true,
   isDismissible: isDismissible,
   enableDrag: isDismissible,
-  backgroundColor: context.vivordoColors.page,
+  backgroundColor: raisedColors(context).page,
   shape: const RoundedRectangleBorder(
     borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
   ),
-  builder: (sheetContext) => Padding(
-    padding: EdgeInsets.only(
-      bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+  builder: (sheetContext) => RaisedSheetTheme(
+    child: Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+      ),
+      child: Builder(builder: builder),
     ),
-    child: builder(sheetContext),
   ),
 );
 
@@ -637,6 +676,68 @@ class _Grabber extends StatelessWidget {
   );
 }
 
+/// A sheet's top bar: Cancel on the left, [title] centred, [doneLabel] on
+/// the right (disabled while [onDone] is null), as in iOS form sheets.
+class AppleSheetBar extends StatelessWidget {
+  const AppleSheetBar({
+    super.key,
+    required this.title,
+    required this.doneLabel,
+    required this.onDone,
+  });
+
+  final Widget title;
+  final String doneLabel;
+  final VoidCallback? onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return SizedBox(
+      height: 52,
+      child: Row(
+        children: [
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            onPressed: () => Navigator.maybePop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(fontSize: 17, color: appleTint(context)),
+            ),
+          ),
+          Expanded(
+            child: DefaultTextStyle.merge(
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+          ),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            onPressed: onDone,
+            child: Text(
+              doneLabel,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: onDone == null
+                    ? colors.textSecondary.withValues(alpha: .5)
+                    : appleTint(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The body of a form sheet: Cancel · title · [doneLabel] across the top,
 /// then [children] (usually [AppleFormGroup]s) on the page colour.
 class AppleFormSheet extends StatelessWidget {
@@ -664,7 +765,7 @@ class AppleFormSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final tint = _tint(context);
+    final tint = appleTint(context);
     return SafeArea(
       top: false,
       child: Column(
@@ -758,12 +859,8 @@ class AppleFormGroup extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
               child: Text(
-                header!.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: .3,
-                  color: colors.textSecondary,
-                ),
+                header!,
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
             ),
           Container(
@@ -962,14 +1059,16 @@ class AppleValuePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: active ? _tint(context).withValues(alpha: .14) : colors.input,
+        color: active
+            ? appleTint(context).withValues(alpha: .14)
+            : colors.input,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 15,
-          color: active ? _tint(context) : colors.textPrimary,
+          color: active ? appleTint(context) : colors.textPrimary,
         ),
       ),
     );
@@ -998,7 +1097,7 @@ Future<void> showInfoSheet(
   context,
   builder: (sheetContext) {
     final colors = sheetContext.vivordoColors;
-    final tint = _tint(sheetContext);
+    final tint = appleTint(sheetContext);
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -1207,7 +1306,7 @@ class AppCheckCircle extends StatelessWidget {
       ),
     ),
     child: checked
-        ? Icon(Icons.check_rounded, size: size * .68, color: Colors.white)
+        ? Icon(CupertinoIcons.checkmark, size: size * .68, color: Colors.white)
         : null,
   );
 }
@@ -1236,7 +1335,11 @@ class AppleChoiceRow extends StatelessWidget {
     trailing: SizedBox(
       width: 20,
       child: selected
-          ? Icon(CupertinoIcons.checkmark_alt, size: 20, color: _tint(context))
+          ? Icon(
+              CupertinoIcons.checkmark_alt,
+              size: 20,
+              color: appleTint(context),
+            )
           : null,
     ),
   );

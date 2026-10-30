@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -118,7 +119,7 @@ class CheckInRow extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
@@ -363,7 +364,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.check_rounded,
+              CupertinoIcons.checkmark,
               color: Color(0xFF0F6E56),
               size: 30,
             ),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -7,16 +8,11 @@ import '../src/services/subscription_service.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/privacy_support_links.dart';
-import 'onboarding_flow_screen.dart' show onboardingLight;
+import 'onboarding_flow_screen.dart' show onboardingTheme;
 import 'profile_screen.dart' show SettingsScreen;
 
 const _purple = VivordoTheme.brand;
-const _page = Color(0xFFF2F2F7);
-const _ink = Color(0xFF1C1C1E);
 // iOS secondary label grey, dark enough for 4.5:1 on the page.
-const _grey = Color(0xFF6C6C70);
-const _line = Color(0xFFE5E5EA);
-const _green = Color(0xFF0F6E56);
 
 /// Shows [child] unless a subscription is required and this account doesn't
 /// have it, in which case it shows the paywall (premiumLocked). The
@@ -186,9 +182,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
   );
 
   @override
-  Widget build(BuildContext context) => onboardingLight(
+  Widget build(BuildContext context) => onboardingTheme(
     Scaffold(
-      backgroundColor: _page,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: FutureBuilder(
           future: _plans,
@@ -210,7 +206,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                               builder: (_) => const SettingsScreen(),
                             ),
                           ),
-                    icon: const Icon(Icons.settings_outlined, color: _grey),
+                    icon: Icon(
+                      CupertinoIcons.gear,
+                      color: context.vivordoColors.textSecondary,
+                    ),
                   ),
                 ),
                 Expanded(
@@ -273,17 +272,21 @@ class _PaywallScreenState extends State<PaywallScreen> {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w800,
             height: 1.2,
-            color: _ink,
+            color: context.vivordoColors.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           body,
-          style: const TextStyle(fontSize: 15, height: 1.45, color: _grey),
+          style: TextStyle(
+            fontSize: 15,
+            height: 1.45,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     );
@@ -332,7 +335,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                   : () => _subscribe(selected),
               style: FilledButton.styleFrom(
                 backgroundColor: _purple,
-                disabledBackgroundColor: const Color(0xFFD1CEFF),
+                disabledBackgroundColor: _purple.withValues(alpha: .35),
                 foregroundColor: Colors.white,
                 disabledForegroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
@@ -367,7 +370,11 @@ class _PaywallScreenState extends State<PaywallScreen> {
             Text(
               terms,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, height: 1.4, color: _grey),
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: context.vivordoColors.textSecondary,
+              ),
             ),
           ],
           Wrap(
@@ -418,12 +425,20 @@ class _Feature extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.check_rounded, size: 20, color: _green),
+        Icon(
+          CupertinoIcons.checkmark,
+          size: 20,
+          color: context.vivordoColors.success,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(fontSize: 15, height: 1.35, color: _ink),
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.35,
+              color: context.vivordoColors.textPrimary,
+            ),
           ),
         ),
       ],
@@ -469,10 +484,12 @@ class _PlanTile extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: selected ? const Color(0xFFEEEDFE) : Colors.white,
+              color: selected
+                  ? _purple.withValues(alpha: .12)
+                  : context.vivordoColors.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: selected ? _purple : _line,
+                color: selected ? _purple : context.vivordoColors.border,
                 width: selected ? 2 : 1,
               ),
             ),
@@ -484,16 +501,19 @@ class _PlanTile extends StatelessWidget {
                     children: [
                       Text(
                         '${plan.price}/${plan.yearly ? 'year' : 'month'}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
-                          color: _ink,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         details,
-                        style: const TextStyle(fontSize: 13, color: _grey),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: context.vivordoColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -502,7 +522,11 @@ class _PlanTile extends StatelessWidget {
                   selected
                       ? Icons.check_circle_rounded
                       : Icons.radio_button_unchecked_rounded,
-                  color: selected ? _purple : const Color(0xFFC7C7CC),
+                  color: selected
+                      ? _purple
+                      : context.vivordoColors.textSecondary.withValues(
+                          alpha: .6,
+                        ),
                 ),
               ],
             ),
@@ -523,10 +547,13 @@ class _LoadFailed extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 16),
     child: Column(
       children: [
-        const Text(
+        Text(
           "Couldn't load plans. Check your connection.",
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 15, color: _grey),
+          style: TextStyle(
+            fontSize: 15,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
         TextButton(onPressed: onRetry, child: const Text('Try again')),
       ],

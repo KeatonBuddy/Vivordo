@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../theme/vivordo_theme.dart';
@@ -19,7 +20,7 @@ class SwipeToDelete extends StatefulWidget {
     this.onTap,
     this.onDeleteAll,
     this.actionLabel = 'Delete',
-    this.actionIcon = Icons.delete_outline_rounded,
+    this.actionIcon = CupertinoIcons.delete,
     this.actionColor = const Color(0xFFE5484D),
   });
 

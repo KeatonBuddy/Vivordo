@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../theme/vivordo_theme.dart';
@@ -560,12 +561,14 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         IconButton(
           tooltip: _expanded ? 'Collapse insight' : 'Expand insight',
           onPressed: () => setState(() => _expanded = !_expanded),
-          icon: Icon(_expanded ? Icons.expand_more : Icons.expand_less),
+          icon: Icon(
+            _expanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_up,
+          ),
         ),
         IconButton(
           tooltip: 'Dismiss insights for this screen',
           onPressed: _dismiss,
-          icon: const Icon(Icons.close, size: 20),
+          icon: const Icon(CupertinoIcons.xmark, size: 20),
         ),
       ],
     );

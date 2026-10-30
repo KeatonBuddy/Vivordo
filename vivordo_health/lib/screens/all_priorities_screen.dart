@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../src/services/daily_priority_service.dart';
@@ -239,7 +240,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
               tooltip: 'Back',
               onPressed: () => Navigator.pop(context),
               icon: Icon(
-                Icons.chevron_left_rounded,
+                CupertinoIcons.chevron_left,
                 size: 32,
                 color: colors.textPrimary,
               ),
@@ -261,7 +262,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 foregroundColor: Colors.white,
               ),
               onPressed: () => widget.onAdd(context),
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(CupertinoIcons.add),
             ),
           ],
         ),
@@ -292,11 +293,11 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     final tomorrow = DateTime(_day.year, _day.month, _day.day + 1);
     return [
       if (plan.overdue.isNotEmpty)
-        _group('OVERDUE', plan.overdue, labelColor: _overdueRed),
+        _group('Overdue', plan.overdue, labelColor: _overdueRed),
       _group(
         plan.today.isEmpty
-            ? 'TODAY'
-            : 'TODAY · ${plan.doneToday} OF ${plan.today.length}',
+            ? 'Today'
+            : 'Today · ${plan.doneToday} of ${plan.today.length}',
         plan.today,
         empty: plan.overdue.isEmpty
             ? 'Nothing planned for today.'
@@ -305,8 +306,8 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
       for (final entry in plan.later.entries)
         _group(
           DateUtils.isSameDay(entry.key, tomorrow)
-              ? 'TOMORROW'
-              : DateFormat('EEE, MMM d').format(entry.key).toUpperCase(),
+              ? 'Tomorrow'
+              : DateFormat('EEE, MMM d').format(entry.key),
           entry.value,
         ),
       Padding(
@@ -348,8 +349,8 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
               children: [
                 Icon(
                   _showCompleted
-                      ? Icons.expand_more_rounded
-                      : Icons.chevron_right_rounded,
+                      ? CupertinoIcons.chevron_down
+                      : CupertinoIcons.chevron_right,
                   color: colors.textSecondary,
                   size: 20,
                 ),
@@ -381,7 +382,6 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 color: labelColor ?? colors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
               ),
             ),
           ),
@@ -447,7 +447,6 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 color: colors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
               ),
             ),
           ),
@@ -462,9 +461,9 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     );
     return [
       if (habits.isNotEmpty)
-        section('HABITS', [for (final h in habits) _habitRow(h)]),
+        section('Habits', [for (final h in habits) _habitRow(h)]),
       if (schedules.isNotEmpty)
-        section('REPEATING PRIORITIES', [
+        section('Repeating priorities', [
           for (final s in schedules) _scheduleRow(s, all),
         ]),
       Padding(

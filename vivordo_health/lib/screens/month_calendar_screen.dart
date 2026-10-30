@@ -1,4 +1,5 @@
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -312,7 +313,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Back',
                     icon: Icon(
-                      Icons.chevron_left_rounded,
+                      CupertinoIcons.chevron_left,
                       size: 30,
                       color: colors.textPrimary,
                     ),
@@ -327,7 +328,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                     onPressed: _loading ? null : _addForSelectedDay,
                     tooltip: 'Add',
                     icon: const Icon(
-                      Icons.add_rounded,
+                      CupertinoIcons.add,
                       color: VivordoTheme.brand,
                     ),
                   ),
@@ -361,7 +362,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                       tooltip: 'Previous month',
                       onPressed: () => _changeMonth(-1),
                       icon: Icon(
-                        Icons.chevron_left_rounded,
+                        CupertinoIcons.chevron_left,
                         color: colors.textSecondary,
                       ),
                     ),
@@ -369,7 +370,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                       tooltip: 'Next month',
                       onPressed: () => _changeMonth(1),
                       icon: Icon(
-                        Icons.chevron_right_rounded,
+                        CupertinoIcons.chevron_right,
                         color: colors.textSecondary,
                       ),
                     ),

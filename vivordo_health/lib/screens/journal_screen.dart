@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -182,9 +183,9 @@ class _JournalScreenState extends State<JournalScreen> {
     return NightTagsCard(
       night: night,
       title: switch (days) {
-        0 => 'TONIGHT',
-        1 => 'LAST NIGHT',
-        _ => 'THE NIGHT OF ${DateFormat('MMM d').format(night).toUpperCase()}',
+        0 => 'Tonight',
+        1 => 'Last night',
+        _ => 'The night of ${DateFormat('MMM d').format(night)}',
       },
     );
   }
@@ -210,7 +211,7 @@ class _JournalScreenState extends State<JournalScreen> {
             IconButton.filledTonal(
               tooltip: 'Back',
               onPressed: () => Navigator.maybePop(context),
-              icon: const Icon(Icons.chevron_left_rounded, size: 30),
+              icon: const Icon(CupertinoIcons.chevron_left, size: 30),
               style: IconButton.styleFrom(
                 backgroundColor: colors.card,
                 foregroundColor: colors.textPrimary,
@@ -235,7 +236,7 @@ class _JournalScreenState extends State<JournalScreen> {
                 _search.clear();
               }),
               icon: Icon(
-                _searching ? Icons.close_rounded : Icons.search_rounded,
+                _searching ? CupertinoIcons.xmark : CupertinoIcons.search,
                 color: colors.textSecondary,
               ),
             ),
@@ -245,7 +246,9 @@ class _JournalScreenState extends State<JournalScreen> {
                   : 'Lock Journal',
               onPressed: _authenticating ? null : _toggleJournalLock,
               icon: Icon(
-                _journalLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                _journalLocked
+                    ? CupertinoIcons.lock_fill
+                    : CupertinoIcons.lock_open,
                 color: VivordoTheme.brand,
               ),
             ),
@@ -261,7 +264,7 @@ class _JournalScreenState extends State<JournalScreen> {
               textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
                 hintText: 'Search your entries',
-                prefixIcon: Icon(Icons.search_rounded),
+                prefixIcon: Icon(CupertinoIcons.search),
               ),
             ),
           )
@@ -288,20 +291,20 @@ class _JournalScreenState extends State<JournalScreen> {
     final days = DateUtils.getDaysInMonth(_month.year, _month.month);
     final name = DateFormat(
       _month.year == today.year ? 'MMMM' : 'MMMM y',
-    ).format(_month).toUpperCase();
+    ).format(_month);
     return _Card(
       padding: const EdgeInsets.fromLTRB(14, 4, 4, 14),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _SectionTitle('$name MOODS')),
+              Expanded(child: _SectionTitle('$name moods')),
               IconButton(
                 tooltip: 'Previous month',
                 onPressed: () => setState(() {
                   _month = DateTime(_month.year, _month.month - 1);
                 }),
-                icon: const Icon(Icons.chevron_left_rounded),
+                icon: const Icon(CupertinoIcons.chevron_left),
               ),
               IconButton(
                 tooltip: 'Next month',
@@ -310,7 +313,7 @@ class _JournalScreenState extends State<JournalScreen> {
                     : () => setState(() {
                         _month = DateTime(_month.year, _month.month + 1);
                       }),
-                icon: const Icon(Icons.chevron_right_rounded),
+                icon: const Icon(CupertinoIcons.chevron_right),
               ),
             ],
           ),
@@ -471,11 +474,10 @@ class _JournalScreenState extends State<JournalScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            DateTime.now().hour >= 17 ? "TONIGHT'S PROMPT" : "TODAY'S PROMPT",
+            DateTime.now().hour >= 17 ? "Tonight's prompt" : "Today's prompt",
             style: const TextStyle(
               color: Color(0xFFD9D1FF),
-              fontSize: 11,
-              letterSpacing: 1.8,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -542,9 +544,7 @@ class _JournalScreenState extends State<JournalScreen> {
         Row(
           children: [
             Expanded(
-              child: _SectionTitle(
-                DateFormat('EEEE, MMM d').format(day).toUpperCase(),
-              ),
+              child: _SectionTitle(DateFormat('EEEE, MMM d').format(day)),
             ),
             TextButton(
               onPressed: () => setState(() => _selectedDay = null),
@@ -564,7 +564,7 @@ class _JournalScreenState extends State<JournalScreen> {
         const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed: () => _write(date: day),
-          icon: const Icon(Icons.add_rounded),
+          icon: const Icon(CupertinoIcons.add),
           label: Text(
             DateUtils.isSameDay(day, today)
                 ? 'Write about today'
@@ -612,7 +612,7 @@ class _JournalScreenState extends State<JournalScreen> {
         _SectionTitle(
           DateFormat(
             month.key.year == today.year ? 'MMMM' : 'MMMM y',
-          ).format(month.key).toUpperCase(),
+          ).format(month.key),
         ),
         const SizedBox(height: 8),
         _entryGroup(month.value, reviews: reviewMonths[month.key] ?? const []),
@@ -804,7 +804,7 @@ class _JournalScreenState extends State<JournalScreen> {
               child: IconButton.filledTonal(
                 tooltip: 'Back',
                 onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(Icons.chevron_left_rounded, size: 30),
+                icon: const Icon(CupertinoIcons.chevron_left, size: 30),
               ),
             ),
             const Spacer(),
@@ -815,7 +815,11 @@ class _JournalScreenState extends State<JournalScreen> {
                 color: context.vivordoColors.card,
                 borderRadius: BorderRadius.circular(28),
               ),
-              child: const Icon(Icons.lock_rounded, color: _purple, size: 42),
+              child: const Icon(
+                CupertinoIcons.lock_fill,
+                color: _purple,
+                size: 42,
+              ),
             ),
             const SizedBox(height: 22),
             Text(
@@ -843,7 +847,7 @@ class _JournalScreenState extends State<JournalScreen> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                icon: const Icon(Icons.lock_open_rounded),
+                icon: const Icon(CupertinoIcons.lock_open),
                 label: const Text(
                   'Unlock Journal',
                   style: TextStyle(fontWeight: FontWeight.w800),
@@ -930,67 +934,20 @@ class _JournalScreenState extends State<JournalScreen> {
     }
   }
 
-  Future<bool> _showJournalLockIntroduction() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        icon: Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: _purple.withValues(alpha: .10),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Icon(Icons.lock_rounded, color: _purple, size: 32),
-        ),
-        title: const Text(
-          'Protect your journal',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Journal Lock keeps your reflections hidden whenever you open the Journal.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: _muted, height: 1.4),
-            ),
-            SizedBox(height: 18),
-            _JournalLockInfoRow(
-              icon: Icons.face_rounded,
-              text: 'Unlock with Face ID, Touch ID, or your device passcode.',
-            ),
-            SizedBox(height: 12),
-            _JournalLockInfoRow(
-              icon: Icons.visibility_off_rounded,
-              text:
-                  'Your entries stay hidden when authentication is cancelled.',
-            ),
-            SizedBox(height: 12),
-            _JournalLockInfoRow(
-              icon: Icons.lock_open_rounded,
-              text: 'You can turn Journal Lock off from the lock icon anytime.',
-            ),
-          ],
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Not Now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: _purple),
-            child: const Text('Continue'),
-          ),
+  Future<bool> _showJournalLockIntroduction() async =>
+      await showAppleAlert<bool>(
+        context,
+        title: 'Protect your journal?',
+        message:
+            'Journal Lock hides your entries until you unlock with Face ID, '
+            'Touch ID or your passcode. Turn it off from the lock icon '
+            'anytime.',
+        actions: const [
+          AppleAlertAction('Not Now', false),
+          AppleAlertAction('Continue', true, bold: true),
         ],
-      ),
-    );
-    return result ?? false;
-  }
+      ) ??
+      false;
 
   Future<void> _deleteEntry(
     DocumentReference<Map<String, dynamic>> journalEntry,
@@ -1051,7 +1008,6 @@ class _SectionTitle extends StatelessWidget {
       color: context.vivordoColors.textSecondary,
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.3,
     ),
   );
 }
@@ -1122,7 +1078,7 @@ class _ReviewRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_right,
                     size: 18,
                     color: colors.textSecondary,
                   ),
@@ -1196,7 +1152,7 @@ class _EntryRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Icon(
-                  item.shared ? Icons.groups_rounded : Icons.lock_outline,
+                  item.shared ? Icons.groups_rounded : CupertinoIcons.lock,
                   size: 17,
                   color: colors.textSecondary,
                 ),
@@ -1231,7 +1187,6 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _stream = widget
       .reference
       .snapshots();
-  bool _confirmingDelete = false;
   bool _deleting = false;
   bool _sharing = false;
 
@@ -1351,7 +1306,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
             child: Row(
               children: [
                 Icon(
-                  item.shared ? Icons.groups_rounded : Icons.lock_outline,
+                  item.shared ? Icons.groups_rounded : CupertinoIcons.lock,
                   color: colors.textSecondary,
                   size: 20,
                 ),
@@ -1394,9 +1349,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
           onPressed: _deleting ? null : _delete,
           style: OutlinedButton.styleFrom(
             foregroundColor: _red,
-            side: BorderSide(
-              color: _confirmingDelete ? _red : _red.withValues(alpha: .45),
-            ),
+            side: BorderSide(color: _red.withValues(alpha: .45)),
             minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(15),
@@ -1407,13 +1360,9 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
                   dimension: 18,
                   child: CupertinoActivityIndicator(color: _red, radius: 9),
                 )
-              : const Icon(Icons.delete_outline_rounded),
+              : const Icon(CupertinoIcons.delete),
           label: Text(
-            _deleting
-                ? 'Deleting…'
-                : _confirmingDelete
-                ? 'Tap again to delete permanently'
-                : 'Delete entry',
+            _deleting ? 'Deleting…' : 'Delete entry',
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
@@ -1452,20 +1401,20 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
   }
 
   Future<void> _delete() async {
-    if (!_confirmingDelete) {
-      setState(() => _confirmingDelete = true);
-      return;
-    }
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete entry?',
+      message: 'This entry will be deleted permanently.',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
     setState(() => _deleting = true);
     try {
       await widget.onDelete();
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _deleting = false;
-        _confirmingDelete = false;
-      });
+      setState(() => _deleting = false);
       debugPrint('Delete journal entry failed: $error');
       showToast(
         context,
@@ -1513,23 +1462,4 @@ class _Empty extends StatelessWidget {
       ),
     );
   }
-}
-
-class _JournalLockInfoRow extends StatelessWidget {
-  const _JournalLockInfoRow({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Icon(icon, color: _purple, size: 20),
-      const SizedBox(width: 11),
-      Expanded(
-        child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35)),
-      ),
-    ],
-  );
 }

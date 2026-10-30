@@ -358,7 +358,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                       height: 52,
                       child: OutlinedButton.icon(
                         onPressed: _logActivity,
-                        icon: const Icon(Icons.add_rounded),
+                        icon: const Icon(CupertinoIcons.add),
                         label: const Text(
                           'Log activity',
                           style: TextStyle(fontWeight: FontWeight.w800),
@@ -653,11 +653,10 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'TODAY\'S ACTIVITY',
+                                    'Today\'s activity',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.3,
                                       color: Color(0xFFE8E0FF),
                                     ),
                                   ),
@@ -688,7 +687,7 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                               ),
                             ),
                             const Icon(
-                              Icons.chevron_right_rounded,
+                              CupertinoIcons.chevron_right,
                               color: Color(0xFFE8E0FF),
                             ),
                           ],
@@ -888,7 +887,6 @@ class _SectionHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1.3,
               color: context.vivordoColors.textSecondary,
             ),
           ),
@@ -1024,7 +1022,7 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _SectionHeader(
-              'THIS WEEK',
+              'This week',
               trailing: _SectionNote(
                 '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'} · '
                 '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
@@ -1183,7 +1181,7 @@ class _SuggestRoutineRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+                Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
               ],
             ),
           ),
@@ -1219,7 +1217,7 @@ class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionHeader('TRAINING LOAD'),
+                const _SectionHeader('Training load'),
                 const SizedBox(height: 6),
                 if (view != null)
                   TrainingLoadCard(
@@ -1360,25 +1358,12 @@ class _RecentFeedState extends State<_RecentFeed> {
 
   @override
   Widget build(BuildContext context) {
-    final chips = Wrap(
-      spacing: 8,
-      children: [
-        for (final filter in _RecentFilter.values)
-          ChoiceChip(
-            label: Text(filter.label),
-            selected: _filter == filter,
-            showCheckmark: false,
-            selectedColor: _purple,
-            labelStyle: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: _filter == filter ? Colors.white : _muted,
-            ),
-            side: BorderSide(color: context.vivordoColors.border),
-            shape: const StadiumBorder(),
-            onSelected: (_) => setState(() => _filter = filter),
-          ),
-      ],
+    final chips = AppSegmented<_RecentFilter>(
+      segments: {
+        for (final filter in _RecentFilter.values) filter: filter.label,
+      },
+      value: _filter,
+      onChanged: (filter) => setState(() => _filter = filter),
     );
 
     final feed = VisibleStreamBuilder<List<SavedWorkout>>(
@@ -1473,7 +1458,7 @@ class _RecentFeedState extends State<_RecentFeed> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          'RECENT',
+          'Recent',
           trailing: TextButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const _AllActivityScreen()),
@@ -1571,7 +1556,7 @@ class _BodyCardState extends State<_BodyCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SectionHeader(
-                  'BODY',
+                  'Body',
                   trailing: _SectionNote(_updatedLabel(updatedAt)),
                 ),
                 const SizedBox(height: 6),
@@ -1599,7 +1584,7 @@ class _BodyCardState extends State<_BodyCard> {
                         children: [
                           Expanded(
                             child: _ProfileMetric(
-                              label: 'WEIGHT',
+                              label: 'Weight',
                               value: weight == null
                                   ? '--'
                                   : _units(context).formatBodyWeight(weight),
@@ -1615,14 +1600,14 @@ class _BodyCardState extends State<_BodyCard> {
                           const _ProfileDivider(),
                           Expanded(
                             child: _ProfileMetric(
-                              label: 'BODY FAT',
+                              label: 'Body fat',
                               value: bodyFat == null
                                   ? '--'
                                   : '${_number(bodyFat)}%',
                             ),
                           ),
                           const Icon(
-                            Icons.chevron_right_rounded,
+                            CupertinoIcons.chevron_right,
                             color: _muted,
                           ),
                         ],
@@ -1674,7 +1659,7 @@ class _RecentWorkoutRow extends StatelessWidget {
                 _units(context).formatDistance(km),
             ].join(' · '),
           ),
-          trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
+          trailing: const Icon(CupertinoIcons.chevron_right, color: _muted),
         ),
       ),
     );
@@ -2045,12 +2030,11 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
         const Padding(
           padding: EdgeInsets.only(top: 12, bottom: 9),
           child: Text(
-            'WEEKLY STRENGTH GOALS',
+            'Weekly strength goals',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               color: _muted,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1.4,
             ),
           ),
         ),
@@ -2428,6 +2412,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
         void save() {
           final value = controller.text;
@@ -2717,11 +2702,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        '●  IN PROGRESS',
+                        '●  In progress',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.3,
                           color: Color(0xFFE8E0FF),
                         ),
                       ),
@@ -2827,7 +2811,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
           if (exercises.isNotEmpty) ...[
             const SizedBox(height: 6),
-            const _SectionHeader('EXERCISES'),
+            const _SectionHeader('Exercises'),
             const SizedBox(height: 4),
           ],
           for (final exercise in exercises) ...[
@@ -2856,7 +2840,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             height: 52,
             child: FilledButton.icon(
               onPressed: _addExercises,
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(CupertinoIcons.add),
               label: const Text(
                 'Add exercise',
                 style: TextStyle(fontWeight: FontWeight.w800),
@@ -3022,7 +3006,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: 'Search saved workouts',
-                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIcon: const Icon(CupertinoIcons.search),
                     filled: true,
                     fillColor: context.vivordoColors.input,
                     border: OutlineInputBorder(
@@ -3043,7 +3027,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                   physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
                   children: [
-                    const _PickerSectionTitle('SAVED WORKOUTS'),
+                    const _PickerSectionTitle('Saved workouts'),
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !snapshot.hasData)
                       const Padding(
@@ -3242,7 +3226,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
               IconButton(
                 onPressed: onDelete,
                 tooltip: 'Delete saved workout',
-                icon: const Icon(Icons.delete_outline_rounded),
+                icon: const Icon(CupertinoIcons.delete),
                 color: Colors.redAccent,
               ),
               Icon(
@@ -3585,7 +3569,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               const SizedBox(
                 width: 70,
                 child: Text(
-                  'PREVIOUS',
+                  'Previous',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
@@ -3596,7 +3580,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               const SizedBox(
                 width: 38,
                 child: Text(
-                  'SET',
+                  'Set',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -3606,7 +3590,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               ),
               Expanded(
                 child: Text(
-                  _units(context).liftLabel.toUpperCase(),
+                  _units(context).liftLabel,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 11,
@@ -3618,7 +3602,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'REPS',
+                  'Reps',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
@@ -3656,7 +3640,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               );
               onChanged();
             },
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(CupertinoIcons.add),
             label: const Text('Add Set'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(46),
@@ -3765,7 +3749,7 @@ class _WorkoutSetRow extends StatelessWidget {
         child: IconButton(
           tooltip: 'Remove set',
           onPressed: onRemove,
-          icon: const Icon(Icons.close_rounded, color: _muted),
+          icon: const Icon(CupertinoIcons.xmark, color: _muted),
         ),
       ),
     ],
@@ -4182,7 +4166,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: TextField(
                 decoration: InputDecoration(
                   hintText: 'Search exercises',
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: const Icon(CupertinoIcons.search),
                   filled: true,
                   fillColor: context.vivordoColors.input,
                   border: OutlineInputBorder(
@@ -4234,7 +4218,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 18),
-                        child: _PickerSectionTitle('YOUR EXERCISES'),
+                        child: _PickerSectionTitle('Your exercises'),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -4266,8 +4250,8 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 18),
                       child: _PickerSectionTitle(
                         _filter == favouritesFilter
-                            ? 'FAVOURITES'
-                            : 'ALL EXERCISES',
+                            ? 'Favourites'
+                            : 'All exercises',
                       ),
                     ),
                   ),
@@ -4359,9 +4343,8 @@ class _PickerSectionTitle extends StatelessWidget {
     child: Text(
       text,
       style: const TextStyle(
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: FontWeight.w800,
-        letterSpacing: 1.5,
         color: _muted,
       ),
     ),
@@ -4492,12 +4475,11 @@ class MonthlyRingsDialog extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'ACTIVITY RINGS',
+                        'Activity rings',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           color: _muted,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
                         ),
                       ),
                       Text(
@@ -4513,7 +4495,7 @@ class MonthlyRingsDialog extends StatelessWidget {
                 IconButton(
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(CupertinoIcons.xmark),
                 ),
               ],
             ),
@@ -4713,10 +4695,10 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
         ),
         const SizedBox(height: 18),
         _SectionTitle(
-          icon: Icons.calendar_today_rounded,
+          icon: CupertinoIcons.calendar,
           title: DateUtils.isSameDay(_selectedDay, today)
-              ? "TODAY'S ACTIVITY"
-              : DateFormat('MMMM d, y').format(_selectedDay).toUpperCase(),
+              ? "Today's activity"
+              : DateFormat('MMMM d, y').format(_selectedDay),
         ),
         const SizedBox(height: 9),
         Wrap(
@@ -4928,9 +4910,8 @@ class _SectionTitle extends StatelessWidget {
         child: Text(
           title,
           style: const TextStyle(
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
             color: _muted,
           ),
         ),
@@ -5078,11 +5059,10 @@ class _CustomExerciseBadge extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
     ),
     child: const Text(
-      'CUSTOM',
+      'Custom',
       style: TextStyle(
-        fontSize: 10,
+        fontSize: 13,
         fontWeight: FontWeight.w800,
-        letterSpacing: .8,
         color: _purple,
       ),
     ),

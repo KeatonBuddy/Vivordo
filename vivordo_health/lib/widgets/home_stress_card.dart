@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/stress_view.dart';
@@ -245,12 +246,11 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget _header() => Row(
     children: [
       const Text(
-        'RIGHT NOW',
+        'Right now',
         style: TextStyle(
           color: _label,
-          fontSize: 11,
+          fontSize: 13,
           fontWeight: FontWeight.w700,
-          letterSpacing: 1.1,
         ),
       ),
       const Spacer(),
@@ -266,11 +266,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               alignment: Alignment.centerRight,
               child: Padding(
                 padding: EdgeInsets.all(3),
-                child: Icon(
-                  Icons.info_outline_rounded,
-                  color: _palePurple,
-                  size: 18,
-                ),
+                child: Icon(CupertinoIcons.info, color: _palePurple, size: 18),
               ),
             ),
           ),
@@ -293,12 +289,11 @@ class _HomeStressCardState extends State<HomeStressCard>
               Icon(Icons.monitor_heart_outlined, color: Colors.white, size: 28),
               SizedBox(height: 4),
               Text(
-                'NO READING',
+                'No reading',
                 style: TextStyle(
                   color: _label,
-                  fontSize: 9,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
                 ),
               ),
             ],
@@ -318,12 +313,11 @@ class _HomeStressCardState extends State<HomeStressCard>
               ),
               const SizedBox(height: 4),
               const Text(
-                'STRESS',
+                'Stress',
                 style: TextStyle(
                   color: _label,
-                  fontSize: 9,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
                 ),
               ),
             ],
@@ -544,7 +538,7 @@ class _HomeStressCardState extends State<HomeStressCard>
         const Color(0xFF9B8CFF),
       ),
       HomeStressDriverType.calendar => (
-        Icons.calendar_month_rounded,
+        CupertinoIcons.calendar,
         const Color(0xFF9B8CFF),
       ),
     };

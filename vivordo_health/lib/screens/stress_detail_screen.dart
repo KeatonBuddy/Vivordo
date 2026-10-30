@@ -142,7 +142,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
+          icon: const Icon(CupertinoIcons.back, color: _purple),
         ),
         title: const Text(
           'Stress',
@@ -152,7 +152,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           IconButton(
             tooltip: 'How stress is calculated',
             onPressed: _showHowItWorks,
-            icon: const Icon(Icons.info_outline_rounded, color: _purple),
+            icon: const Icon(CupertinoIcons.info, color: _purple),
           ),
           const SizedBox(width: 6),
         ],
@@ -271,11 +271,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           Row(
             children: [
               Text(
-                'RIGHT NOW',
+                'Right now',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 1.4,
                   color: colors.textSecondary,
                 ),
               ),
@@ -343,11 +342,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                         Align(
                           alignment: Alignment.topCenter,
                           child: Text(
-                            'USUAL',
+                            'Usual',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 13,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2,
                               color: colors.textSecondary,
                             ),
                           ),
@@ -419,11 +417,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               IconButton(
                 tooltip: 'How to read the ring',
                 onPressed: _showRingInfo,
-                icon: const Icon(
-                  Icons.info_outline_rounded,
-                  color: _purple,
-                  size: 20,
-                ),
+                icon: const Icon(CupertinoIcons.info, color: _purple, size: 20),
               ),
             ],
           ),
@@ -443,7 +437,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 _chip(
                   icon: grey
                       ? Icons.error_outline_rounded
-                      : Icons.check_rounded,
+                      : CupertinoIcons.checkmark,
                   iconColor: grey ? _up(context) : _down(context),
                   text: [
                     '${confidence[0].toUpperCase()}${confidence.substring(1)} confidence',
@@ -839,9 +833,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 ),
               ),
               icon: Icon(
-                _windDownOn
-                    ? Icons.check_rounded
-                    : Icons.notifications_active_outlined,
+                _windDownOn ? CupertinoIcons.checkmark : CupertinoIcons.bell,
                 size: 18,
               ),
               label: Text(
@@ -1313,7 +1305,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                       children: [
                         Icon(
                           s.measured
-                              ? Icons.check_rounded
+                              ? CupertinoIcons.checkmark
                               : Icons.radio_button_unchecked_rounded,
                           size: 16,
                           color: s.measured
@@ -1401,7 +1393,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   'How stress is calculated',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                Icon(Icons.chevron_right_rounded),
+                Icon(CupertinoIcons.chevron_right),
               ],
             ),
           ),

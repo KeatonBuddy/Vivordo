@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -25,9 +26,9 @@ Color _levelColor(String level) => switch (level) {
 };
 
 String _levelLabel(String level) => switch (level) {
-  'warning' => 'BURNOUT CHECK · WARNING',
-  'watch' => 'BURNOUT CHECK · WORTH WATCHING',
-  _ => 'BURNOUT CHECK',
+  'warning' => 'Burnout check · warning',
+  'watch' => 'Burnout check · worth watching',
+  _ => 'Burnout check',
 };
 
 /// The nightly burnout check on My Day (docs/scores.md §6): a full card at
@@ -81,8 +82,7 @@ class BurnoutCard extends StatelessWidget {
                     child: Text(
                       _levelLabel(view.level),
                       style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: .8,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: alert
                             ? _levelTextColor(colors, view.level)
@@ -91,7 +91,7 @@ class BurnoutCard extends StatelessWidget {
                     ),
                   ),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_right,
                     color: colors.textSecondary,
                     size: 20,
                   ),
@@ -180,7 +180,7 @@ class BurnoutCard extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
@@ -239,8 +239,7 @@ class _BurnoutDetails extends StatelessWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 11,
-          letterSpacing: .8,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
           color: colors.textSecondary,
         ),
@@ -271,8 +270,7 @@ class _BurnoutDetails extends StatelessWidget {
               Text(
                 _levelLabel(view.level),
                 style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .8,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: view.level == 'learning'
                       ? colors.textSecondary
@@ -347,8 +345,8 @@ class _BurnoutDetails extends StatelessWidget {
                 if (view.drivers.isNotEmpty) ...[
                   section(
                     view.level == 'warning'
-                        ? 'WHAT\'S DRIVING IT'
-                        : 'BEHIND IT',
+                        ? 'What\'s driving it'
+                        : 'Behind it',
                   ),
                   for (final driver in view.drivers)
                     Padding(
@@ -366,7 +364,7 @@ class _BurnoutDetails extends StatelessWidget {
                     ),
                   ),
                 if (view.suggestions.isNotEmpty) ...[
-                  section('SMALL THINGS THAT HELP'),
+                  section('Small things that help'),
                   for (final suggestion in view.suggestions)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 3),

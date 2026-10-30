@@ -148,7 +148,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('TRAINING LOAD · HIGH'), findsOneWidget);
+    expect(find.text('Training load · High'), findsOneWidget);
     await tester.tap(find.text('Plan an easier week'));
     expect(asked.single.screen, 'training_load');
     expect(asked.single.context, contains('4 hard days'));
@@ -158,7 +158,7 @@ void main() {
     expect(find.byType(TrainingLoadCard), findsOneWidget);
     expect(find.text('+60% vs your usual'), findsOneWidget);
     // A normal body needs no explanation.
-    expect(find.text('WHAT YOUR BODY IS SAYING'), findsNothing);
+    expect(find.text('What your body is saying'), findsNothing);
   });
 
   testWidgets('the body explanation is in the sheet, not on the card', (
@@ -192,7 +192,7 @@ void main() {
 
     await tester.tap(find.byType(TrainingLoadCard));
     await tester.pumpAndSettle();
-    expect(find.text('WHAT YOUR BODY IS SAYING'), findsOneWidget);
+    expect(find.text('What your body is saying'), findsOneWidget);
     expect(find.textContaining('HRV (heart rate variability)'), findsOneWidget);
   });
 }

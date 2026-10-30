@@ -172,10 +172,9 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
               if (widget.unplaced.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 Text(
-                  "COULDN'T FIT",
+                  "Couldn't fit",
                   style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 1,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: colors.textSecondary,
                   ),

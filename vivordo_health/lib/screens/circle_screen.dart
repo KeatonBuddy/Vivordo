@@ -91,7 +91,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
           child: Column(
             children: [
               _CircleBenefit(
-                icon: Icons.lock_rounded,
+                icon: CupertinoIcons.lock_fill,
                 color: palette.accent,
                 background: palette.accentTint,
                 title: 'Private by default',

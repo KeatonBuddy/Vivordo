@@ -222,7 +222,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
+          icon: const Icon(CupertinoIcons.back, color: _purple),
         ),
         title: const Text(
           'Sleep',
@@ -383,7 +383,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 const SizedBox(width: 4),
                 IconButton(
                   onPressed: () => _showInsightInfo(hasWhoopSleepData),
-                  icon: const Icon(Icons.info_outline_rounded),
+                  icon: const Icon(CupertinoIcons.info),
                   tooltip: 'About this insight',
                   color: context.vivordoColors.textSecondary,
                   visualDensity: VisualDensity.compact,
@@ -459,46 +459,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == _rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget _rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    value: _rangeIndex,
+    onChanged: (index) => setState(() => _rangeIndex = index),
+  );
 
   void _showInsightInfo(bool hasWhoopSleepData) {
     showInfoSheet(
@@ -533,9 +498,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     Text(
                       _rangeIndex == 0
                           ? latest?.inBed == true
-                                ? 'LAST NIGHT IN BED'
-                                : "LAST NIGHT'S SLEEP"
-                          : 'AVERAGE SLEEP',
+                                ? 'Last night in bed'
+                                : "Last night's sleep"
+                          : 'Average sleep',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -759,7 +724,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AVERAGE SLEEPING HEART RATE',
+                      'Average sleeping heart rate',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 12,
