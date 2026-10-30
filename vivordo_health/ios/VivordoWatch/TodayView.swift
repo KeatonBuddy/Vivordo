@@ -57,6 +57,7 @@ struct TodayView: View {
         tile("Stress", value: s.stressScore, color: WatchPalette.stress,
              note: s.latestHeartRate.map { "\($0) bpm" } ?? "")
       }
+      .fixedSize(horizontal: false, vertical: true)
 
       if let event = s.nextEvent {
         HStack {
@@ -90,9 +91,10 @@ struct TodayView: View {
       Text(note.isEmpty ? " " : note)
         .font(.caption2)
         .foregroundStyle(WatchPalette.secondary)
-        .lineLimit(1)
+        .lineLimit(2)
+        .minimumScaleFactor(0.85)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .padding(10)
     .background(WatchPalette.tile, in: RoundedRectangle(cornerRadius: 14))
   }
