@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
+import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/meeting_patterns_view.dart';
 import '../src/services/meeting_patterns_service.dart';
@@ -3514,6 +3515,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             : 'Google Calendar',
         canEdit: true,
         typeEvent: CalendarCognitiveEvent.fromCalendar(event),
+        seriesKey: seriesKeyFor(event.recurringEventId),
       ),
     );
     if (!mounted || action == null) return;

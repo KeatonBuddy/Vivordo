@@ -51,6 +51,54 @@ String eventTypeCaption(CognitiveLoadScore score, {bool free = false}) {
 /// "EVENT TYPE" on an event's details: its type, which sets how much it
 /// adds to Demand and Effort. Changing it changes every event with the same
 /// title, and the day reloads.
+/// Asks what kind of event [event] is and saves the answer for every event
+/// with its title. Returns the new score, or null when nothing changed.
+Future<CognitiveLoadScore?> changeEventType(
+  BuildContext context,
+  CalendarCognitiveEvent event,
+  CognitiveLoadScore score,
+) async {
+  final title = event.title.trim();
+  final picked = await showAppleActionSheet<String>(
+    context,
+    title: 'What kind of event is this?',
+    message:
+        'Applies to all events called "${title.isEmpty ? 'Untitled' : title}". '
+        'Heavier types count more towards your day.'
+        '${event.showsAsFree && !score.chosen ? " It's marked Free in your calendar, so choosing a type also counts it." : ''}',
+    actions: [
+      for (final MapEntry(key: category, value: label)
+          in eventTypeLabels.entries)
+        AppleSheetAction(label, category, selected: category == score.category),
+      if (score.chosen) const AppleSheetAction("Use Vivordo's guess", ''),
+    ],
+  );
+  if (picked == null || !context.mounted) return null;
+  if (score.chosen && picked == score.category) return null;
+  try {
+    await CalendarCognitiveLoadService.setType(
+      event.title,
+      picked.isEmpty ? null : picked,
+    );
+    // Home, My Day and today's day record (for Effort) re-sort.
+    CalendarService.invalidateEventCache();
+    DayRecordService.syncSoon();
+    return (await CalendarCognitiveLoadService.scoreEvents([
+      event,
+    ], allowAi: true)).first;
+  } catch (error) {
+    debugPrint('Event type change failed: $error');
+    if (context.mounted) {
+      showToast(
+        context,
+        "Couldn't change the type. Try again.",
+        kind: ToastKind.error,
+      );
+    }
+    return null;
+  }
+}
+
 class EventTypeSection extends StatefulWidget {
   const EventTypeSection({super.key, required this.event});
 
@@ -80,49 +128,13 @@ class _EventTypeSectionState extends State<EventTypeSection> {
   Future<void> _change() async {
     final score = _score;
     if (score == null || _busy) return;
-    final title = widget.event.title.trim();
-    final picked = await showAppleActionSheet<String>(
-      context,
-      title: 'What kind of event is this?',
-      message:
-          'Applies to all events called "${title.isEmpty ? 'Untitled' : title}". '
-          'Heavier types count more towards your day.'
-          '${widget.event.showsAsFree && !score.chosen ? " It's marked Free in your calendar, so choosing a type also counts it." : ''}',
-      actions: [
-        for (final MapEntry(key: category, value: label)
-            in eventTypeLabels.entries)
-          AppleSheetAction(
-            label,
-            category,
-            selected: category == score.category,
-          ),
-        if (score.chosen) const AppleSheetAction("Use Vivordo's guess", ''),
-      ],
-    );
-    if (picked == null || !mounted) return;
-    if (score.chosen && picked == score.category) return;
     setState(() => _busy = true);
-    try {
-      await CalendarCognitiveLoadService.setType(
-        widget.event.title,
-        picked.isEmpty ? null : picked,
-      );
-      // Home, My Day and today's day record (for Effort) re-sort.
-      CalendarService.invalidateEventCache();
-      DayRecordService.syncSoon();
-      await _load();
-    } catch (error) {
-      debugPrint('Event type change failed: $error');
-      if (mounted) {
-        showToast(
-          context,
-          "Couldn't change the type. Try again.",
-          kind: ToastKind.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    final changed = await changeEventType(context, widget.event, score);
+    if (!mounted) return;
+    setState(() {
+      _score = changed ?? _score;
+      _busy = false;
+    });
   }
 
   @override

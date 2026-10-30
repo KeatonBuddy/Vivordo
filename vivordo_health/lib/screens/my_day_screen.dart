@@ -29,8 +29,8 @@ import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
+import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
-import '../widgets/event_type_section.dart';
 import '../widgets/score_breakdown_sheet.dart';
 import '../widgets/score_history.dart';
 import '../src/services/planned_demand_service.dart';
@@ -918,25 +918,30 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Future<void> _handleEventTap(_CalendarEvent event) async {
     if (!mounted) return;
-    final action = await showModalBottomSheet<_EventSummaryAction>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _EventSummarySheet(
-        event: event,
+    final action = await showCalendarEventSummarySheet(
+      context,
+      event: CalendarEventSummaryData(
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        isAllDay: event.isAllDay,
+        isRecurring: event.isRecurring,
+        color: event.color,
+        calendarName: CalendarService.isOutlook(event.event)
+            ? 'Outlook'
+            : 'Google Calendar',
+        canEdit: true,
         typeEvent: event.isAllDay ? null : _cognitiveInput(event),
+        seriesKey: seriesKeyFor(event.event.recurringEventId),
         reaction: _reactions[event.sourceEventKey],
-        onReaction: _showReaction,
       ),
     );
     if (!mounted) return;
     switch (action) {
-      case _EventSummaryAction.edit:
+      case CalendarEventSummaryAction.edit:
         await _editGoogleEvent(event.event);
         return;
-      case _EventSummaryAction.delete:
+      case CalendarEventSummaryAction.delete:
         await _deleteGoogleEvent(event.event);
         return;
       case null:
@@ -3818,389 +3823,6 @@ class _PriorityRow extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-enum _EventSummaryAction { edit, delete }
-
-class _EventSummarySheet extends StatelessWidget {
-  const _EventSummarySheet({
-    required this.event,
-    this.typeEvent,
-    this.reaction,
-    required this.onReaction,
-  });
-
-  final _CalendarEvent event;
-  final CalendarCognitiveEvent? typeEvent;
-  final BodyReaction? reaction;
-  final void Function(_CalendarEvent, BodyReaction) onReaction;
-
-  (String, Color) get _status {
-    final now = DateTime.now();
-    if (!now.isBefore(event.end)) {
-      return ('Completed', const Color(0xFF20A968));
-    }
-    if (!now.isBefore(event.start)) {
-      return ('In progress', const Color(0xFFFF9F0A));
-    }
-    return ('Upcoming', MyDayScreen.purple);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    final status = _status;
-    final time = event.isAllDay
-        ? 'All day'
-        : '${DateFormat('h:mm a').format(event.start)} – ${DateFormat('h:mm a').format(event.end)}';
-
-    return FractionallySizedBox(
-      heightFactor: .9,
-      child: Material(
-        color: colors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 48,
-              height: 5,
-              decoration: BoxDecoration(
-                color: colors.border,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-              child: Row(
-                children: [
-                  const SizedBox(width: 40),
-                  Expanded(
-                    child: Text(
-                      'Event Summary',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(CupertinoIcons.xmark),
-                    tooltip: 'Close',
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colors.cardMuted,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: colors.border),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              color: MyDayScreen.purple.withValues(alpha: .14),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: const Icon(
-                              CupertinoIcons.calendar,
-                              color: MyDayScreen.purple,
-                              size: 36,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  event.title,
-                                  style: TextStyle(
-                                    color: colors.textPrimary,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: status.$2.withValues(alpha: .16),
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                  child: Text(
-                                    status.$1,
-                                    style: TextStyle(
-                                      color: status.$2,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const _SummarySectionLabel('Details'),
-                    const SizedBox(height: 10),
-                    _SummarySurface(
-                      children: [
-                        _SummaryDetailRow(
-                          icon: CupertinoIcons.calendar,
-                          label: 'Date',
-                          value: DateFormat('MMMM d, y').format(event.start),
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.schedule_rounded,
-                          label: 'Time',
-                          value: time,
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.hourglass_bottom_rounded,
-                          label: 'Duration',
-                          value: event.durationLabel,
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.repeat_rounded,
-                          label: 'Repeats',
-                          value: event.isRecurring
-                              ? 'Recurring event'
-                              : 'Does not repeat',
-                          showDivider: false,
-                        ),
-                      ],
-                    ),
-                    if (reaction case final reaction?) ...[
-                      const SizedBox(height: 24),
-                      const _SummarySectionLabel('How your body reacted'),
-                      const SizedBox(height: 10),
-                      _SummarySurface(
-                        children: [
-                          _SummaryDetailRow(
-                            icon: Icons.monitor_heart_outlined,
-                            label: 'Heart rate',
-                            value:
-                                '${switch (reaction.level) {
-                                  BodyReactionLevel.calm => 'Calm',
-                                  BodyReactionLevel.steady => 'Steady',
-                                  BodyReactionLevel.up => 'Up',
-                                  BodyReactionLevel.high => 'High',
-                                }} · ${reaction.median.round()} bpm avg',
-                            showDivider: false,
-                            onTap: () => onReaction(event, reaction),
-                          ),
-                        ],
-                      ),
-                    ],
-                    if (typeEvent case final typeEvent?) ...[
-                      const SizedBox(height: 24),
-                      EventTypeSection(event: typeEvent),
-                    ],
-                    const SizedBox(height: 24),
-                    const _SummarySectionLabel('Calendar'),
-                    const SizedBox(height: 10),
-                    _SummarySurface(
-                      children: [
-                        _SummaryDetailRow(
-                          icon: CupertinoIcons.calendar,
-                          label: 'Calendar',
-                          value: CalendarService.isOutlook(event.event)
-                              ? 'Outlook'
-                              : 'Google Calendar',
-                          valueDotColor: event.color,
-                          showDivider: false,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: FilledButton(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.edit),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: MyDayScreen.purple,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: const Text(
-                          'Edit Event',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.delete),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFFF453A),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        icon: const Icon(CupertinoIcons.delete),
-                        label: const Text('Delete'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummarySectionLabel extends StatelessWidget {
-  const _SummarySectionLabel(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    label,
-    style: const TextStyle(
-      color: MyDayScreen.purple,
-      fontSize: 13,
-      fontWeight: FontWeight.w900,
-    ),
-  );
-}
-
-class _SummarySurface extends StatelessWidget {
-  const _SummarySurface({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    decoration: BoxDecoration(
-      color: context.vivordoColors.cardMuted,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: context.vivordoColors.border),
-    ),
-    child: Column(children: children),
-  );
-}
-
-class _SummaryDetailRow extends StatelessWidget {
-  const _SummaryDetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueDotColor,
-    this.showDivider = true,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueDotColor;
-  final bool showDivider;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Row(
-              children: [
-                Icon(icon, color: MyDayScreen.purple, size: 23),
-                const SizedBox(width: 14),
-                SizedBox(
-                  width: 92,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: TextStyle(color: colors.textPrimary, fontSize: 15),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (valueDotColor != null) ...[
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: valueDotColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Flexible(
-                        child: Text(
-                          value,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.end,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onTap != null) ...[
-                  const SizedBox(width: 6),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 20,
-                    color: colors.textSecondary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        if (showDivider) Divider(height: 1, color: colors.border),
-      ],
     );
   }
 }

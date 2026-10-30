@@ -33,6 +33,45 @@ class BodyReaction {
   double get delta => median - usualMedian;
 }
 
+/// Where one reading sits against your usual: within it (or under), above
+/// it, or well above it (10+ bpm over its top).
+enum HeartBand { usual, above, wellAbove }
+
+HeartBand heartBandOf(BodyReaction reaction, double bpm) =>
+    bpm >= reaction.usualHigh + 10
+    ? HeartBand.wellAbove
+    : bpm > reaction.usualHigh
+    ? HeartBand.above
+    : HeartBand.usual;
+
+/// Minutes in each [HeartBand] during the event. Readings are one a minute
+/// (mergedHeartRateHistory), so each counts as a minute.
+Map<HeartBand, int> heartBandMinutes(BodyReaction reaction) => {
+  for (final band in HeartBand.values)
+    band: reaction.samples
+        .where((s) => heartBandOf(reaction, s.bpm) == band)
+        .length,
+};
+
+/// "24 min well above usual" / "8 min above usual" / "Within your usual",
+/// and the overall change: "+9 bpm overall".
+({String headline, String overall}) heartBandSummary(BodyReaction reaction) {
+  final minutes = heartBandMinutes(reaction);
+  final well = minutes[HeartBand.wellAbove]!;
+  final above = minutes[HeartBand.above]! + well;
+  final change = reaction.delta.round();
+  return (
+    headline: well > 0
+        ? '$well min well above usual'
+        : above > 0
+        ? '$above min above usual'
+        : 'Within your usual',
+    overall: change == 0
+        ? 'about your usual overall'
+        : '${change > 0 ? '+' : '−'}${change.abs()} bpm overall',
+  );
+}
+
 /// Words in a title that mark exercise, which isn't judged: a raised heart
 /// rate there is the point.
 final _exercise = RegExp(

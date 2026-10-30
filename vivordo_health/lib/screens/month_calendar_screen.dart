@@ -11,6 +11,7 @@ import '../src/utils/day_agenda.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/plan_slot_sheet.dart';
@@ -160,6 +161,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             : 'Google Calendar',
         canEdit: true,
         typeEvent: CalendarCognitiveEvent.fromCalendar(event.event),
+        seriesKey: seriesKeyFor(event.event.recurringEventId),
       ),
     );
     if (!mounted) return;

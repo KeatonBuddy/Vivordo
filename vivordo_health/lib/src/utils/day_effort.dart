@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../services/calendar_cognitive_load_service.dart';
 import '../services/hourly_calendar_load.dart';
+import 'day_wrap_up.dart';
 import 'home_day_load.dart';
 
 /// Unknown events count as 30, as in the server's Effort (docs/scores.md §1).
@@ -376,3 +377,21 @@ String effortSoFarWord({
 /// Days of the same kind (weekday or weekend) "So far" needs to compare
 /// like with like; Home's 28-day window holds 8 weekend days.
 const _sameKindDays = 8;
+
+/// What one event adds on its own, start to finish: its Demand before it
+/// happens and its Effort after (the same points). Back-to-backs and
+/// overlaps with other events aren't counted here.
+double eventPoints(
+  CalendarCognitiveEvent event,
+  CognitiveLoadScore score, {
+  int wrapUpMinutes = kDefaultDayWrapUpMinutes,
+}) {
+  final day = DateTime(event.start.year, event.start.month, event.start.day);
+  return buildDayEffort(
+    now: day,
+    from: day,
+    until: DateTime(day.year, day.month, day.day + 1),
+    wrapUp: day.add(Duration(minutes: wrapUpMinutes)),
+    items: [(event: event, score: score, done: false, open: false)],
+  ).demand;
+}
