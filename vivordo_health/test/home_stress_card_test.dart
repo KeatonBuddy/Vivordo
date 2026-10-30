@@ -1,8 +1,20 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 
 void main() {
+  test('50% fills exactly the two right-hand segments', () {
+    const sweep = (math.pi * 2 - 4 * 0.20) / 4;
+    expect(stressRingSweeps(0.5, sweep, 4), [sweep, sweep]);
+    expect(stressRingSweeps(0, sweep, 4), isEmpty);
+    expect(stressRingSweeps(1, sweep, 4), [sweep, sweep, sweep, sweep]);
+    final past = stressRingSweeps(0.51, sweep, 4);
+    expect(past.length, 3);
+    expect(past.last, closeTo(sweep * 0.04, 1e-9));
+  });
+
   Widget card({
     required double score,
     bool updating = false,

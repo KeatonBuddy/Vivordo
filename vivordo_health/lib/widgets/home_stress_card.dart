@@ -60,7 +60,9 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget? _cachedCard;
   Brightness? _brightness;
 
-  double get _visibleScore => widget.revealScore ? widget.score ?? 0 : 0;
+  // Rounded like the label, so a 50.4 shows "50%" on a ring filled to 50.
+  double get _visibleScore =>
+      widget.revealScore ? (widget.score ?? 0).roundToDouble() : 0;
 
   /// No reading and no usual to stand in for one: no watch heart data yet.
   bool get _noReading => widget.score == null && !widget.loading;
@@ -572,6 +574,21 @@ class _HomeStressCardState extends State<HomeStressCard>
   }
 }
 
+/// The filled sweep in each of the ring's [count] segments for [progress]
+/// (0–1). A remainder too small to see is dropped: drawn with round caps it
+/// became a dot past the gap, as at exactly 50%.
+@visibleForTesting
+List<double> stressRingSweeps(double progress, double segmentSweep, int count) {
+  var remaining = progress.clamp(0.0, 1.0) * segmentSweep * count;
+  final sweeps = <double>[];
+  while (sweeps.length < count && remaining > 1e-6) {
+    final painted = math.min(segmentSweep, remaining);
+    sweeps.add(painted);
+    remaining -= painted;
+  }
+  return sweeps;
+}
+
 class _StressRingPainter extends CustomPainter {
   const _StressRingPainter({required this.progress});
 
@@ -609,17 +626,11 @@ class _StressRingPainter extends CustomPainter {
       canvas.drawArc(rect, angle, segmentSweep, false, trackPaint);
     }
 
-    var remainingSweep = value * segmentSweep * segmentCount;
-    for (
-      var segment = 0;
-      segment < segmentCount && remainingSweep > 0;
-      segment++
-    ) {
+    final sweeps = stressRingSweeps(value, segmentSweep, segmentCount);
+    for (var segment = 0; segment < sweeps.length; segment++) {
       final angle =
           startAngle + gapAngle / 2 + segment * (segmentSweep + gapAngle);
-      final paintedSweep = math.min(segmentSweep, remainingSweep);
-      canvas.drawArc(rect, angle, paintedSweep, false, progressPaint);
-      remainingSweep -= paintedSweep;
+      canvas.drawArc(rect, angle, sweeps[segment], false, progressPaint);
     }
   }
 
