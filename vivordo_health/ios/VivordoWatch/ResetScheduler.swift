@@ -85,7 +85,7 @@ final class ResetScheduler: NSObject, ObservableObject, UNUserNotificationCenter
         let fire = Calendar.current.dateComponents(
           [.year, .month, .day, .hour, .minute, .second], from: run.end)
         center.add(UNNotificationRequest(
-          identifier: "reset.\(Int(run.end.timeIntervalSince1970))",
+          identifier: "reset.\(Int64(run.end.timeIntervalSince1970))",
           content: content,
           trigger: UNCalendarNotificationTrigger(dateMatching: fire, repeats: false)))
       }

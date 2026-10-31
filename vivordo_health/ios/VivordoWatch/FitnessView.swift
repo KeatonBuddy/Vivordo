@@ -1,8 +1,7 @@
 import SwiftUI
 import WatchKit
 
-/// Today's movement against its goals, this week's training load, and a
-/// heart rate check.
+/// Today's movement against its goals and this week's training load.
 struct FitnessView: View {
   @EnvironmentObject private var store: WatchSnapshotStore
 
@@ -22,14 +21,6 @@ struct FitnessView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .background(WatchPalette.tile, in: RoundedRectangle(cornerRadius: 14))
         }
-        NavigationLink {
-          HeartCheckView()
-        } label: {
-          Label("Check heart rate", systemImage: "heart.fill")
-            .font(.footnote.weight(.semibold))
-            .frame(maxWidth: .infinity)
-        }
-        .tint(WatchPalette.stress)
       }
       .scenePadding(.horizontal)
     }

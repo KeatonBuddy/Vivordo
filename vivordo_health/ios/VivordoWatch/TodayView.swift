@@ -72,6 +72,9 @@ struct TodayView: View {
       Button { showMood = true } label: {
         rowLabel("Mood", icon: "face.smiling", color: WatchPalette.demand, detail: "Quick check-in")
       }
+      row("Heart rate", icon: "heart.fill", color: WatchPalette.stress, detail: "Check now") {
+        HeartCheckView()
+      }
       row("Fitness", icon: "figure.walk", color: WatchPalette.stress,
           detail: s.steps.map { "\($0) steps" } ?? "No steps yet") {
         FitnessView()

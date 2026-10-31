@@ -11,7 +11,9 @@ enum WatchActions {
     let nowMs = Date().timeIntervalSince1970 * 1000
     var action = fields
     action["kind"] = kind
-    action["at"] = Int(nowMs)
+    // Int64, not Int: on an arm64_32 watch (SE, Series 4-6) Int is 32 bits
+    // and a millisecond timestamp traps.
+    action["at"] = Int64(nowMs)
     let defaults = UserDefaults(suiteName: WatchSnapshot.appGroup)
     var recent = (defaults?.array(forKey: "watchActions") as? [[String: Any]] ?? [])
       .filter { (($0["at"] as? NSNumber)?.doubleValue ?? 0) > nowMs - 86_400_000 }
