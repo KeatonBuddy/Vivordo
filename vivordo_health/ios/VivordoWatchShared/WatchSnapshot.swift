@@ -13,14 +13,34 @@ struct WatchSnapshot: Equatable {
     let end: Date
   }
 
+  struct Priority: Equatable, Identifiable {
+    let id: String
+    let title: String
+    /// "9:00 AM", "All day" or "Anytime", as My Day shows it.
+    let time: String
+    let completed: Bool
+  }
+
   let capacityScore: Int?
   let capacityLabel: String
   let capacityNote: String
   let demand: Int?
   let demandHeadline: String
   let stressScore: Int?
+  let stressDrivers: [String]
   let latestHeartRate: Int?
+  /// Today's average so far, from the phone.
+  let averageHeartRate: Int?
   let sleepHours: Double?
+  let steps: Int?
+  let stepsGoal: Int?
+  let activeCalories: Int?
+  let activeCaloriesGoal: Int?
+  /// lighter, steady, building, high, strained or "" while learning.
+  let trainingState: String
+  /// Today's priorities, habits left out; empty when the phone's list is
+  /// from another day.
+  let priorities: [Priority]
   /// Every timed event the phone sent (this week), unsorted.
   let events: [Event]
   let nextEvent: Event?
@@ -44,8 +64,17 @@ struct WatchSnapshot: Equatable {
       demand: int(defaults, "siriDemand"),
       demandHeadline: defaults.string(forKey: "siriDemandHeadline") ?? "",
       stressScore: hasStress ? int(defaults, "stressScore") : nil,
-      latestHeartRate: int(defaults, "siriHeartRateLatest"),
+      stressDrivers: hasStress ? defaults.stringArray(forKey: "stressDrivers") ?? [] : [],
+      latestHeartRate: positive(defaults, "siriHeartRateLatest"),
+      averageHeartRate: positive(defaults, "siriHeartRateAverage"),
       sleepHours: double(defaults, "siriSleepHours"),
+      steps: int(defaults, "steps"),
+      stepsGoal: positive(defaults, "stepsGoal"),
+      activeCalories: int(defaults, "activeCalories"),
+      activeCaloriesGoal: positive(defaults, "activeCaloriesGoal"),
+      trainingState: defaults.string(forKey: "siriTrainingState") ?? "",
+      priorities: defaults.string(forKey: "dashboardPrioritiesDay") == today
+        ? priorities(defaults) : [],
       events: events,
       nextEvent: events.filter { $0.end > now }.min { $0.start < $1.start },
       updatedAt: seconds(defaults, "updatedAt")
@@ -56,6 +85,12 @@ struct WatchSnapshot: Equatable {
 
   private static func int(_ d: UserDefaults, _ key: String) -> Int? {
     d.object(forKey: key) == nil ? nil : d.integer(forKey: key)
+  }
+
+  /// Siri keys use -1 (and 0) for "none".
+  private static func positive(_ d: UserDefaults, _ key: String) -> Int? {
+    let value = d.integer(forKey: key)
+    return value > 0 ? value : nil
   }
 
   private static func double(_ d: UserDefaults, _ key: String) -> Double? {
@@ -82,6 +117,19 @@ struct WatchSnapshot: Equatable {
         title: title,
         start: Date(timeIntervalSince1970: startMs / 1000),
         end: Date(timeIntervalSince1970: endMs / 1000)
+      )
+    }
+  }
+
+  private static func priorities(_ d: UserDefaults) -> [Priority] {
+    let raw = d.array(forKey: "dashboardPriorities") as? [[String: Any]] ?? []
+    return raw.compactMap { item in
+      guard let id = item["id"] as? String, let title = item["title"] as? String,
+            item["habit"] as? Bool != true else { return nil }
+      return Priority(
+        id: id, title: title,
+        time: item["time"] as? String ?? "",
+        completed: item["completed"] as? Bool == true
       )
     }
   }

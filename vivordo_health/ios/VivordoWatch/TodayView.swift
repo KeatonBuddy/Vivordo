@@ -35,16 +35,22 @@ struct TodayView: View {
 
   private func content(_ s: WatchSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 10) {
-        ScoreRing(value: s.stressScore, color: WatchPalette.stress)
-          .frame(width: 64, height: 64)
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Stress").font(.headline)
-          Text(s.latestHeartRate.map { "\($0) bpm" } ?? "No reading yet")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(WatchPalette.stress)
+      NavigationLink {
+        StressView()
+      } label: {
+        HStack(spacing: 10) {
+          ScoreRing(value: s.stressScore, color: WatchPalette.stress)
+            .frame(width: 64, height: 64)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Stress").font(.headline)
+            Text(s.latestHeartRate.map { "\($0) bpm" } ?? "No reading yet")
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(WatchPalette.stress)
+          }
+          Spacer(minLength: 0)
         }
       }
+      .buttonStyle(.plain)
 
       HStack(spacing: 6) {
         tile("Capacity", value: s.capacityScore, color: WatchPalette.capacity,
@@ -53,6 +59,19 @@ struct TodayView: View {
              note: s.demandHeadline)
       }
       .fixedSize(horizontal: false, vertical: true)
+
+      let done = s.priorities.filter(\.completed).count
+      row("My Day", icon: "checklist", color: WatchPalette.capacity,
+          detail: s.priorities.isEmpty ? "No priorities today" : "\(done) of \(s.priorities.count) done") {
+        MyDayView()
+      }
+      row("Energy", icon: "bolt.fill", color: WatchPalette.demand, detail: "Quick check-in") {
+        CheckInView()
+      }
+      row("Fitness", icon: "figure.walk", color: WatchPalette.stress,
+          detail: s.steps.map { "\($0) steps" } ?? "No steps yet") {
+        FitnessView()
+      }
 
       if let event = s.nextEvent {
         HStack {
@@ -85,6 +104,23 @@ struct TodayView: View {
       }
     }
     .scenePadding(.horizontal)
+  }
+
+  private func row<Destination: View>(
+    _ title: String, icon: String, color: Color, detail: String,
+    @ViewBuilder destination: () -> Destination
+  ) -> some View {
+    NavigationLink(destination: destination) {
+      HStack(spacing: 8) {
+        Image(systemName: icon).font(.footnote.weight(.semibold)).foregroundStyle(color)
+          .frame(width: 18)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(title).font(.footnote.weight(.semibold))
+          Text(detail).font(.caption2).foregroundStyle(WatchPalette.secondary).lineLimit(1)
+        }
+        Spacer(minLength: 0)
+      }
+    }
   }
 
   private func tile(_ title: String, value: Int?, color: Color, note: String) -> some View {

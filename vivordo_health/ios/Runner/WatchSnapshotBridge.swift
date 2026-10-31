@@ -33,10 +33,12 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     // Calendar
     "siriCalendarEvents", "calendarEvents", "calendarWeekUpdatedAt",
     "siriMeetingPatterns",
+    // My Day
+    "dashboardPriorities", "dashboardPrioritiesDay",
   ]
 
-  /// Called on the main queue once a reset from the watch has been queued.
-  var onReset: (() -> Void)?
+  /// Called on the main queue once something done on the watch has been queued.
+  var onAction: (() -> Void)?
 
   private override init() { super.init() }
 
@@ -77,7 +79,7 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     guard activationState == .activated else { return }
     push()
     // Anything the watch sent while the phone app was away.
-    queueResets(session.receivedApplicationContext["watchResets"] as? [[String: Any]] ?? [])
+    queueActions(session.receivedApplicationContext["watchActions"] as? [[String: Any]] ?? [])
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -91,26 +93,27 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     push()
   }
 
-  /// Resets finished on the watch (VivordoWatch/ResetView.swift), sent as
-  /// the watch's application context. Each new one is queued under its own
-  /// key, like Mood widget taps, until Flutter saves it (`pendingWatchResets`).
+  /// What the watch did (VivordoWatch/WatchActions.swift): resets, energy
+  /// check-ins and priorities ticked off, sent as the watch's application
+  /// context. Each new one is queued under its own key, like Mood widget
+  /// taps, until Flutter saves it (`pendingWatchActions`).
   func session(_ session: WCSession, didReceiveApplicationContext context: [String: Any]) {
-    queueResets(context["watchResets"] as? [[String: Any]] ?? [])
+    queueActions(context["watchActions"] as? [[String: Any]] ?? [])
   }
 
-  private func queueResets(_ resets: [[String: Any]]) {
-    guard !resets.isEmpty,
+  private func queueActions(_ actions: [[String: Any]]) {
+    guard !actions.isEmpty,
           let defaults = UserDefaults(suiteName: "group.com.vivordo.health") else { return }
-    let seen = defaults.double(forKey: "watchResetsSeenAt")
+    let seen = defaults.double(forKey: "watchActionsSeenAt")
     var latest = seen
-    for var reset in resets {
-      guard let at = (reset["at"] as? NSNumber)?.doubleValue, at > seen else { continue }
-      reset["account"] = defaults.string(forKey: "moodAccount")
-      defaults.set(reset, forKey: "pendingReset.\(Int64(at))")
+    for var action in actions {
+      guard let at = (action["at"] as? NSNumber)?.doubleValue, at > seen else { continue }
+      action["account"] = defaults.string(forKey: "moodAccount")
+      defaults.set(action, forKey: "pendingWatch.\(Int64(at))")
       latest = max(latest, at)
     }
     guard latest > seen else { return }
-    defaults.set(latest, forKey: "watchResetsSeenAt")
-    DispatchQueue.main.async { self.onReset?() }
+    defaults.set(latest, forKey: "watchActionsSeenAt")
+    DispatchQueue.main.async { self.onAction?() }
   }
 }

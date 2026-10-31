@@ -94,7 +94,7 @@ void main() async {
           ? HomeWidgetService.clearAccountSnapshot()
           : HomeWidgetService.syncMoodWidget(),
     );
-    if (user != null) unawaited(HomeWidgetService.syncWatchResets());
+    if (user != null) unawaited(HomeWidgetService.syncWatchActions());
   });
   HealthService.listenForNewSleep();
 
@@ -534,7 +534,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
         unawaited(HomeWidgetService.syncMoodWidget());
-        unawaited(HomeWidgetService.syncWatchResets());
+        unawaited(HomeWidgetService.syncWatchActions());
         unawaited(
           DailyPriorityService.refreshReminders().catchError((Object error) {
             debugPrint('Could not refresh priority reminders: $error');

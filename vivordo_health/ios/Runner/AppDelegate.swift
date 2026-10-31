@@ -42,8 +42,8 @@ import WidgetKit
     sleepObserver.start()
     // Mirror the Siri/widget snapshot to the paired watch.
     WatchSnapshotBridge.shared.activate()
-    WatchSnapshotBridge.shared.onReset = { [weak self] in
-      self?.homeWidgetChannel?.invokeMethod("watchReset", arguments: nil)
+    WatchSnapshotBridge.shared.onAction = { [weak self] in
+      self?.homeWidgetChannel?.invokeMethod("watchAction", arguments: nil)
     }
 
     return launched
@@ -147,14 +147,14 @@ import WidgetKit
           result(nil)
           return
         }
-        // Resets finished on the watch (WatchSnapshotBridge), same shape.
-        if call.method == "pendingWatchResets" {
-          result(Self.queued(prefix: "pendingReset."))
+        // Things done on the watch (WatchSnapshotBridge), same shape.
+        if call.method == "pendingWatchActions" {
+          result(Self.queued(prefix: "pendingWatch."))
           return
         }
-        if call.method == "removeWatchResets",
+        if call.method == "removeWatchActions",
            let ids = call.arguments as? [String] {
-          Self.remove(ids, prefix: "pendingReset.")
+          Self.remove(ids, prefix: "pendingWatch.")
           result(nil)
           return
         }

@@ -849,6 +849,21 @@ class DailyPriorityService {
     await _syncReminder(priority.reference);
   }
 
+  /// Ticks off a priority the watch only knows by id (never a habit: the
+  /// watch doesn't list those).
+  static Future<void> completeById(DateTime day, String id) async {
+    final reference = _collection(day)?.doc(id);
+    if (reference == null) return;
+    await reference.update({
+      'completed': true,
+      'completedAt': FieldValue.serverTimestamp(),
+      'completedDay': localDayKey(DateTime.now()),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    DayRecordService.syncSoon();
+    await _syncReminder(reference);
+  }
+
   /// Sets how many times [habit] was done on its day (0 to its target),
   /// ticking it off at the target and recording the day for its streak.
   /// ponytail: no transaction, so taps work offline; two taps faster than

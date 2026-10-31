@@ -15,7 +15,7 @@ import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
-import 'package:vivordo_health/src/utils/watch_reset.dart';
+import 'package:vivordo_health/src/utils/watch_action.dart';
 
 class HomeWidgetService {
   const HomeWidgetService._();
@@ -111,6 +111,8 @@ class HomeWidgetService {
             'dashboardPriorities': priorities
                 .map(
                   (priority) => {
+                    'id': priority.id,
+                    'habit': priority.habit,
                     'title': priority.title,
                     'source': priority.source,
                     'isAllDay': priority.isAllDay,
@@ -194,8 +196,8 @@ class HomeWidgetService {
   ) async {
     if (!Platform.isIOS) return;
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'watchReset') {
-        await syncWatchResets();
+      if (call.method == 'watchAction') {
+        await syncWatchActions();
         return true;
       }
       if (call.method != 'widgetTapped') return false;
@@ -224,29 +226,46 @@ class HomeWidgetService {
   }
 
   static bool _syncingMood = false;
-  static bool _syncingResets = false;
+  static bool _syncingActions = false;
 
-  /// Saves resets finished on the Apple Watch (AppDelegate queues them from
-  /// WatchSnapshotBridge). A reset leaves the queue only once it is saved.
-  static Future<void> syncWatchResets() async {
-    if (!Platform.isIOS || _syncingResets) return;
+  /// Saves what was done on the Apple Watch (AppDelegate queues it from
+  /// WatchSnapshotBridge): finished resets, energy check-ins and priorities
+  /// ticked off. An action leaves the queue only once it is saved.
+  static Future<void> syncWatchActions() async {
+    if (!Platform.isIOS || _syncingActions) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    _syncingResets = true;
+    _syncingActions = true;
     try {
       final raw =
-          await _channel.invokeListMethod<Object?>('pendingWatchResets') ??
+          await _channel.invokeListMethod<Object?>('pendingWatchActions') ??
           const [];
-      for (final reset in pendingWatchResets(user.uid, raw)) {
-        await MetricsService.saveWatchReset(reset);
-        await _channel.invokeMethod<void>('removeWatchResets', [reset.id]);
+      for (final action in pendingWatchActions(user.uid, raw)) {
+        switch (action.kind) {
+          case 'reset':
+            await MetricsService.saveWatchReset(action);
+          case 'checkIn':
+            final score = action.score!;
+            await MetricsService.saveMoodCheckIn(
+              MetricsService.moodLabelForScore(score),
+              moodScore: score,
+              occurredAt: action.at,
+              source: 'watch',
+            );
+          case 'taskDone':
+            await DailyPriorityService.completeById(
+              DateTime.parse(action.day!),
+              action.priorityId!,
+            );
+        }
+        await _channel.invokeMethod<void>('removeWatchActions', [action.id]);
       }
     } on MissingPluginException {
       // The native side is available after installing an iOS build.
     } catch (error) {
-      debugPrint('Watch resets could not be saved: $error');
+      debugPrint('Watch actions could not be saved: $error');
     } finally {
-      _syncingResets = false;
+      _syncingActions = false;
     }
   }
 

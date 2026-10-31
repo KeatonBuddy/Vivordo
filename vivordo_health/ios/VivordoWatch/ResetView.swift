@@ -1,6 +1,5 @@
 import HealthKit
 import SwiftUI
-import WatchConnectivity
 import WatchKit
 
 /// One minute of guided breathing, a tap on every turn of breath, then how the
@@ -116,24 +115,11 @@ struct ResetView: View {
     }
   }
 
-  /// Goes to the phone as the watch's application context: the last day's
-  /// resets, so one finished while the phone was away still arrives, and the
-  /// phone (WatchSnapshotBridge) queues only those it hasn't seen.
   private func send() {
-    let nowMs = Date().timeIntervalSince1970 * 1000
-    var reset: [String: Any] = ["at": Int(nowMs), "seconds": Self.total]
+    var reset: [String: Any] = ["seconds": Self.total]
     if let startRate { reset["hrStart"] = startRate }
     if let endRate { reset["hrEnd"] = endRate }
-    let defaults = UserDefaults(suiteName: WatchSnapshot.appGroup)
-    var recent = (defaults?.array(forKey: "watchResets") as? [[String: Any]] ?? [])
-      .filter { (($0["at"] as? NSNumber)?.doubleValue ?? 0) > nowMs - 86_400_000 }
-    recent.append(reset)
-    defaults?.set(recent, forKey: "watchResets")
-    do {
-      try WCSession.default.updateApplicationContext(["watchResets": recent])
-    } catch {
-      NSLog("Vivordo watch: could not send the reset: \(error)")
-    }
+    WatchActions.send("reset", reset)
   }
 
   private func clock(_ s: Int) -> String { String(format: "%d:%02d", s / 60, s % 60) }
