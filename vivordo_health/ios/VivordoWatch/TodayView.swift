@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The one Phase 1 screen: Capacity, Demand, Stress and what's next, as the
-/// phone last showed them.
+/// Today: Stress with the latest heart rate, Capacity and Demand, what's next,
+/// as the phone last showed them.
 struct TodayView: View {
   @EnvironmentObject private var store: WatchSnapshotStore
   @EnvironmentObject private var resets: ResetScheduler
@@ -35,28 +35,22 @@ struct TodayView: View {
 
   private func content(_ s: WatchSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 12) {
-        ScoreRing(value: s.capacityScore, color: WatchPalette.capacity)
-          .frame(width: 76, height: 76)
+      HStack(spacing: 10) {
+        ScoreRing(value: s.stressScore, color: WatchPalette.stress)
+          .frame(width: 64, height: 64)
         VStack(alignment: .leading, spacing: 2) {
-          Text("Capacity").font(.headline)
-          Text(s.capacityScore == nil ? "Not yet today" : s.capacityLabel.capitalized)
+          Text("Stress").font(.headline)
+          Text(s.latestHeartRate.map { "\($0) bpm" } ?? "No reading yet")
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(WatchPalette.capacity)
-          if !s.capacityNote.isEmpty {
-            Text(s.capacityNote)
-              .font(.caption2)
-              .foregroundStyle(WatchPalette.secondary)
-              .lineLimit(2)
-          }
+            .foregroundStyle(WatchPalette.stress)
         }
       }
 
       HStack(spacing: 6) {
+        tile("Capacity", value: s.capacityScore, color: WatchPalette.capacity,
+             note: s.capacityScore == nil ? "Not yet today" : s.capacityLabel.capitalized)
         tile("Demand", value: s.demand, color: WatchPalette.demand,
              note: s.demandHeadline)
-        tile("Stress", value: s.stressScore, color: WatchPalette.stress,
-             note: s.latestHeartRate.map { "\($0) bpm" } ?? "")
       }
       .fixedSize(horizontal: false, vertical: true)
 
@@ -90,11 +84,13 @@ struct TodayView: View {
           .padding(.top, 2)
       }
     }
+    .scenePadding(.horizontal)
   }
 
   private func tile(_ title: String, value: Int?, color: Color, note: String) -> some View {
     VStack(alignment: .leading, spacing: 1) {
       Text(title).font(.caption2.weight(.semibold)).foregroundStyle(WatchPalette.secondary)
+        .lineLimit(1).minimumScaleFactor(0.7)
       Text(value.map(String.init) ?? "–")
         .font(.system(.title3, design: .rounded).weight(.bold))
         .foregroundStyle(color)
@@ -105,7 +101,7 @@ struct TodayView: View {
         .minimumScaleFactor(0.85)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .padding(10)
+    .padding(8)
     .background(WatchPalette.tile, in: RoundedRectangle(cornerRadius: 14))
   }
 }

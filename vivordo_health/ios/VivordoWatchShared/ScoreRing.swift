@@ -10,8 +10,8 @@ enum WatchPalette {
   static let secondary = Color(white: 0.71)
 }
 
-/// A 0–100 ring with the number inside; the Capacity ring on Today and in
-/// the rectangular complication.
+/// A 0–100 ring with the number inside; the Stress ring on Today and the
+/// Capacity ring in the rectangular complication.
 struct ScoreRing: View {
   let value: Int?
   let color: Color

@@ -33,10 +33,14 @@ struct ResetView: View {
   private var breathing: some View {
     ZStack {
       Circle().fill(Color(white: 0.16)).frame(width: 150, height: 150)
+      // The animation sits on the circles alone so the words swap the moment
+      // the circle starts moving, not when it arrives.
       Circle().fill(Color(red: 0.33, green: 0.29, blue: 0.72)).frame(width: 150, height: 150)
         .scaleEffect(inhale ? 0.82 : 0.6)
+        .animation(.easeInOut(duration: Double(Self.half)), value: inhale)
       Circle().fill(WatchPalette.capacity).frame(width: 150, height: 150)
         .scaleEffect(inhale ? 0.6 : 0.36)
+        .animation(.easeInOut(duration: Double(Self.half)), value: inhale)
       VStack(spacing: 2) {
         Text(clock(secondsLeft))
           .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -46,7 +50,6 @@ struct ResetView: View {
       }
       .foregroundStyle(Color(red: 0.05, green: 0.05, blue: 0.16))
     }
-    .animation(.easeInOut(duration: Double(Self.half)), value: inhale)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .overlay(alignment: .topLeading) {
       Text("Reset").font(.headline).foregroundStyle(WatchPalette.capacity).padding(.leading, 6)
