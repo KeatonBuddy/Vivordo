@@ -22,7 +22,6 @@
 		4132A819774399AC33B294AE /* VivordoWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FEF2D47FB28A2084B16CC075 /* VivordoWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		42099C236C5C38758D7DD9B2 /* ScoreRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */; };
 		42A7ECC075610C5F3E9D1594 /* VivordoWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C48DB359CA783BCDF84022B9 /* VivordoWatchApp.swift */; };
-		43CEF2EEAD1F07CE8446091F /* CheckInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40F8F8F65907DDF554CB9703 /* CheckInView.swift */; };
 		45CDCD51A31FD6A1A3F89B37 /* StressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99DF6AB92711D6C2FBFEFB0 /* StressView.swift */; };
 		5A7EF5869E9B650071ABFB1B /* VivordoLiveActivities.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		5D01618231CDC959FBC70284 /* VivordoWatchComplications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -38,6 +37,7 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		9C4504B371B6065BB81EBBD0 /* MoodView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 163A7586292778F218997B2A /* MoodView.swift */; };
 		9F519CC0929237EEDF569119 /* WatchSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */; };
 		A11B22C33D44E55F66000001 /* VivordoSiri.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11B22C33D44E55F66000002 /* VivordoSiri.swift */; };
 		B48F54D169529C1523ED876D /* MyDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7C7B1398AD6974667D1B60 /* MyDayView.swift */; };
@@ -132,6 +132,7 @@
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		163A7586292778F218997B2A /* MoodView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MoodView.swift; sourceTree = "<group>"; };
 		2324904A0C68F265553A812D /* WorkoutActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutActivityAttributes.swift; sourceTree = "<group>"; };
 		297BF264381953EB62A48DAA /* TodayView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		2CAE39E98202D4CC3FD3534C /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
@@ -143,7 +144,6 @@
 		3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VivordoLiveActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FD3968F644F6A67988533E5 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		408B81B51A87ABDFBB466C4D /* VivordoWatchComplications.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VivordoWatchComplications.swift; sourceTree = "<group>"; };
-		40F8F8F65907DDF554CB9703 /* CheckInView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CheckInView.swift; sourceTree = "<group>"; };
 		4ABAD92D3DE728E2E619DF90 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = "<group>"; };
 		52DA977A4A77360CA16761F8 /* VivordoWatchComplications.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VivordoWatchComplications.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		55D5E64966EA527729A4D8F8 /* WatchSnapshotStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSnapshotStore.swift; sourceTree = "<group>"; };
@@ -361,8 +361,8 @@
 				88B87152E6B8ADFDEC981B98 /* WatchActions.swift */,
 				FB7C7B1398AD6974667D1B60 /* MyDayView.swift */,
 				E99DF6AB92711D6C2FBFEFB0 /* StressView.swift */,
-				40F8F8F65907DDF554CB9703 /* CheckInView.swift */,
 				B1A79693329E1D53CE756A02 /* FitnessView.swift */,
+				163A7586292778F218997B2A /* MoodView.swift */,
 			);
 			name = VivordoWatch;
 			path = VivordoWatch;
@@ -736,8 +736,8 @@
 				E3EA9C7A363A6733DC155342 /* WatchActions.swift in Sources */,
 				B48F54D169529C1523ED876D /* MyDayView.swift in Sources */,
 				45CDCD51A31FD6A1A3F89B37 /* StressView.swift in Sources */,
-				43CEF2EEAD1F07CE8446091F /* CheckInView.swift in Sources */,
 				1F9ADE109388958A762C2A07 /* FitnessView.swift in Sources */,
+				9C4504B371B6065BB81EBBD0 /* MoodView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

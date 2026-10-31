@@ -61,16 +61,20 @@ struct FitnessView: View {
   }
 }
 
-/// Thirty seconds on the sensor, then the average against today's.
+/// Five seconds of readings once the sensor has found the pulse, like the
+/// Heart Rate app, then the average against today's.
 struct HeartCheckView: View {
   @EnvironmentObject private var store: WatchSnapshotStore
   @Environment(\.dismiss) private var dismiss
   @StateObject private var heart = HeartRateReader()
   @State private var secondsLeft = HeartCheckView.total
+  @State private var waited = 0
   @State private var readings: [Int] = []
   @State private var finished = false
 
-  private static let total = 30
+  private static let total = 5
+  /// Give up on a reading after this long.
+  private static let patience = 20
   private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
@@ -81,7 +85,8 @@ struct HeartCheckView: View {
         Image(systemName: "heart.fill").font(.title2).foregroundStyle(WatchPalette.stress)
         Text(heart.bpm.map(String.init) ?? "–")
           .font(.system(size: 44, weight: .bold, design: .rounded)).monospacedDigit()
-        Text("Hold still · \(secondsLeft)s").font(.footnote).foregroundStyle(WatchPalette.secondary)
+        Text(heart.bpm == nil ? "Finding your pulse…" : "Hold still · \(secondsLeft)s")
+          .font(.footnote).foregroundStyle(WatchPalette.secondary)
       }
     }
     .navigationTitle("Heart rate")
@@ -118,12 +123,19 @@ struct HeartCheckView: View {
 
   private func step() {
     guard !finished, heart.ready else { return }
-    secondsLeft -= 1
-    if let bpm = heart.bpm { readings.append(bpm) }
-    if secondsLeft <= 0 {
-      finished = true
-      heart.stop()
-      WKInterfaceDevice.current().play(.success)
+    guard let bpm = heart.bpm else {
+      waited += 1
+      if waited >= Self.patience { finish() }
+      return
     }
+    readings.append(bpm)
+    secondsLeft -= 1
+    if secondsLeft <= 0 { finish() }
+  }
+
+  private func finish() {
+    finished = true
+    heart.stop()
+    WKInterfaceDevice.current().play(.success)
   }
 }

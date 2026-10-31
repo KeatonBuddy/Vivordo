@@ -18,6 +18,8 @@ struct WatchSnapshot: Equatable {
     let title: String
     /// "9:00 AM", "All day" or "Anytime", as My Day shows it.
     let time: String
+    /// Set for a timed priority.
+    let start: Date?
     let completed: Bool
   }
 
@@ -126,9 +128,12 @@ struct WatchSnapshot: Equatable {
     return raw.compactMap { item in
       guard let id = item["id"] as? String, let title = item["title"] as? String,
             item["habit"] as? Bool != true else { return nil }
+      let startMs = (item["startAt"] as? NSNumber)?.doubleValue
       return Priority(
         id: id, title: title,
         time: item["time"] as? String ?? "",
+        start: item["isAllDay"] as? Bool == true ? nil
+          : startMs.map { Date(timeIntervalSince1970: $0 / 1000) },
         completed: item["completed"] as? Bool == true
       )
     }

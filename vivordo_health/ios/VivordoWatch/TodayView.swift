@@ -6,6 +6,7 @@ struct TodayView: View {
   @EnvironmentObject private var store: WatchSnapshotStore
   @EnvironmentObject private var resets: ResetScheduler
   @Environment(\.scenePhase) private var scenePhase
+  @State private var showMood = false
 
   var body: some View {
     ScrollView {
@@ -16,6 +17,9 @@ struct TodayView: View {
       }
     }
     .navigationTitle("Today")
+    .navigationDestination(isPresented: $showMood) {
+      MoodView { showMood = false }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { store.refresh() }
     }
@@ -65,8 +69,8 @@ struct TodayView: View {
           detail: s.priorities.isEmpty ? "No priorities today" : "\(done) of \(s.priorities.count) done") {
         MyDayView()
       }
-      row("Energy", icon: "bolt.fill", color: WatchPalette.demand, detail: "Quick check-in") {
-        CheckInView()
+      Button { showMood = true } label: {
+        rowLabel("Mood", icon: "face.smiling", color: WatchPalette.demand, detail: "Quick check-in")
       }
       row("Fitness", icon: "figure.walk", color: WatchPalette.stress,
           detail: s.steps.map { "\($0) steps" } ?? "No steps yet") {
@@ -111,15 +115,19 @@ struct TodayView: View {
     @ViewBuilder destination: () -> Destination
   ) -> some View {
     NavigationLink(destination: destination) {
-      HStack(spacing: 8) {
-        Image(systemName: icon).font(.footnote.weight(.semibold)).foregroundStyle(color)
-          .frame(width: 18)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(title).font(.footnote.weight(.semibold))
-          Text(detail).font(.caption2).foregroundStyle(WatchPalette.secondary).lineLimit(1)
-        }
-        Spacer(minLength: 0)
+      rowLabel(title, icon: icon, color: color, detail: detail)
+    }
+  }
+
+  private func rowLabel(_ title: String, icon: String, color: Color, detail: String) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: icon).font(.footnote.weight(.semibold)).foregroundStyle(color)
+        .frame(width: 18)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(title).font(.footnote.weight(.semibold))
+        Text(detail).font(.caption2).foregroundStyle(WatchPalette.secondary).lineLimit(1)
       }
+      Spacer(minLength: 0)
     }
   }
 
