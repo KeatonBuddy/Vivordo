@@ -21,6 +21,8 @@ struct WatchSnapshot: Equatable {
   let stressScore: Int?
   let latestHeartRate: Int?
   let sleepHours: Double?
+  /// Every timed event the phone sent (this week), unsorted.
+  let events: [Event]
   let nextEvent: Event?
   let updatedAt: Date?
 
@@ -34,6 +36,7 @@ struct WatchSnapshot: Equatable {
     let capacityIsToday = defaults.string(forKey: "capacityDay") == today
     let hasCapacity = defaults.bool(forKey: "dashboardHasCapacity") && capacityIsToday
     let hasStress = defaults.bool(forKey: "dashboardHasStress")
+    let events = events(defaults)
     return WatchSnapshot(
       capacityScore: hasCapacity ? int(defaults, "capacityScore") : nil,
       capacityLabel: hasCapacity ? defaults.string(forKey: "capacityLabel") ?? "" : "",
@@ -43,7 +46,8 @@ struct WatchSnapshot: Equatable {
       stressScore: hasStress ? int(defaults, "stressScore") : nil,
       latestHeartRate: int(defaults, "siriHeartRateLatest"),
       sleepHours: double(defaults, "siriSleepHours"),
-      nextEvent: nextEvent(defaults, now: now),
+      events: events,
+      nextEvent: events.filter { $0.end > now }.min { $0.start < $1.start },
       updatedAt: seconds(defaults, "updatedAt")
     )
   }
@@ -66,7 +70,7 @@ struct WatchSnapshot: Equatable {
     return value > 0 ? Date(timeIntervalSince1970: value) : nil
   }
 
-  private static func nextEvent(_ d: UserDefaults, now: Date) -> Event? {
+  private static func events(_ d: UserDefaults) -> [Event] {
     let raw = d.array(forKey: "siriCalendarEvents") as? [[String: Any]]
       ?? d.array(forKey: "calendarEvents") as? [[String: Any]] ?? []
     return raw.compactMap { item -> Event? in
@@ -80,8 +84,6 @@ struct WatchSnapshot: Equatable {
         end: Date(timeIntervalSince1970: endMs / 1000)
       )
     }
-    .filter { $0.end > now }
-    .min { $0.start < $1.start }
   }
 
   static func dayKey(_ date: Date) -> String {

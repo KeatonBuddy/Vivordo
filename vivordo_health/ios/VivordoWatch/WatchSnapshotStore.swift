@@ -21,6 +21,7 @@ final class WatchSnapshotStore: NSObject, ObservableObject, WCSessionDelegate {
   /// Re-reads the app group, for a new day or a return to the foreground.
   func refresh() {
     snapshot = WatchSnapshot.load()
+    ResetScheduler.shared.schedule(for: snapshot)
   }
 
   // MARK: WCSessionDelegate

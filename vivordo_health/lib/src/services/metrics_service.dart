@@ -3,12 +3,38 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/watch_reset.dart';
 import 'achievement_service.dart';
 import 'home_widget_service.dart';
 import 'stress_score_service.dart';
 
 class MetricsService {
   static final _db = FirebaseFirestore.instance;
+
+  /// A one-minute reset finished on the Apple Watch, kept on the day it
+  /// happened under `resets`. Saving the same reset twice adds nothing.
+  static Future<void> saveWatchReset(PendingWatchReset reset) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await _db
+        .collection('users')
+        .doc(user.uid)
+        .collection('metrics_daily')
+        .doc(localDayKey(reset.at))
+        .set({
+          'resets': FieldValue.arrayUnion([
+            {
+              'at': Timestamp.fromDate(reset.at),
+              'seconds': reset.seconds,
+              if (reset.hrStart != null) 'hrStart': reset.hrStart,
+              if (reset.hrEnd != null) 'hrEnd': reset.hrEnd,
+              'source': 'watch',
+            },
+          ]),
+          'date': localDayKey(reset.at),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+  }
 
   // ─── VH-51 ───────────────────────────────────────────────────────
   // Saves a single mood check-in to metrics_daily. Home check-ins default to

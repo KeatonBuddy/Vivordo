@@ -15,6 +15,7 @@ import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
+import 'package:vivordo_health/src/utils/watch_reset.dart';
 
 class HomeWidgetService {
   const HomeWidgetService._();
@@ -193,6 +194,10 @@ class HomeWidgetService {
   ) async {
     if (!Platform.isIOS) return;
     _channel.setMethodCallHandler((call) async {
+      if (call.method == 'watchReset') {
+        await syncWatchResets();
+        return true;
+      }
       if (call.method != 'widgetTapped') return false;
       final destination = call.arguments as String?;
       if (destination == null) return false;
@@ -219,6 +224,31 @@ class HomeWidgetService {
   }
 
   static bool _syncingMood = false;
+  static bool _syncingResets = false;
+
+  /// Saves resets finished on the Apple Watch (AppDelegate queues them from
+  /// WatchSnapshotBridge). A reset leaves the queue only once it is saved.
+  static Future<void> syncWatchResets() async {
+    if (!Platform.isIOS || _syncingResets) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    _syncingResets = true;
+    try {
+      final raw =
+          await _channel.invokeListMethod<Object?>('pendingWatchResets') ??
+          const [];
+      for (final reset in pendingWatchResets(user.uid, raw)) {
+        await MetricsService.saveWatchReset(reset);
+        await _channel.invokeMethod<void>('removeWatchResets', [reset.id]);
+      }
+    } on MissingPluginException {
+      // The native side is available after installing an iOS build.
+    } catch (error) {
+      debugPrint('Watch resets could not be saved: $error');
+    } finally {
+      _syncingResets = false;
+    }
+  }
 
   /// Saves mood check-ins tapped on the Mood widget, then refreshes the
   /// widget. Each tap keeps the time it was made, so one saved later still

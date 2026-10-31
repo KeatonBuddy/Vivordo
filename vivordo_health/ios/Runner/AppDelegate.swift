@@ -42,6 +42,9 @@ import WidgetKit
     sleepObserver.start()
     // Mirror the Siri/widget snapshot to the paired watch.
     WatchSnapshotBridge.shared.activate()
+    WatchSnapshotBridge.shared.onReset = { [weak self] in
+      self?.homeWidgetChannel?.invokeMethod("watchReset", arguments: nil)
+    }
 
     return launched
   }
@@ -134,23 +137,24 @@ import WidgetKit
         // Check-ins tapped on the Mood widget (LogMoodIntent). Each sits under
         // its own key, so a tap and an upload never overwrite each other.
         if call.method == "pendingMoodCheckIns" {
-          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
-          let queued = (defaults?.dictionaryRepresentation() ?? [:])
-            .compactMap { key, value -> [String: Any]? in
-              guard key.hasPrefix("pendingMood."),
-                    var entry = value as? [String: Any] else { return nil }
-              entry["id"] = key
-              return entry
-            }
-          result(queued)
+          result(Self.queued(prefix: "pendingMood."))
           return
         }
         if call.method == "removeMoodCheckIns",
            let ids = call.arguments as? [String] {
-          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
-          ids.filter { $0.hasPrefix("pendingMood.") }
-            .forEach { defaults?.removeObject(forKey: $0) }
+          Self.remove(ids, prefix: "pendingMood.")
           WidgetCenter.shared.reloadTimelines(ofKind: "VivordoMood")
+          result(nil)
+          return
+        }
+        // Resets finished on the watch (WatchSnapshotBridge), same shape.
+        if call.method == "pendingWatchResets" {
+          result(Self.queued(prefix: "pendingReset."))
+          return
+        }
+        if call.method == "removeWatchResets",
+           let ids = call.arguments as? [String] {
+          Self.remove(ids, prefix: "pendingReset.")
           result(nil)
           return
         }
@@ -206,6 +210,22 @@ import WidgetKit
         }
         result(FlutterMethodNotImplemented)
       }
+  }
+
+  /// App-group entries queued under `prefix`, each with its key as `id`.
+  private static func queued(prefix: String) -> [[String: Any]] {
+    let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+    return (defaults?.dictionaryRepresentation() ?? [:])
+      .compactMap { key, value -> [String: Any]? in
+        guard key.hasPrefix(prefix), var entry = value as? [String: Any] else { return nil }
+        entry["id"] = key
+        return entry
+      }
+  }
+
+  private static func remove(_ ids: [String], prefix: String) {
+    let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+    ids.filter { $0.hasPrefix(prefix) }.forEach { defaults?.removeObject(forKey: $0) }
   }
 
   private func deliverPendingWidgetDestination() {

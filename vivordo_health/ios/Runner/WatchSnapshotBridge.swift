@@ -35,6 +35,9 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     "siriMeetingPatterns",
   ]
 
+  /// Called on the main queue once a reset from the watch has been queued.
+  var onReset: (() -> Void)?
+
   private override init() { super.init() }
 
   func activate() {
@@ -71,7 +74,10 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     activationDidCompleteWith activationState: WCSessionActivationState,
     error: Error?
   ) {
-    if activationState == .activated { push() }
+    guard activationState == .activated else { return }
+    push()
+    // Anything the watch sent while the phone app was away.
+    queueResets(session.receivedApplicationContext["watchResets"] as? [[String: Any]] ?? [])
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -83,5 +89,28 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
 
   func sessionWatchStateDidChange(_ session: WCSession) {
     push()
+  }
+
+  /// Resets finished on the watch (VivordoWatch/ResetView.swift), sent as
+  /// the watch's application context. Each new one is queued under its own
+  /// key, like Mood widget taps, until Flutter saves it (`pendingWatchResets`).
+  func session(_ session: WCSession, didReceiveApplicationContext context: [String: Any]) {
+    queueResets(context["watchResets"] as? [[String: Any]] ?? [])
+  }
+
+  private func queueResets(_ resets: [[String: Any]]) {
+    guard !resets.isEmpty,
+          let defaults = UserDefaults(suiteName: "group.com.vivordo.health") else { return }
+    let seen = defaults.double(forKey: "watchResetsSeenAt")
+    var latest = seen
+    for var reset in resets {
+      guard let at = (reset["at"] as? NSNumber)?.doubleValue, at > seen else { continue }
+      reset["account"] = defaults.string(forKey: "moodAccount")
+      defaults.set(reset, forKey: "pendingReset.\(Int64(at))")
+      latest = max(latest, at)
+    }
+    guard latest > seen else { return }
+    defaults.set(latest, forKey: "watchResetsSeenAt")
+    DispatchQueue.main.async { self.onReset?() }
   }
 }

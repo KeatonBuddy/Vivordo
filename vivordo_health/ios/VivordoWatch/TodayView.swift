@@ -4,6 +4,7 @@ import SwiftUI
 /// phone last showed them.
 struct TodayView: View {
   @EnvironmentObject private var store: WatchSnapshotStore
+  @EnvironmentObject private var resets: ResetScheduler
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -72,6 +73,15 @@ struct TodayView: View {
         .padding(10)
         .background(WatchPalette.tile, in: RoundedRectangle(cornerRadius: 14))
       }
+
+      Button {
+        resets.resetRequested = true
+      } label: {
+        Label("Take a minute", systemImage: "wind")
+          .font(.footnote.weight(.semibold))
+          .frame(maxWidth: .infinity)
+      }
+      .tint(WatchPalette.capacity)
 
       if let at = s.updatedAt {
         Text("From your iPhone, \(at, format: .relative(presentation: .named))")
