@@ -447,6 +447,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
+            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? 'Heart rate during sleep'
@@ -458,8 +460,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 ? _sleepHeartRateChart(sleepingHeartRate, latest)
                 : _sleepChart(days),
             const SizedBox(height: 24),
-            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
-            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? "Last night's sleep stages"
@@ -797,7 +797,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     if (readings.isEmpty) {
       return _sleepHeartRateEmptyState(
         'No sleeping heart-rate data',
-        'Your sleep was recorded, but no timestamped heart-rate readings were found between bedtime and wake time.',
+        'This needs a wearable that tracks your heart rate throughout the night. Wear one to bed and it shows here.',
       );
     }
 
