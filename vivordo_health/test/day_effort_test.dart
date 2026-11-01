@@ -212,4 +212,64 @@ void main() {
       closeTo(2 + 7.5 + 2.5 + 0.9375 + 0.625 + 0.078125 + 6 + 10.5, 0.01),
     );
   });
+
+  test('capacityLeftPath steps down through the booked hours', () {
+    final now = at(9);
+    final day = buildDayEffort(
+      now: now,
+      from: at(8),
+      until: at(22),
+      wrapUp: at(17),
+      items: [
+        item('standup', at(10), at(11), 40),
+        item('late call', at(17), at(18), 40),
+      ],
+      untimedOpen: const ['moderate'],
+    );
+    final live = capacityLeft(morning: 60, effortSoFar: 10, demand: day.demand);
+    final path = capacityLeftPath(
+      day: day,
+      live: live,
+      now: now,
+      wrapUp: at(17),
+    );
+    expect(path.first, (at: now, left: 50.0));
+    // The standup's hour, then the after-hours call (× 1.25).
+    expect(path[1].at, at(11));
+    expect(path[1].left, closeTo(46, 0.01));
+    expect(path[2].at, at(18));
+    expect(path[2].left, closeTo(41, 0.01));
+    // The untimed priority (4) is only in tonight's value: nothing says
+    // when, or whether, it happens.
+    expect(path, hasLength(3));
+    expect(live.byTonight, closeTo(37, 0.01));
+    for (var i = 1; i < path.length; i++) {
+      expect(path[i].at.isAfter(path[i - 1].at), isTrue);
+    }
+  });
+
+  group('capacityLeft', () {
+    test('spends the morning Capacity and books the rest of the day', () {
+      final c = capacityLeft(morning: 72, effortSoFar: 31, demand: 23);
+      expect(c.left, 41);
+      expect(c.byTonight, 18);
+      // 23 ahead against 41 left: within 25 of it, a full afternoon.
+      expect(c.fit, DemandFit.full);
+    });
+
+    test('at wake it is the morning comparison', () {
+      final c = capacityLeft(morning: 72, effortSoFar: 0, demand: 30);
+      expect(c.left, 72);
+      expect(c.fit, demandFit(30, 72));
+    });
+
+    test('a heavy morning makes a light afternoon too much', () {
+      // The old comparison (20 against 58) said room to spare.
+      final c = capacityLeft(morning: 58, effortSoFar: 50, demand: 20);
+      expect(c.left, 8);
+      expect(c.byTonight, -12);
+      expect(c.fit, DemandFit.over);
+      expect(demandFit(20, 58), DemandFit.roomToSpare);
+    });
+  });
 }

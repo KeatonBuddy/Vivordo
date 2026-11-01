@@ -544,6 +544,30 @@ Changes from the current Capacity:
 - the label bands are raised to 80 / 50;
 - the score recalculates when sleep arrives and locks at midnight.
 
+**Live during the day** (My Day, 2026-11-01): this morning's Capacity is
+the day's budget, on the same points scale as Demand and Effort. My Day's
+brief shows one ring, `capacityLeft` in `lib/src/utils/day_effort.dart`:
+- left = this morning's Capacity − Effort so far (counted as Home's Your
+  day counts it: events and priorities, workouts, Health activity by
+  `physicalSoFar`);
+- booked = Demand still ahead; free by tonight = left − booked (below 0:
+  "Short by N", amber);
+- the headline, "Ways to lighten today" and words mode's Today's load
+  compare Demand with what's left, not with the morning's number. At wake
+  nothing is spent, so the morning comparison is unchanged.
+The evening keeps the two rings (your usual Capacity beside tomorrow's
+Demand). The stored Capacity, its history, the weekly review and burnout
+keep the morning value. The ring opens "Capacity today": what's left, why
+this morning's number (the breakdown above), planned Demand against the
+Effort each day took, where today's went and what's booked.
+My Day also sends the rest of today's path (`capacityLeftPath`: what's left
+at each point the plan reaches) to the Capacity widget, the Lock Screen
+sizes, the Watch Today screen and complication, and Siri, which step
+through it between app updates ("41 left · 18 by tonight"). Only timed
+events step it down; untimed priorities count only in "by tonight", since
+nothing says when (or, in the evening, whether) they happen. Before My Day
+has sent today's path they show the morning value.
+
 ## 5. Daily record
 
 One record per day in `users/{uid}/scores_daily/{day}` (server-written,

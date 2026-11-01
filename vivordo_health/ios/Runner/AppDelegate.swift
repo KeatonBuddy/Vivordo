@@ -178,6 +178,8 @@ import WidgetKit
             let capacityKeys: Set<String> = [
               "capacityScore", "capacityDelta", "capacityLabel", "capacityNote",
               "capacityDay", "dashboardHasCapacity",
+              "capacityLeftDay", "capacityLeftMorning", "capacityLeftTimes",
+              "capacityLeftValues", "capacityByTonight",
             ]
             let fitnessKeys: Set<String> = [
               "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",

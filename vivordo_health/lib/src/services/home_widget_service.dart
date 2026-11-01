@@ -13,6 +13,7 @@ import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
@@ -187,6 +188,40 @@ class HomeWidgetService {
   }
 
   static String? _lastDemandSignature;
+  static String? _lastCapacityLeftSignature;
+
+  /// My Day's live Capacity for the Capacity widget, the Watch and Siri:
+  /// this morning's, what's left now and how it steps down as the plan
+  /// happens ([capacityLeftPath]), so they stay current between updates.
+  static Future<void> _publishCapacityLeft(
+    CapacityLeft live,
+    List<({DateTime at, double left})> path,
+  ) async {
+    if (!Platform.isIOS) return;
+    final times = [for (final p in path) p.at.millisecondsSinceEpoch];
+    final values = [for (final p in path) p.left.round()];
+    final day = DateFormat('yyyy-MM-dd').format(path.first.at);
+    // Minute-to-minute rebuilds only send when a number moves.
+    final signature =
+        '$day|${live.morning}|${values.join(',')}|'
+        '${live.byTonight.round()}';
+    if (_lastCapacityLeftSignature == signature) return;
+    _lastCapacityLeftSignature = signature;
+    try {
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        'capacityLeftDay': day,
+        'capacityLeftMorning': live.morning,
+        'capacityLeftTimes': times,
+        'capacityLeftValues': values,
+        'capacityByTonight': live.byTonight.round(),
+      });
+    } on MissingPluginException {
+      // iOS builds only.
+    } on PlatformException catch (error) {
+      debugPrint('Capacity left update failed: ${error.message}');
+    }
+  }
+
   static String? _lastMeetingsSignature;
 
   static Future<void> _publishDemand(
@@ -426,6 +461,7 @@ class HomeWidgetService {
     _lastSignature = null;
     _lastCalendarSignature = null;
     _lastDemandSignature = null;
+    _lastCapacityLeftSignature = null;
     _lastMeetingsSignature = null;
     _lastCalendarRefresh = null;
     _moodPublished = null;
@@ -447,6 +483,9 @@ class HomeWidgetService {
         'siriDemand': -1,
         'siriDemandHeadline': '',
         'siriDemandAt': 0,
+        'capacityLeftDay': '',
+        'capacityLeftTimes': <int>[],
+        'capacityLeftValues': <int>[],
         'watchWorkouts': <Map<String, Object>>[],
         'siriMeetingPatterns': <Map<String, Object>>[],
         'steps': 0,
@@ -742,6 +781,12 @@ Future<void> publishSiriDemand({
   required String headline,
   required bool tomorrow,
 }) => HomeWidgetService._publishDemand(demand, headline, tomorrow);
+
+/// My Day's live Capacity, for the Capacity widget, the Watch and Siri.
+Future<void> publishCapacityLeft(
+  CapacityLeft live,
+  List<({DateTime at, double left})> path,
+) => HomeWidgetService._publishCapacityLeft(live, path);
 
 /// Today's meetings with a heart-rate pattern, for Siri.
 Future<void> publishSiriMeetings(

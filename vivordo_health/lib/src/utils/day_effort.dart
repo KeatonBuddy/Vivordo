@@ -306,6 +306,65 @@ DemandFit demandFit(double demand, num capacity) => demand > capacity
 
 const _fullBand = 25;
 
+/// Today's Capacity as it stands (docs/scores.md §4): this morning's
+/// Capacity is the day's budget, on the same points scale as Effort and
+/// Demand. [left] is what Effort hasn't used yet; [byTonight] is what's
+/// left once the plan still ahead (Demand) happens, below 0 when the plan
+/// asks for more than you've got. The stored Capacity stays the morning's.
+typedef CapacityLeft = ({
+  int morning,
+  double spent,
+  double left,
+  double booked,
+  double byTonight,
+  DemandFit fit,
+});
+
+/// What's left through the rest of today if the timed plan happens as
+/// booked: now's [CapacityLeft.left], then the end of each hour that has
+/// something booked, priced as [buildDayEffort] prices it. Widgets and the
+/// Watch step through it between the app's updates. Untimed priorities
+/// aren't in it: they have no time to land at, and open ones carry over in
+/// the evening, so they only count in [CapacityLeft.byTonight].
+List<({DateTime at, double left})> capacityLeftPath({
+  required DayEffort day,
+  required CapacityLeft live,
+  required DateTime now,
+  required DateTime wrapUp,
+}) {
+  final path = [(at: now, left: live.left)];
+  var booked = 0.0;
+  for (final hour in day.hours) {
+    final end = hour.start.add(const Duration(hours: 1));
+    if (!end.isAfter(now) || hour.ahead <= 0) continue;
+    final afterMinutes = end.isAfter(wrapUp)
+        ? end
+              .difference(wrapUp.isAfter(hour.start) ? wrapUp : hour.start)
+              .inMinutes
+              .clamp(0, 60)
+        : 0;
+    booked += hour.ahead * (1 + 0.25 * afterMinutes / 60) / 10;
+    path.add((at: end, left: live.left - booked));
+  }
+  return path;
+}
+
+CapacityLeft capacityLeft({
+  required int morning,
+  required double effortSoFar,
+  required double demand,
+}) {
+  final left = morning - effortSoFar;
+  return (
+    morning: morning,
+    spent: effortSoFar,
+    left: left,
+    booked: demand,
+    byTonight: left - demand,
+    fit: demandFit(demand, left),
+  );
+}
+
 /// Today's activity Effort so far, by the server's rules (physicalLoad in
 /// functions/effort.js): in-app workouts plus Health exercise minutes × 0.2,
 /// else active calories above the usual ÷ 50; capped at 25. Whatever Health

@@ -61,10 +61,21 @@ struct TodayView: View {
       .buttonStyle(.plain)
 
       HStack(spacing: 6) {
-        tile("Capacity", value: s.capacityScore, color: WatchPalette.capacity,
-             note: s.capacityScore == nil ? "Not yet today" : s.capacityLabel.capitalized)
-        tile("Demand", value: s.demand, color: WatchPalette.demand,
-             note: s.demandHeadline)
+        // During the day, what's left of this morning's Capacity and what's
+        // left by tonight; Demand is the gap between them.
+        if let left = s.capacityLeft, let morning = s.capacityMorning,
+           let tonight = s.capacityByTonight {
+          tile("Capacity", value: left, color: WatchPalette.capacity,
+               note: "left of \(morning)")
+          tile("By tonight", value: tonight,
+               color: tonight < 0 ? WatchPalette.short : WatchPalette.demand,
+               note: tonight < 0 ? "more than you have" : "if the plan holds")
+        } else {
+          tile("Capacity", value: s.capacityScore, color: WatchPalette.capacity,
+               note: s.capacityScore == nil ? "Not yet today" : s.capacityLabel.capitalized)
+          tile("Demand", value: s.demand, color: WatchPalette.demand,
+               note: s.demandHeadline)
+        }
       }
       .fixedSize(horizontal: false, vertical: true)
 

@@ -5,6 +5,8 @@ import SwiftUI
 enum WatchPalette {
   static let capacity = Color(red: 0.69, green: 0.66, blue: 0.93)
   static let demand = Color(red: 0.50, green: 0.65, blue: 1.00)
+  /// More booked than Capacity left (the phone's amber).
+  static let short = Color(red: 1.00, green: 0.71, blue: 0.28)
   static let stress = Color(red: 1.00, green: 0.54, blue: 0.51)
   static let tile = Color(white: 0.11)
   static let secondary = Color(white: 0.71)

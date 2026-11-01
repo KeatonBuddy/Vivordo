@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/widgets/daily_brief_card.dart';
 
 void main() {
@@ -97,5 +98,42 @@ void main() {
     expect(noon.dy, lessThan(rise.dy));
     expect(noon.dy, lessThan(set.dy));
     expect(rise.dy, closeTo(set.dy, 1e-9));
+  });
+
+  testWidgets('live Capacity shows one ring: free, booked and spent', (
+    tester,
+  ) async {
+    Widget card(CapacityLeft live) => MaterialApp(
+      home: Scaffold(
+        body: DailyBriefCard(
+          headline: 'A full afternoon ahead',
+          summary: '',
+          capacityScore: live.morning,
+          capacityLabel: '',
+          scheduleScore: live.booked.round(),
+          scheduleLabel: 'Remaining today',
+          footer: '',
+          capacityLeft: live,
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      card(capacityLeft(morning: 72, effortSoFar: 31, demand: 23)),
+    );
+    expect(find.text('41'), findsOneWidget);
+    expect(find.text('of 72 this morning'), findsOneWidget);
+    expect(find.text('18 free by tonight'), findsOneWidget);
+    expect(find.text('23 booked'), findsOneWidget);
+    expect(find.text('31 spent'), findsOneWidget);
+    // No second ring: Demand is the booked share.
+    expect(find.text('Remaining today'), findsNothing);
+
+    await tester.pumpWidget(
+      card(capacityLeft(morning: 58, effortSoFar: 24, demand: 42)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('42 booked'), findsOneWidget);
+    expect(find.text('Short by 8'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -18,6 +18,9 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     // Capacity
     "dashboardHasCapacity", "capacityScore", "capacityDelta", "capacityLabel",
     "capacityNote", "capacityDay",
+    // My Day's live Capacity and how it steps down through today
+    "capacityLeftDay", "capacityLeftMorning", "capacityLeftTimes",
+    "capacityLeftValues", "capacityByTonight",
     // Demand
     "siriDemand", "siriDemandHeadline", "siriDemandAt",
     // Stress

@@ -34,7 +34,13 @@ class DailyBriefCard extends StatelessWidget {
     this.scheduleEmptyIcon,
     this.onCapacityTap,
     this.onScheduleTap,
+    this.capacityLeft,
   });
+
+  /// Today's Capacity as it stands, during the day: one ring split into
+  /// what's free, booked and spent, in place of the Capacity and Demand
+  /// rings (which the evening keeps for tomorrow).
+  final CapacityLeft? capacityLeft;
 
   /// Under the summary: the day's top fix, and in the evening tonight's
   /// wind-down.
@@ -150,6 +156,8 @@ class DailyBriefCard extends StatelessWidget {
                     ),
                   ],
                 )
+              else if (capacityLeft case final live?)
+                _tappable(_CapacityLeftRow(live), onCapacityTap)
               else
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -302,6 +310,14 @@ BriefState briefEnergyState({
       ? (word: 'Moderate', tone: BriefTone.usual)
       : (word: 'Low', tone: BriefTone.low);
 }
+
+/// Words mode's live Capacity: what's left against the plan still ahead
+/// ([CapacityLeft.fit]).
+BriefState capacityLeftWords(CapacityLeft live) => switch (live.fit) {
+  DemandFit.roomToSpare => (word: 'Plenty left', tone: BriefTone.good),
+  DemandFit.full => (word: 'Some room', tone: BriefTone.usual),
+  DemandFit.over => (word: 'Short today', tone: BriefTone.low),
+};
 
 /// Demand against the Capacity it's set beside, as the headline
 /// ([demandFit]).
@@ -519,4 +535,213 @@ class _BriefLandscape extends CustomPainter {
 
   @override
   bool shouldRepaint(_BriefLandscape oldDelegate) => oldDelegate.sunAt != sunAt;
+}
+
+/// The brief's live Capacity: [live] as one ring on this morning's Capacity,
+/// free (white), booked (lilac) and spent (the track), with the numbers
+/// beside it. Booked turns amber when the plan needs more than is left.
+class _CapacityLeftRow extends StatelessWidget {
+  const _CapacityLeftRow(this.live);
+
+  final CapacityLeft live;
+
+  static const _free = Colors.white;
+  static const _booked = Color(0xFFD0A5FF);
+  static const _over = Color(0xFFFFB547);
+  static const _spent = Color(0xFF8270DB);
+
+  @override
+  Widget build(BuildContext context) {
+    final left = math.max(0, live.left.round());
+    final booked = live.booked.round();
+    final spent = live.spent.round();
+    final tonight = live.byTonight.round();
+    final short = tonight < 0;
+    final rows = <(Color?, String)>[
+      if (short) ...[
+        (_over, '$booked booked'),
+        (null, 'Short by ${-tonight}'),
+      ] else ...[
+        (_free, '$tonight free by tonight'),
+        (_booked, '$booked booked'),
+      ],
+      (_spent, '$spent spent'),
+    ];
+    return Semantics(
+      label:
+          'Capacity: $left left of ${live.morning} this morning. '
+          '${short ? '$booked booked, ${-tonight} more than you have' : '$booked booked, $tonight free by tonight'}. '
+          '$spent spent.',
+      child: ExcludeSemantics(
+        child: Row(
+          children: [
+            // Glides when Effort or the plan moves it; the first value
+            // shows as is.
+            TweenAnimationBuilder<double>(
+              tween: Tween(end: math.max(0, live.left).toDouble()),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 450),
+              curve: Curves.easeOutCubic,
+              builder: (context, shownLeft, _) => SizedBox(
+                width: 76,
+                height: 76,
+                child: CustomPaint(
+                  painter: _CapacityRingPainter(
+                    morning: live.morning.toDouble(),
+                    left: shownLeft,
+                    booked: live.booked,
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${shownLeft.round()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        const Text(
+                          'left',
+                          style: TextStyle(
+                            color: Color(0xFFE8E0FF),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 4,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Capacity',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    'of ${live.morning} this morning',
+                    style: const TextStyle(
+                      color: Color(0xFFE8E0FF),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 6,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final (color, text) in rows)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          // No dot: the line under it goes on.
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: color == null
+                                ? null
+                                : BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: color == _spent
+                                        ? Border.all(
+                                            color: Colors.white.withValues(
+                                              alpha: .5,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              text,
+                              style: TextStyle(
+                                color: color == null ? _over : Colors.white,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CapacityRingPainter extends CustomPainter {
+  const _CapacityRingPainter({
+    required this.morning,
+    required this.left,
+    required this.booked,
+  });
+
+  final double morning, left, booked;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 7.0;
+    final rect = (Offset.zero & size).deflate(stroke / 2);
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect, 0, math.pi * 2, false, arc(_CapacityLeftRow._spent));
+    if (morning <= 0 || left <= 0) return;
+    final leftShare = (left / morning).clamp(0.0, 1.0);
+    final bookedShare = (math.min(booked, left) / morning).clamp(0.0, 1.0);
+    final freeShare = leftShare - bookedShare;
+    const top = -math.pi / 2;
+    final short = booked > left;
+    // Free first from the top, then what's booked; past the end is spent.
+    if (freeShare > 0) {
+      canvas.drawArc(
+        rect,
+        top,
+        freeShare * math.pi * 2,
+        false,
+        arc(_CapacityLeftRow._free),
+      );
+    }
+    if (bookedShare > 0) {
+      canvas.drawArc(
+        rect,
+        top + freeShare * math.pi * 2,
+        bookedShare * math.pi * 2,
+        false,
+        arc(short ? _CapacityLeftRow._over : _CapacityLeftRow._booked),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CapacityRingPainter old) =>
+      old.morning != morning || old.left != left || old.booked != booked;
 }

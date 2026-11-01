@@ -57,6 +57,7 @@ import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
 import '../src/services/weekly_review_service.dart';
 import '../src/services/daily_tags_service.dart';
+import '../src/services/today_effort_context.dart';
 import '../src/utils/energy_factors.dart';
 import 'weekly_review_screen.dart';
 import '../src/services/home_widget_service.dart';
@@ -243,6 +244,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       ),
     );
     _loadEnergyFactors(day);
+    _loadEffortContext(day);
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -260,6 +262,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
         _briefMetrics = metrics;
         _takeHeart(snapshot.days, day);
+        final today = snapshot.days[localDayKey(day)];
+        _todayActivity = (
+          healthMinutes:
+              ((today?['exercise_time'] as Map?)?['healthSum'] as num?)
+                  ?.toDouble(),
+          calories: ((today?['active_calories'] as Map?)?['sum'] as num?)
+              ?.toDouble(),
+        );
         return metrics.summarize(DateTime.now());
       }),
     );
@@ -291,6 +301,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
     _capacitySnapshot.addListener(_onCapacity);
+    for (final source in [
+      _briefSnapshot,
+      _capacitySnapshot,
+      _prioritySnapshot,
+    ]) {
+      source.addListener(_publishCapacityLeft);
+    }
     _connectBriefMetrics(_priorityDay);
     _connectPriorities();
     _loadTodayEvents();
@@ -300,6 +317,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   bool? _capacityProvisional;
+
+  /// With the calendar and priorities, what Effort so far needs (as Home's
+  /// Your day counts it): today's workouts and usual calories, and Health's
+  /// exercise minutes and active calories so far.
+  TodayEffortContext? _effortContext;
+  ({double? healthMinutes, double? calories})? _todayActivity;
 
   /// A light tap when today's Capacity locks in with last night's sleep,
   /// as the number settles on screen. Hidden updates publish when the tab
@@ -608,6 +631,126 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ];
   }
 
+  /// Priorities ticked off on [day] that have no time slot there, for
+  /// Effort so far (a linked one counts through its event).
+  List<({DateTime doneAt, Object? effort})> _untimedDone(
+    DateTime day,
+    List<DailyPriority> priorities,
+  ) => [
+    for (final p in priorities)
+      if (p.completed &&
+          p.completedAt != null &&
+          DateUtils.isSameDay(p.completedAt, day) &&
+          _linkedKey(p) == null &&
+          (p.isAllDay ||
+              p.sourceStart == null ||
+              !DateUtils.isSameDay(p.sourceStart, day)))
+        (doneAt: p.completedAt!, effort: p.planning['effort']),
+  ];
+
+  /// Today's Effort so far as Home's Your day counts it: what events and
+  /// priorities took, and activity by the server's rules
+  /// ([physicalSoFar]).
+  ({double total, double physical}) _effortSoFar(
+    DateTime now,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final day = buildDayEffort(
+      now: now,
+      from: today,
+      until: today.add(const Duration(days: 1)),
+      wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+      items: _effortItems(today, events, priorities),
+      untimedDone: _untimedDone(today, priorities),
+      workouts: _effortContext?.workouts ?? const [],
+    );
+    final physical = physicalSoFar(
+      workoutPoints: day.workoutSoFar,
+      healthMinutes: _todayActivity?.healthMinutes,
+      calories: _todayActivity?.calories,
+      usualCalories: _effortContext?.usualCalories,
+    );
+    return (total: day.soFar - day.workoutSoFar + physical, physical: physical);
+  }
+
+  /// Today's plan from [now] on, whether it's evening (past the end-of-day
+  /// time with nothing timed left: open untimed priorities carry over, so
+  /// they count towards tomorrow), and before then today's Capacity as it
+  /// stands (docs/scores.md §4): the morning's less the Effort so far. The
+  /// evening keeps the two rings, for tomorrow.
+  ({DayEffort day, bool evening, CapacityLeft? live}) _todayPlan(
+    DateTime now,
+    List<_CalendarEvent> timedEvents,
+    List<DailyPriority> priorities,
+    int? capacityScore,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final wrapUp = today.add(Duration(minutes: _wrapUpMinutes));
+    final day = buildDayEffort(
+      now: now,
+      from: today,
+      until: today.add(const Duration(days: 1)),
+      wrapUp: wrapUp,
+      items: _effortItems(today, timedEvents, priorities),
+      untimedOpen: _untimedOpen(today, priorities),
+    );
+    final evening = day.aheadMinutes == 0 && !now.isBefore(wrapUp);
+    return (
+      day: day,
+      evening: evening,
+      live: evening || capacityScore == null
+          ? null
+          : capacityLeft(
+              morning: capacityScore,
+              effortSoFar: _effortSoFar(now, timedEvents, priorities).total,
+              demand: day.demand,
+            ),
+    );
+  }
+
+  /// Sends today's live Capacity to the Capacity widget, the Watch and Siri,
+  /// which step through the rest of today from it. Runs whenever it can
+  /// move (priorities, Capacity, Health, the calendar, the clock), not only
+  /// while the brief is on screen; only a live calendar sends it.
+  void _publishCapacityLeft() {
+    final priorities = _prioritySnapshot.value;
+    final now = DateTime.now();
+    if (_isLoading ||
+        _calendarLoadError != null ||
+        !priorities.hasData ||
+        priorities.hasError ||
+        !DateUtils.isSameDay(_priorityDay, now)) {
+      return;
+    }
+    final plan = _todayPlan(
+      now,
+      [
+        for (final e in _events)
+          if (!e.isAllDay) e,
+      ],
+      priorities.data!,
+      _capacitySnapshot.value.data?.score ??
+          _briefSnapshot.value.data?.capacity.score,
+    );
+    final live = plan.live;
+    if (live == null) return;
+    unawaited(
+      publishCapacityLeft(
+        live,
+        capacityLeftPath(
+          day: plan.day,
+          live: live,
+          now: now,
+          wrapUp: DateUtils.dateOnly(
+            now,
+          ).add(Duration(minutes: _wrapUpMinutes)),
+        ),
+      ),
+    );
+  }
+
   /// Efforts of the open priorities on [day] that have no time slot there.
   List<Object?> _untimedOpen(DateTime day, List<DailyPriority> priorities) => [
     for (final p in priorities)
@@ -654,6 +797,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (!_handleDayRollover()) {
       // Tags saved elsewhere (Home's check-in, Journal) since last shown.
       _loadEnergyFactors(_priorityDay);
+      _loadEffortContext(_priorityDay);
       _refreshBriefClock();
       if (_eventsStale) unawaited(_loadTodayEvents());
     }
@@ -1033,6 +1177,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Calendar, workouts, wrap-up time and the clock arrive by setState.
+    _publishCapacityLeft();
     final colors = context.vivordoColors;
     final timedEvents = _events.where((event) => !event.isAllDay).toList();
     final watchItem = findNextBackToBackEventBlock(
@@ -1278,6 +1424,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }),
   );
 
+  void _loadEffortContext(DateTime day) => unawaited(
+    loadTodayEffortContext(day).then((context) {
+      if (mounted) setState(() => _effortContext = context);
+    }),
+  );
+
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event
   /// sets tonight's bed-by.
@@ -1507,10 +1659,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final prioritiesReady = priorities.hasData && !priorities.hasError;
             // Live calendar: what gets saved, published or logged.
             final ready = calendarReady && prioritiesReady;
-            // Also the saved schedule while the live one loads: what's
-            // shown.
+            // Also the saved schedule while the live one loads, and
+            // today's while a refresh runs: what's shown.
+            final refreshing =
+                _isLoading &&
+                _calendarLoadedAt != null &&
+                DateUtils.isSameDay(_calendarLoadedAt, now);
             final shown =
-                (calendarReady || _eventsFromSnapshot) && prioritiesReady;
+                (calendarReady || _eventsFromSnapshot || refreshing) &&
+                prioritiesReady;
             // Not loading any more, just failed: pull to refresh retries.
             final planFailed =
                 !ready && (_calendarLoadError != null || priorities.hasError);
@@ -1520,14 +1677,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final today = DateUtils.dateOnly(now);
             final tomorrow = today.add(const Duration(days: 1));
             final todayPriorities = priorities.data ?? const [];
-            final todayDemand = buildDayEffort(
-              now: now,
-              from: today,
-              until: tomorrow,
-              wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
-              items: _effortItems(today, timedEvents, todayPriorities),
-              untimedOpen: _untimedOpen(today, todayPriorities),
+            final plan = _todayPlan(
+              now,
+              timedEvents,
+              todayPriorities,
+              capacityScore,
             );
+            final todayDemand = plan.day;
             // The day's whole plan, saved once for the Demand sheet's
             // planned-vs-actual history.
             if (ready && !PlannedDemandService.savedThisSession(today)) {
@@ -1547,12 +1703,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 (_) => PlannedDemandService.saveOnce(today, planned),
               );
             }
-            // Evening: past the end-of-day time with nothing timed left.
-            // Open untimed priorities carry over, so they count towards
-            // tomorrow rather than holding off the evening view.
-            final evening =
-                todayDemand.aheadMinutes == 0 &&
-                !now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)));
+            final evening = plan.evening;
             final tomorrowPriorities =
                 _tomorrowPrioritySnapshot.value.data ?? const [];
             final demand = evening
@@ -1581,7 +1732,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             // §4): say why, unless the body has already bounced back.
             final bigDay = server?.bigDay;
             final recovering = bigDay != null && !bigDay.halved;
-            // Demand against Capacity, ±15 (docs/scores.md §2).
+            final live = shown ? plan.live : null;
+            // Demand against what's left (docs/scores.md §2).
             final headline = evening
                 ? tomorrowHeavy
                       ? 'Tomorrow looks heavy'
@@ -1590,9 +1742,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 ? bigDayHeadline(bigDay, today)
                 : capacityScore == null || !shown
                 ? 'Make space for your day'
-                : switch (demandFit(demand, capacityScore)) {
+                : switch (live?.fit ?? demandFit(demand, capacityScore)) {
                     DemandFit.roomToSpare => 'Room to spare today',
-                    DemandFit.over => 'More than you’ve got: protect a break',
+                    DemandFit.over =>
+                      live == null
+                          ? 'More than you’ve got: protect a break'
+                          : 'More than you’ve got left',
                     DemandFit.full => 'A full day ahead',
                   };
             final calendarText = shown
@@ -1608,8 +1763,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               for (final e in _tomorrowEvents)
                 if (!e.isAllDay) e,
             ];
+            // A refresh keeps them: today's live schedule is still there.
+            final fixable = ready || refreshing;
             final fixes = evening
-                ? !ready ||
+                ? !fixable ||
                           !tomorrowHeavy ||
                           _eveningFixesHiddenDay == localDayKey(today)
                       ? const <DayFix>[]
@@ -1619,9 +1776,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           tomorrowPriorities,
                           day: tomorrow,
                         )
-                : !ready ||
+                : !fixable ||
                       capacityScore == null ||
-                      demandFit(demand, capacityScore) != DemandFit.over ||
+                      (live?.fit ?? demandFit(demand, capacityScore)) !=
+                          DemandFit.over ||
                       _fixesHiddenDay == localDayKey(today)
                 ? const <DayFix>[]
                 : _dayFixes(now, timedEvents, todayPriorities);
@@ -1701,6 +1859,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     // show instead of numbers.
                     final energyWords = showNumbers
                         ? null
+                        : live != null
+                        ? capacityLeftWords(live)
                         : briefEnergyState(
                             capacity: capacityScore,
                             usual: usualCapacity,
@@ -1713,7 +1873,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                             demand: shown ? demand : null,
                             capacity: evening
                                 ? tomorrowCapacity
-                                : capacityScore,
+                                : live?.left.round() ?? capacityScore,
                             planFailed: planFailed,
                           );
                     return DailyBriefCard(
@@ -1737,7 +1897,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           ? server.note
                           : capacityEmpty?.label ?? capacityNote,
                       capacityEmptyIcon: capacityEmpty?.icon,
-                      onCapacityTap: server != null
+                      capacityLeft: live,
+                      onCapacityTap: live != null
+                          ? () => _showCapacityToday(
+                              live,
+                              server,
+                              now,
+                              timedEvents,
+                              todayPriorities,
+                              energyWords,
+                            )
+                          : server != null
                           ? () => _showCapacityBreakdown(server, energyWords)
                           // No server Capacity yet (the phone's estimate, or
                           // none before sleep): no breakdown, but past days'
@@ -1757,7 +1927,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                               tomorrowPriorities: tomorrowPriorities,
                               capacity: evening
                                   ? tomorrowCapacity
-                                  : capacityScore,
+                                  : live?.left.round() ?? capacityScore,
                               words: loadWords,
                             ),
                       scheduleScore: shown
@@ -1840,7 +2010,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           AppleInfoItem(
                             'Capacity',
                             server != null
-                                ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
+                                ? 'This morning\'s Capacity is the day\'s budget; during the day the ring counts down by the Effort so far, and what\'s booked is the Demand still ahead. It compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
                                 : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
                             icon: CupertinoIcons.battery_75_percent,
                           ),
@@ -1936,6 +2106,108 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 'with a usual day for you. Sleep counts most (45%), then your '
                 'overnight body (35%), your recent load (20%) and the morning '
                 'check-in (15%).',
+    );
+  }
+
+  /// Today's Capacity as it stands: how much is left of this morning's, what
+  /// went where, what's booked, and Demand against Effort over the last few
+  /// days. Why this morning's number is what it is opens from here.
+  void _showCapacityToday(
+    CapacityLeft live,
+    ServerCapacity? server,
+    DateTime now,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+    BriefState? words,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final until = today.add(const Duration(days: 1));
+    final wrapUp = today.add(Duration(minutes: _wrapUpMinutes));
+    final items = _effortItems(today, events, priorities);
+    final physical = _effortSoFar(now, events, priorities).physical;
+    final spent = effortBreakdown(
+      now: now,
+      from: today,
+      until: until,
+      wrapUp: wrapUp,
+      items: items,
+      untimedDone: _untimedDone(today, priorities),
+      physical: physical,
+    );
+    final ahead = demandBreakdown(
+      now: now,
+      from: today,
+      until: until,
+      wrapUp: wrapUp,
+      items: items,
+      untimedOpen: _untimedOpen(today, priorities),
+    );
+    final left = live.left < 0 ? 0 : live.left.round();
+    final tonight = live.byTonight.round();
+    showScoreBreakdown(
+      context,
+      kicker: 'Capacity today',
+      score: left,
+      words: words,
+      summary: words != null
+          ? 'Of this morning\'s Capacity, against the plan still ahead'
+          : '$left left of ${live.morning} this morning · '
+                '${tonight < 0 ? 'short by ${-tonight} tonight' : '$tonight by tonight'}',
+      history: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (server != null)
+            TextButton(
+              onPressed: () => _showCapacityBreakdown(server, words),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 44),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: VivordoTheme.brand,
+              ),
+              child: Text(
+                words != null
+                    ? 'Why this morning\'s Capacity ›'
+                    : 'Why ${live.morning} this morning ›',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          const ScoreHistory(kind: ScoreHistoryKind.plannedVsActual),
+        ],
+      ),
+      empty: 'Nothing has taken effort or is booked yet today.',
+      sections: [
+        (
+          heading: words != null
+              ? 'Where it went'
+              : 'Where it went · ${spent.total.round()}',
+          rows: [
+            ...spent.mental,
+            if (physical > 0)
+              BreakdownRow(
+                'Workouts and exercise',
+                'Extra calories count when there\'s no exercise',
+                points: physical,
+              ),
+          ],
+        ),
+        (
+          heading: words != null
+              ? 'Booked for later'
+              : 'Booked for later · ${ahead.total.round()}',
+          rows: ahead.rows,
+        ),
+      ],
+      footer:
+          'This morning\'s Capacity is the day\'s budget: the Effort so far '
+          'comes off it, and what\'s booked is the Demand still ahead. In '
+          'the chart each day has two bars. Grey is the Demand that was '
+          'planned for that day. Next to it is the Effort the day actually '
+          'took: purple when it stayed near the plan, orange when it ran '
+          'more than a quarter over.',
     );
   }
 

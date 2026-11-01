@@ -47,6 +47,14 @@ struct WatchSnapshot: Equatable {
   let capacityNote: String
   let demand: Int?
   let demandHeadline: String
+  /// My Day's live Capacity: what's left of this morning's now, and by
+  /// tonight if the plan happens (below 0: short). Nil until the phone
+  /// sends one today.
+  let capacityLeft: Int?
+  let capacityMorning: Int?
+  let capacityByTonight: Int?
+  /// When the live value steps down later today, for complication timelines.
+  let capacityLeftSteps: [Date]
   let stressScore: Int?
   let stressDrivers: [String]
   let latestHeartRate: Int?
@@ -80,12 +88,20 @@ struct WatchSnapshot: Equatable {
     let hasStress = defaults.bool(forKey: "dashboardHasStress")
     let events = events(defaults)
     let demand = demand(defaults, today: today)
+    let path = capacityLeftPath(defaults, today: today)
+    let point = path.last(where: { $0.at <= now }) ?? path.first
+    let morning = int(defaults, "capacityLeftMorning")
+    let live = point != nil && (morning ?? 0) > 0
     return WatchSnapshot(
       capacityScore: hasCapacity ? int(defaults, "capacityScore") : nil,
       capacityLabel: hasCapacity ? defaults.string(forKey: "capacityLabel") ?? "" : "",
       capacityNote: hasCapacity ? defaults.string(forKey: "capacityNote") ?? "" : "",
       demand: demand.value,
       demandHeadline: demand.headline,
+      capacityLeft: live ? max(0, point!.left) : nil,
+      capacityMorning: live ? morning : nil,
+      capacityByTonight: live ? int(defaults, "capacityByTonight") : nil,
+      capacityLeftSteps: path.map(\.at).filter { $0 > now },
       stressScore: hasStress ? int(defaults, "stressScore") : nil,
       stressDrivers: hasStress ? defaults.stringArray(forKey: "stressDrivers") ?? [] : [],
       latestHeartRate: positive(defaults, "siriHeartRateLatest"),
@@ -115,6 +131,17 @@ struct WatchSnapshot: Equatable {
           let value = int(d, "siriDemand") else { return (nil, "") }
     let headline = d.string(forKey: "siriDemandHeadline") ?? ""
     return value < 0 ? (0, "Day's done") : (value, headline)
+  }
+
+  /// The phone's live Capacity path for today: times (ms) and what's left.
+  private static func capacityLeftPath(_ d: UserDefaults, today: String) -> [(at: Date, left: Int)] {
+    guard d.string(forKey: "capacityLeftDay") == today,
+          let times = d.array(forKey: "capacityLeftTimes") as? [NSNumber],
+          let values = d.array(forKey: "capacityLeftValues") as? [NSNumber],
+          times.count == values.count else { return [] }
+    return zip(times, values).map {
+      (Date(timeIntervalSince1970: $0.0.doubleValue / 1000), $0.1.intValue)
+    }
   }
 
   private static func int(_ d: UserDefaults, _ key: String) -> Int? {
