@@ -12,6 +12,7 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
@@ -90,6 +91,54 @@ class HomeWidgetService {
           onError: (Object error) =>
               debugPrint('Widget Capacity unavailable: $error'),
         );
+  }
+
+  static final List<StreamSubscription<Object?>> _watchWorkoutSubscriptions =
+      [];
+  static String? _watchWorkoutsScope;
+
+  /// The Apple Watch's Workout list: saved workouts, each exercise with its
+  /// sets from last time. Refreshed when a template or a workout changes.
+  static void _watchWorkoutTemplates() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _watchWorkoutsScope == user.uid) return;
+    final scope = _watchWorkoutsScope = user.uid;
+    for (final subscription in _watchWorkoutSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _watchWorkoutSubscriptions.clear();
+    var templates = const <WorkoutTemplate>[];
+    var run = 0;
+    Future<void> publish() async {
+      final mine = ++run;
+      try {
+        final shown = templates.take(8).toList(growable: false);
+        final last = await WorkoutService.loadLatestExerciseSets(
+          shown.expand((t) => t.exercises.map((e) => e.name)),
+        );
+        if (mine != run || _watchWorkoutsScope != scope) return;
+        await _channel.invokeMethod<void>('updateSnapshot', {
+          'watchWorkouts': watchWorkoutValues(shown, last),
+        });
+      } catch (error) {
+        debugPrint('Watch workouts update failed: $error');
+      }
+    }
+
+    void onError(Object error) =>
+        debugPrint('Watch workouts unavailable: $error');
+    _watchWorkoutSubscriptions
+      ..add(
+        WorkoutService.watchTemplates().listen((value) {
+          templates = value;
+          unawaited(publish());
+        }, onError: onError),
+      )
+      ..add(
+        WorkoutService.watchRecent(
+          limit: 1,
+        ).listen((_) => unawaited(publish()), onError: onError),
+      );
   }
 
   static int _accountGeneration = 0;
@@ -257,6 +306,20 @@ class HomeWidgetService {
               DateTime.parse(action.day!),
               action.priorityId!,
             );
+          case 'workout':
+            final workout = action.workout!;
+            // One id per watch workout, so a replay of the queue is a no-op.
+            final id = 'watch-${workout.startedAt.millisecondsSinceEpoch}';
+            if (!await WorkoutService.exists(id)) {
+              await WorkoutService.save(
+                id: id,
+                startedAt: workout.startedAt,
+                completedAt: workout.endedAt,
+                durationSeconds: workout.seconds,
+                exercises: workout.exercises,
+                customName: workout.name,
+              );
+            }
         }
         await _channel.invokeMethod<void>('removeWatchActions', [action.id]);
       }
@@ -355,6 +418,11 @@ class HomeWidgetService {
     _capacityScope = null;
     await _capacitySubscription?.cancel();
     _capacitySubscription = null;
+    _watchWorkoutsScope = null;
+    for (final subscription in _watchWorkoutSubscriptions) {
+      await subscription.cancel();
+    }
+    _watchWorkoutSubscriptions.clear();
     _lastSignature = null;
     _lastCalendarSignature = null;
     _lastDemandSignature = null;
@@ -379,6 +447,7 @@ class HomeWidgetService {
         'siriDemand': -1,
         'siriDemandHeadline': '',
         'siriDemandAt': 0,
+        'watchWorkouts': <Map<String, Object>>[],
         'siriMeetingPatterns': <Map<String, Object>>[],
         'steps': 0,
         'stepsGoal': 0,
@@ -444,6 +513,7 @@ class HomeWidgetService {
     if (!Platform.isIOS) return;
     _watchWidgetPriorities();
     _watchCapacity();
+    _watchWorkoutTemplates();
     unawaited(refreshCalendarSnapshot());
     if (_publishing) return;
     _publishing = true;

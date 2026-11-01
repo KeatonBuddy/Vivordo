@@ -7,6 +7,7 @@ struct TodayView: View {
   @EnvironmentObject private var resets: ResetScheduler
   @Environment(\.scenePhase) private var scenePhase
   @State private var showMood = false
+  @State private var showWorkouts = false
 
   var body: some View {
     ScrollView {
@@ -19,6 +20,9 @@ struct TodayView: View {
     .navigationTitle("Today")
     .navigationDestination(isPresented: $showMood) {
       MoodView { showMood = false }
+    }
+    .navigationDestination(isPresented: $showWorkouts) {
+      WorkoutStartView { showWorkouts = false }
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { store.refresh() }
@@ -78,6 +82,10 @@ struct TodayView: View {
       row("Fitness", icon: "figure.walk", color: WatchPalette.stress,
           detail: s.steps.map { "\($0) steps" } ?? "No steps yet") {
         FitnessView()
+      }
+      Button { showWorkouts = true } label: {
+        rowLabel("Workout", icon: "dumbbell.fill", color: WatchPalette.stress,
+                 detail: s.workouts.isEmpty ? "Start one" : "\(s.workouts.count) saved")
       }
 
       if let event = s.nextEvent {

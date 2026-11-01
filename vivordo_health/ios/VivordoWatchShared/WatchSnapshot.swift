@@ -23,6 +23,25 @@ struct WatchSnapshot: Equatable {
     let completed: Bool
   }
 
+  /// A saved workout from the phone (`watchWorkouts`).
+  struct Workout: Equatable, Identifiable {
+    struct Exercise: Equatable {
+      struct Set: Equatable {
+        let weight: Double
+        let reps: Int
+      }
+      let name: String
+      let category: String
+      /// Target sets, when the routine has them.
+      let targetSets: Int?
+      /// The sets from the last time it was done, empty if never.
+      let last: [Set]
+    }
+    let id: String
+    let name: String
+    let exercises: [Exercise]
+  }
+
   let capacityScore: Int?
   let capacityLabel: String
   let capacityNote: String
@@ -44,6 +63,7 @@ struct WatchSnapshot: Equatable {
   /// from another day.
   let priorities: [Priority]
   /// Every timed event the phone sent (this week), unsorted.
+  let workouts: [Workout]
   let events: [Event]
   let nextEvent: Event?
   let updatedAt: Date?
@@ -77,6 +97,7 @@ struct WatchSnapshot: Equatable {
       trainingState: defaults.string(forKey: "siriTrainingState") ?? "",
       priorities: defaults.string(forKey: "dashboardPrioritiesDay") == today
         ? priorities(defaults) : [],
+      workouts: workouts(defaults),
       events: events,
       nextEvent: events.filter { $0.end > now }.min { $0.start < $1.start },
       updatedAt: seconds(defaults, "updatedAt")
@@ -136,6 +157,26 @@ struct WatchSnapshot: Equatable {
           : startMs.map { Date(timeIntervalSince1970: $0 / 1000) },
         completed: item["completed"] as? Bool == true
       )
+    }
+  }
+
+  private static func workouts(_ d: UserDefaults) -> [Workout] {
+    let raw = d.array(forKey: "watchWorkouts") as? [[String: Any]] ?? []
+    return raw.compactMap { item in
+      guard let id = item["id"] as? String, let name = item["name"] as? String else { return nil }
+      let exercises = (item["exercises"] as? [[String: Any]] ?? []).compactMap { e -> Workout.Exercise? in
+        guard let name = e["name"] as? String else { return nil }
+        let last = (e["last"] as? [[String: Any]] ?? []).compactMap { set -> Workout.Exercise.Set? in
+          guard let w = (set["w"] as? NSNumber)?.doubleValue,
+                let r = (set["r"] as? NSNumber)?.intValue else { return nil }
+          return .init(weight: w, reps: r)
+        }
+        return .init(
+          name: name, category: e["category"] as? String ?? "Other",
+          targetSets: (e["sets"] as? NSNumber)?.intValue, last: last
+        )
+      }
+      return exercises.isEmpty ? nil : Workout(id: id, name: name, exercises: exercises)
     }
   }
 

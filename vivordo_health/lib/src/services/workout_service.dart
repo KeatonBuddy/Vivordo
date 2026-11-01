@@ -1019,6 +1019,20 @@ class WorkoutService {
     return latest;
   }
 
+  /// Whether this account already has the workout [id].
+  static Future<bool> exists(String id) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final snapshot = await _readOrNull(
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('workouts')
+          .doc(id),
+    );
+    return snapshot?.exists ?? false;
+  }
+
   /// False when deleted on the phone but still waiting to sync.
   /// Saves the name the user typed for a workout; an empty one goes back to
   /// the generated name. A workout shared to Circle shows it there too.
@@ -1102,6 +1116,11 @@ class WorkoutService {
     required int durationSeconds,
     required List<WorkoutExerciseRecord> exercises,
     bool shareToCircle = false,
+    // A workout recorded elsewhere (the Apple Watch): its own document id,
+    // so saving it twice writes one workout, its real end and its name.
+    String? id,
+    DateTime? completedAt,
+    String? customName,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before saving a workout.');
@@ -1112,7 +1131,7 @@ class WorkoutService {
       debugPrint('Personal best backfill skipped: $error');
     }
 
-    final completedAt = DateTime.now();
+    completedAt ??= DateTime.now();
     final goalMinutes = durationSeconds <= 0
         ? 0
         : (durationSeconds / 60).ceil();
@@ -1122,7 +1141,7 @@ class WorkoutService {
         .collection('users')
         .doc(user.uid)
         .collection('workouts')
-        .doc();
+        .doc(id);
     final setCount = exercises.fold<int>(
       0,
       (total, exercise) => total + exercise.sets.length,
@@ -1282,6 +1301,8 @@ class WorkoutService {
       'personalBestCount': personalBestCount,
       'personalBestVersion': 3,
       'exerciseComparisonVersion': 2,
+      if (customName != null && customName.trim().isNotEmpty)
+        'customName': customName.trim(),
       'createdAt': FieldValue.serverTimestamp(),
     });
     if (shareToCircle) {

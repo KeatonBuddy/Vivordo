@@ -21,9 +21,9 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Vivordo reads your heart rate during a one-minute reset to show how it settled.</string>
+	<string>Vivordo reads your heart rate, energy and distance during workouts, and your heart rate during a one-minute reset.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Vivordo runs a short mindfulness session to read your heart rate; nothing is saved to Health.</string>
+	<string>Vivordo saves the workouts you record on your watch to Health. A one-minute reset saves nothing.</string>
 	<key>WKBackgroundModes</key>
 	<array>
 		<string>workout-processing</string>

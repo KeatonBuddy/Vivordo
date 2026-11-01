@@ -43,10 +43,12 @@
 		B48F54D169529C1523ED876D /* MyDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7C7B1398AD6974667D1B60 /* MyDayView.swift */; };
 		BA644C2995CE208BC7A4E151 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9769B0E1461A63F68FE8B3C5 /* SwiftUI.framework */; };
 		C1E08F341412F1820D2E9ACB /* ResetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 760B1B72AC74A7E8F6EF61C0 /* ResetView.swift */; };
+		CEDCE221C9789951F5B8A162 /* WorkoutViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76E8C22F1C9B00672DC3F034 /* WorkoutViews.swift */; };
 		CF092A7BC7FDA92CE5AD2A17 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3181F6BE4FDE79825768400D /* Foundation.framework */; };
 		D45E7AF08880A7FEC2C5669B /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297BF264381953EB62A48DAA /* TodayView.swift */; };
 		D4CA8C230FAB17E1E450DA9A /* ScoreRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */; };
 		DF1F84554B27D077E880C159 /* WatchSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */; };
+		E036756C1D661903DD5A4D6D /* WorkoutSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B9DCFD148260B3754FC206 /* WorkoutSession.swift */; };
 		E3EA9C7A363A6733DC155342 /* WatchActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88B87152E6B8ADFDEC981B98 /* WatchActions.swift */; };
 		EA69AD591C2E2EC76AAD0D3F /* WatchSnapshotBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5A2425EC427CDDAD9FFA983 /* WatchSnapshotBridge.swift */; };
 		F3A3A110376E9A3FDE7A8F9A /* WorkoutActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2324904A0C68F265553A812D /* WorkoutActivityAttributes.swift */; };
@@ -140,6 +142,7 @@
 		3181F6BE4FDE79825768400D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		35B9DCFD148260B3754FC206 /* WorkoutSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutSession.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3DC4890E3C3D574D142A19D7 /* VivordoLiveActivities.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VivordoLiveActivities.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FD3968F644F6A67988533E5 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
@@ -156,6 +159,7 @@
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		760B1B72AC74A7E8F6EF61C0 /* ResetView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ResetView.swift; sourceTree = "<group>"; };
+		76E8C22F1C9B00672DC3F034 /* WorkoutViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutViews.swift; sourceTree = "<group>"; };
 		78E0A7A72DC9AD7400C4905E /* FlutterGeneratedPluginSwiftPackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = FlutterGeneratedPluginSwiftPackage; path = Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage; sourceTree = "<group>"; };
 		7A2C736C8D8592AB905B47CF /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
@@ -363,6 +367,8 @@
 				E99DF6AB92711D6C2FBFEFB0 /* StressView.swift */,
 				B1A79693329E1D53CE756A02 /* FitnessView.swift */,
 				163A7586292778F218997B2A /* MoodView.swift */,
+				35B9DCFD148260B3754FC206 /* WorkoutSession.swift */,
+				76E8C22F1C9B00672DC3F034 /* WorkoutViews.swift */,
 			);
 			name = VivordoWatch;
 			path = VivordoWatch;
@@ -738,6 +744,8 @@
 				45CDCD51A31FD6A1A3F89B37 /* StressView.swift in Sources */,
 				1F9ADE109388958A762C2A07 /* FitnessView.swift in Sources */,
 				9C4504B371B6065BB81EBBD0 /* MoodView.swift in Sources */,
+				E036756C1D661903DD5A4D6D /* WorkoutSession.swift in Sources */,
+				CEDCE221C9789951F5B8A162 /* WorkoutViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
