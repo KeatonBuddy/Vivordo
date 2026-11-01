@@ -2019,10 +2019,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         if (leftOut.isNotEmpty) (heading: 'Not counted', rows: leftOut),
       ],
       footer:
-          '${words != null ? 'Heaviest first, each event on its own' : 'Each event\'s points on its own'}; '
-          'back-to-backs and long runs are on their own line. Tap an event to '
-          'change its type. Not counted: Free, declined and all-day events, '
-          'and anything already done.',
+          'Each day has two bars. Grey is the Demand that was planned for '
+          'that day. Next to it is the Effort the day actually took: purple '
+          'when it stayed near the plan, orange when it ran more than a '
+          'quarter over.',
     );
   }
 
