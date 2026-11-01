@@ -52,6 +52,33 @@ void main() {
     expect(f.phaseAt(at(10)), EnergyPhase.peak);
   });
 
+  test("tonight's bedtime comes from nights like tonight", () {
+    // Work nights 11 PM–7 AM, weekend nights 3–11 AM, two weeks to Sunday
+    // Oct 11.
+    final mixed = [
+      for (var i = 0; i < 14; i++)
+        () {
+          final day = DateTime(2026, 10, 11 - i);
+          final end = day.add(
+            Duration(hours: day.weekday >= DateTime.saturday ? 11 : 7),
+          );
+          return (
+            start: end.subtract(const Duration(hours: 8)),
+            end: end,
+            asleepHours: null,
+          );
+        }(),
+    ];
+    bedBy(int d) => forecastEnergy(
+      day: DateTime(2026, 10, d),
+      nights: mixed,
+      sleepNeedHours: 8,
+    ).usualBedtime;
+    // Sunday night is a work night; Friday's isn't.
+    expect(bedBy(11), DateTime(2026, 10, 11, 23));
+    expect(bedBy(9), DateTime(2026, 10, 10, 3));
+  });
+
   test('a short night lowers the peak and deepens the dip', () {
     final rested = forecastEnergy(
       day: day,

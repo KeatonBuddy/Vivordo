@@ -212,12 +212,24 @@ EnergyForecast forecastEnergy({
       : usual != null
       ? usualHours
       : need;
-  // Tonight's scheduled bedtime, so a Friday uses the weekend's.
+  // Tonight's bedtime from nights like tonight: weekend nights before a
+  // Saturday or Sunday, work nights otherwise. The body clock above prefers
+  // weekends, but a Sunday that followed it would put bed in the small hours.
+  final tomorrow = DateTime(date.year, date.month, date.day + 1);
+  bool isFree(DateTime d) => d.weekday >= DateTime.saturday;
+  final alike = recent.where((n) => isFree(n.end) == isFree(tomorrow));
   final usualBedtime = usual != null
-      ? schedule!
-            .nightEnding(DateTime(date.year, date.month, date.day + 1))
-            .start
-      : _toQuarter(anchor.add(_fromHours(24 - usualHours / 2)));
+      ? schedule!.nightEnding(tomorrow).start
+      : _toQuarter(
+          tomorrow.add(
+            _fromHours(
+              (history && alike.length >= 2
+                      ? _median([for (final n in alike) midOf(n)])
+                      : midSleep) -
+                  usualHours / 2,
+            ),
+          ),
+        );
 
   final debt = math.min(
     _maxDebtHours,
