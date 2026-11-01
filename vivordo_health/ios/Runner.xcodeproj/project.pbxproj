@@ -261,7 +261,6 @@
 				C4C90F42F3594F8501865A1C /* WatchSnapshot.swift */,
 				8E1B3D7A74D92D71DC607E3E /* ScoreRing.swift */,
 			);
-			name = VivordoWatchShared;
 			path = VivordoWatchShared;
 			sourceTree = "<group>";
 		};
@@ -370,7 +369,6 @@
 				35B9DCFD148260B3754FC206 /* WorkoutSession.swift */,
 				76E8C22F1C9B00672DC3F034 /* WorkoutViews.swift */,
 			);
-			name = VivordoWatch;
 			path = VivordoWatch;
 			sourceTree = "<group>";
 		};
@@ -403,7 +401,6 @@
 				B7219B281A5B74845B0A87C6 /* Info.plist */,
 				6FEF2950D00951151414E8ED /* VivordoWatchComplications.entitlements */,
 			);
-			name = VivordoWatchComplications;
 			path = VivordoWatchComplications;
 			sourceTree = "<group>";
 		};
@@ -835,7 +832,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
@@ -864,7 +861,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = VivordoLiveActivities/VivordoLiveActivities.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoLiveActivities/Info.plist;
@@ -889,7 +886,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -971,7 +968,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -999,7 +996,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
@@ -1078,7 +1075,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatchComplications/VivordoWatchComplications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoWatchComplications/Info.plist;
@@ -1109,7 +1106,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1139,7 +1136,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = VivordoLiveActivities/VivordoLiveActivities.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoLiveActivities/Info.plist;
@@ -1274,7 +1271,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -1304,7 +1301,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
@@ -1334,7 +1331,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = VivordoWatch/VivordoWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1363,7 +1360,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = VivordoLiveActivities/VivordoLiveActivities.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_TEAM = A7H9K44LB4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VivordoLiveActivities/Info.plist;
