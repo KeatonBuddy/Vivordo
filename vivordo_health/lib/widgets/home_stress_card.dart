@@ -182,7 +182,7 @@ class _HomeStressCardState extends State<HomeStressCard>
             // The header's 44 pt info target takes 10 pt from the padding
             // above and the gap below it, so nothing moves.
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -194,8 +194,8 @@ class _HomeStressCardState extends State<HomeStressCard>
                       children: [
                         RepaintBoundary(
                           child: SizedBox(
-                            width: 104,
-                            height: 104,
+                            width: 84,
+                            height: 84,
                             child: AnimatedBuilder(
                               animation: _scoreAnimation,
                               child: _ringCenter(displayedScore),
@@ -208,19 +208,23 @@ class _HomeStressCardState extends State<HomeStressCard>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14),
                         Expanded(child: _summary(displayedScore)),
                       ],
                     ),
                   if (!_noReading) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     _action(action),
                   ] else if (widget.onScanTap case final onScan?) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     _scanButton(onScan),
                   ],
-                  const SizedBox(height: 12),
-                  _footer(),
+                  // "Updated …" sits in the header; only the longer notes
+                  // (no reading yet) keep a line of their own.
+                  if (widget.updatedAt == null && !widget.updating) ...[
+                    const SizedBox(height: 10),
+                    _footer(),
+                  ],
                 ],
               ),
             ),
@@ -255,7 +259,38 @@ class _HomeStressCardState extends State<HomeStressCard>
           fontWeight: FontWeight.w700,
         ),
       ),
+      if (widget.updatedAt != null || widget.updating) ...[
+        if (widget.updating) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CupertinoActivityIndicator(
+              color: Colors.white.withValues(alpha: 0.72),
+              radius: 6,
+            ),
+          ),
+        ],
+        Flexible(
+          child: Text(
+            widget.updating ? '  Updating' : ' · ${_updatedLabel()}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _label,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
       const Spacer(),
+      // The dark badge keeps the white WHOOP mark legible on the gradient.
+      if (widget.showWhoopBadge)
+        Theme(
+          data: VivordoTheme.dark,
+          child: const WhoopSourceBadge(compact: true),
+        ),
       Semantics(
         button: true,
         label: 'About your stress score',
@@ -279,7 +314,7 @@ class _HomeStressCardState extends State<HomeStressCard>
 
   // Shrinks to fit inside the ring at large text sizes.
   Widget _ringCenter(double? displayedScore) => Padding(
-    padding: const EdgeInsets.all(14),
+    padding: const EdgeInsets.all(11),
     child: FittedBox(
       fit: BoxFit.scaleDown,
       child: widget.loading
@@ -419,13 +454,14 @@ class _HomeStressCardState extends State<HomeStressCard>
     ],
   );
 
+  // One line under a hairline, not a boxed panel.
   Widget _action(String action) => Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.only(top: 10),
     decoration: BoxDecoration(
-      color: const Color(0xFF171344).withValues(alpha: 0.28),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      border: Border(
+        top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+      ),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -477,35 +513,13 @@ class _HomeStressCardState extends State<HomeStressCard>
     ),
   );
 
-  Widget _footer() => Row(
-    children: [
-      if (widget.updating) ...[
-        SizedBox(
-          width: 12,
-          height: 12,
-          child: CupertinoActivityIndicator(
-            color: Colors.white.withValues(alpha: 0.72),
-            radius: 6,
-          ),
-        ),
-        const SizedBox(width: 6),
-      ],
-      Text(
-        _updatedLabel(),
-        style: const TextStyle(
-          color: _label,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      const Spacer(),
-      // The dark badge keeps the white WHOOP mark legible on the gradient.
-      if (widget.showWhoopBadge)
-        Theme(
-          data: VivordoTheme.dark,
-          child: const WhoopSourceBadge(compact: true),
-        ),
-    ],
+  Widget _footer() => Text(
+    _updatedLabel(),
+    style: const TextStyle(
+      color: _label,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    ),
   );
 
   String _updatedLabel() {

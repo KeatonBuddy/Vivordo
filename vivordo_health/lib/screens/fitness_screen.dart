@@ -646,14 +646,14 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                         )
                       : widget.onTap,
                   child: Padding(
-                    padding: const EdgeInsets.all(18),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
                     child: Column(
                       children: [
                         Row(
                           children: [
                             SizedBox(
-                              width: 86,
-                              height: 86,
+                              width: 68,
+                              height: 68,
                               child: Semantics(
                                 label:
                                     'Activity rings: '
@@ -675,7 +675,7 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -688,18 +688,18 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                       color: Color(0xFFE8E0FF),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
                                   Text(
                                     noSource
                                         ? 'Connect Apple Health'
                                         : '${3 - open.length} of 3 closed',
                                     style: const TextStyle(
-                                      fontSize: 25,
+                                      fontSize: 21,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(height: 2),
                                   Text(
                                     noSource
                                         ? 'To track your steps, calories and exercise'
@@ -720,35 +720,42 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         Container(
                           height: 1,
                           color: Colors.white.withValues(alpha: .15),
                         ),
-                        const SizedBox(height: 12),
-                        IntrinsicHeight(
-                          child: Row(
-                            children: [
-                              for (var i = 0; i < rings.length; i++) ...[
-                                if (i > 0)
-                                  VerticalDivider(
-                                    width: 1,
-                                    color: Colors.white.withValues(alpha: .15),
+                        const SizedBox(height: 9),
+                        // Three numbers in a row: grows only so far, so they
+                        // stay the same size side by side.
+                        MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: IntrinsicHeight(
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < rings.length; i++) ...[
+                                  if (i > 0)
+                                    VerticalDivider(
+                                      width: 1,
+                                      color: Colors.white.withValues(
+                                        alpha: .15,
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: _HeroStat(
+                                      color: i == 0
+                                          ? Colors.white
+                                          : ActivityRingsPainter.ringColors[i],
+                                      value: noSource
+                                          ? '—'
+                                          : number.format(rings[i].$1),
+                                      detail:
+                                          '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
+                                    ),
                                   ),
-                                Expanded(
-                                  child: _HeroStat(
-                                    color: i == 0
-                                        ? Colors.white
-                                        : ActivityRingsPainter.ringColors[i],
-                                    value: noSource
-                                        ? '—'
-                                        : number.format(rings[i].$1),
-                                    detail:
-                                        '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
-                                  ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -859,39 +866,41 @@ class _HeroStat extends StatelessWidget {
   final Color color;
   final String value, detail;
 
+  // One line: the dot, the value and its goal ("● 0 / 10,000 steps").
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
     children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 5),
+      Flexible(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
+                TextSpan(
+                  text: ' $detail',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFE8E0FF),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-      const SizedBox(height: 2),
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          detail,
-          style: const TextStyle(fontSize: 11, color: Color(0xFFE8E0FF)),
         ),
       ),
     ],
