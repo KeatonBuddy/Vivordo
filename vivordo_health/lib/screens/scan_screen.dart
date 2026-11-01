@@ -44,6 +44,16 @@ class _ScanScreenState extends State<ScanScreen>
   Future<void>? _cameraInitialization;
   ScanState _scanState = ScanState.idle;
   final List<double> _redValues = [];
+  final List<double> _greenValues = [];
+
+  /// Seconds into the scan at which each sample's frame arrived.
+  final List<double> _sampleTimes = [];
+  final Stopwatch _scanClock = Stopwatch();
+
+  /// Exposure and finger pressure are still settling for the first moments,
+  /// so those frames aren't recorded.
+  static const double _settleSeconds = 2.0;
+  bool _cameraLocked = false;
   bool _isProcessingFrame = false;
   int _fingerDetectedFrames = 0;
 
@@ -64,6 +74,7 @@ class _ScanScreenState extends State<ScanScreen>
   final int _scanDurationSeconds = 15;
   double _progress = 0.0;
   double _finalBpm = 0.0;
+  double _finalQuality = 0.0;
   bool _hasTorch = true;
   bool _scanArmed = false;
   bool _isStartingScan = false;
@@ -354,8 +365,8 @@ class _ScanScreenState extends State<ScanScreen>
           }
           _isProcessingFrame = true;
           try {
-            final redMean = _extractAverageRed(image);
-            final fingerDetected = redMean > _fingerRedThreshold;
+            final colour = _extractAverageColour(image);
+            final fingerDetected = colour.red > _fingerRedThreshold;
 
             if (fingerDetected) {
               _fingerDetectedFrames++;
@@ -366,7 +377,7 @@ class _ScanScreenState extends State<ScanScreen>
               }
 
               if (_scanState == ScanState.scanning) {
-                _redValues.add(redMean);
+                _recordSample(colour.red, colour.green);
               }
             } else {
               _fingerDetectedFrames = 0;
@@ -381,16 +392,47 @@ class _ScanScreenState extends State<ScanScreen>
         });
   }
 
-  double _extractAverageRed(CameraImage image) {
-    if (image.planes.isEmpty) return 0.0;
+  ({double red, double green}) _extractAverageColour(CameraImage image) {
+    if (image.planes.isEmpty) return (red: 0.0, green: 0.0);
     final bytes = image.planes[0].bytes;
     double redSum = 0;
+    double greenSum = 0;
     int pixelCount = 0;
+    // BGRA: byte i is red, i - 1 green.
     for (int i = 2; i < bytes.length; i += 400) {
       redSum += bytes[i];
+      greenSum += bytes[i - 1];
       pixelCount++;
     }
-    return pixelCount == 0 ? 0 : redSum / pixelCount;
+    if (pixelCount == 0) return (red: 0.0, green: 0.0);
+    return (red: redSum / pixelCount, green: greenSum / pixelCount);
+  }
+
+  void _recordSample(double red, double green) {
+    final t = _scanClock.elapsedMicroseconds / 1e6;
+    if (t < _settleSeconds) return;
+    if (!_cameraLocked) {
+      // Exposure has settled on the lit fingertip; freeze it and focus so
+      // the camera's own adjustments don't ride on the pulse.
+      _cameraLocked = true;
+      unawaited(_setCameraLocked(true));
+    }
+    _redValues.add(red);
+    _greenValues.add(green);
+    _sampleTimes.add(t);
+  }
+
+  Future<void> _setCameraLocked(bool locked) async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller.setExposureMode(
+        locked ? ExposureMode.locked : ExposureMode.auto,
+      );
+      await controller.setFocusMode(locked ? FocusMode.locked : FocusMode.auto);
+    } catch (e) {
+      debugPrint('[PPG] Could not ${locked ? 'lock' : 'unlock'} camera: $e');
+    }
   }
 
   void _startScan() {
@@ -401,10 +443,16 @@ class _ScanScreenState extends State<ScanScreen>
       _scanState = ScanState.scanning;
       _fingerLifted = false;
       _redValues.clear();
+      _greenValues.clear();
+      _sampleTimes.clear();
+      _cameraLocked = false;
       _fingerDetectedFrames = 0;
       _scanStartTime = DateTime.now();
       _progress = 0.0;
     });
+    _scanClock
+      ..reset()
+      ..start();
     if (!_reduceMotion) _spinController.repeat();
 
     _scanTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
@@ -425,6 +473,10 @@ class _ScanScreenState extends State<ScanScreen>
     if (!mounted) return;
     _scanTimer?.cancel();
     _spinController.stop();
+    if (_cameraLocked) {
+      _cameraLocked = false;
+      unawaited(_setCameraLocked(false));
+    }
     HapticFeedback.heavyImpact();
     setState(() {
       _scanState = ScanState.idle;
@@ -450,8 +502,11 @@ class _ScanScreenState extends State<ScanScreen>
       await controller.dispose().catchError((_) {});
     }
 
-    final durationSecs =
-        DateTime.now().difference(_scanStartTime!).inMilliseconds / 1000.0;
+    // Real time between the first and last recorded frame; camera teardown
+    // above doesn't count.
+    final durationSecs = _sampleTimes.isEmpty
+        ? 0.0
+        : _sampleTimes.last - _sampleTimes.first;
 
     if (_redValues.isNotEmpty) {
       final minRed = _redValues.reduce(min);
@@ -463,18 +518,20 @@ class _ScanScreenState extends State<ScanScreen>
     }
 
     //final bpmResult = (60 + Random().nextInt(41)).toDouble(); <-- demo
-    final algorithmBpm = PpgAlgorithm.calculateBPM(_redValues, durationSecs);
-    final peakBpm = _calculatePeakIntervalBpm(_redValues, durationSecs);
-    final minAcceptableBpm = _hasTorch ? 55.0 : 45.0;
-    final bpmResult = peakBpm > 0
-        ? peakBpm
-        : (algorithmBpm > minAcceptableBpm ? algorithmBpm : 0.0);
-    final qualityScore = PpgAlgorithm.calculateQuality(
-      _redValues,
-      durationSecs,
-    );
+    // A bright fingertip can max out red and flatten the pulse tops; green is
+    // weaker but rarely clipped, so use whichever carries the cleaner beat.
+    final redClarity = PpgAlgorithm.clarity(_redValues, _sampleTimes);
+    final greenClarity = PpgAlgorithm.clarity(_greenValues, _sampleTimes);
+    final signal = greenClarity > redClarity ? _greenValues : _redValues;
+    final reading = PpgAlgorithm.heartRate(signal, _sampleTimes);
+    // A shaky or unclear scan isn't saved: a wrong reading does more harm
+    // than asking for another try.
+    final bpmResult = reading.quality >= PpgAlgorithm.minQuality
+        ? reading.bpm
+        : 0.0;
+    final qualityScore = reading.quality;
     debugPrint(
-      '[PPG] algorithmBpm=$algorithmBpm, peakBpm=$peakBpm, finalBpm=$bpmResult, qualityScore=$qualityScore',
+      '[PPG] redClarity=$redClarity, greenClarity=$greenClarity, fftBpm=${reading.fftBpm}, peakBpm=${reading.peakBpm}, finalBpm=$bpmResult, qualityScore=$qualityScore',
     );
 
     if (bpmResult > 0) {
@@ -483,6 +540,7 @@ class _ScanScreenState extends State<ScanScreen>
         HapticFeedback.mediumImpact();
         setState(() {
           _finalBpm = bpmResult;
+          _finalQuality = qualityScore;
           _scanState = ScanState.success;
         });
       }
@@ -497,79 +555,6 @@ class _ScanScreenState extends State<ScanScreen>
         });
       }
     }
-  }
-
-  double _calculatePeakIntervalBpm(List<double> values, double durationSecs) {
-    if (values.length < 100 || durationSecs <= 0) return 0.0;
-
-    final sampleRate = values.length / durationSecs;
-    if (sampleRate <= 0) return 0.0;
-
-    final mean = values.reduce((a, b) => a + b) / values.length;
-    final variance =
-        values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) /
-        values.length;
-    final sd = sqrt(variance);
-    if (sd < 0.5) return 0.0;
-
-    // Light smoothing helps remove frame-to-frame camera noise while preserving pulse waves.
-    final smoothed = <double>[];
-    for (int i = 0; i < values.length; i++) {
-      final start = max(0, i - 2);
-      final end = min(values.length - 1, i + 2);
-      double sum = 0;
-      int count = 0;
-      for (int j = start; j <= end; j++) {
-        sum += values[j] - mean;
-        count++;
-      }
-      smoothed.add(sum / count);
-    }
-
-    final threshold = 0.04 * sd;
-    final minGap = (sampleRate * 60.0 / 140.0).round();
-    final maxGap = (sampleRate * 60.0 / 45.0).round();
-
-    final peaks = <int>[];
-    int lastPeak = -9999;
-
-    for (int i = 1; i < smoothed.length - 1; i++) {
-      final isLocalMax =
-          smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1];
-      final isTallEnough = smoothed[i] > threshold;
-      final isFarEnough = i - lastPeak >= minGap;
-
-      if (isLocalMax && isTallEnough && isFarEnough) {
-        peaks.add(i);
-        lastPeak = i;
-      }
-    }
-
-    final intervals = <double>[];
-    for (int i = 1; i < peaks.length; i++) {
-      final gap = peaks[i] - peaks[i - 1];
-      if (gap >= minGap && gap <= maxGap) {
-        intervals.add(gap / sampleRate);
-      }
-    }
-
-    if (intervals.length < 2) {
-      debugPrint(
-        '[PPG] peak detector rejected: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, minGap=$minGap, maxGap=$maxGap',
-      );
-      return 0.0;
-    }
-
-    intervals.sort();
-    final medianInterval = intervals[intervals.length ~/ 2];
-    final bpm = 60.0 / medianInterval;
-
-    debugPrint(
-      '[PPG] peak detector: peaks=${peaks.length}, intervals=${intervals.length}, sampleRate=$sampleRate, bpm=$bpm',
-    );
-
-    if (bpm < 45 || bpm > 160) return 0.0;
-    return bpm;
   }
 
   Future<void> _saveToFirestore(int bpm, double signalQuality) async {
@@ -697,7 +682,10 @@ class _ScanScreenState extends State<ScanScreen>
       _scanState = ScanState.idle;
       _progress = 0.0;
       _finalBpm = 0.0;
+      _finalQuality = 0.0;
       _redValues.clear();
+      _greenValues.clear();
+      _sampleTimes.clear();
       _fingerDetectedFrames = 0;
       _fingerLifted = false;
       _errorTitle = 'Camera unavailable';
@@ -1432,22 +1420,10 @@ class _ScanScreenState extends State<ScanScreen>
     // theme's readable status tones.
     final status = context.vivordoColors;
     const heartColor = accentPurple;
-    final qualityScore = PpgAlgorithm.calculateQuality(
-      _redValues,
-      _scanDurationSeconds.toDouble(),
-    );
-
-    final qualityLabel = qualityScore >= 0.7
-        ? 'Good'
-        : qualityScore >= 0.4
-        ? 'Fair'
-        : 'Weak';
-
-    final qualityColor = qualityScore >= 0.7
-        ? status.success
-        : qualityScore >= 0.4
-        ? status.warning
-        : status.danger;
+    // Scans below PpgAlgorithm.minQuality never get here, so only two bands.
+    final goodSignal = _finalQuality >= 0.75;
+    final qualityLabel = goodSignal ? 'Good' : 'Fair';
+    final qualityColor = goodSignal ? status.success : status.warning;
 
     return Column(
       children: [
