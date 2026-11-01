@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/daily_tags_service.dart';
+import 'apple_ui.dart';
 
 /// The tags offered for a night, in order. Ids are what's stored.
 const dailyTags = <({String id, String label, IconData icon})>[
@@ -19,6 +20,35 @@ const dailyTags = <({String id, String label, IconData icon})>[
   (id: 'sick', label: 'Sick', icon: Icons.sick_outlined),
   (id: 'travel', label: 'Travel', icon: CupertinoIcons.airplane),
 ];
+
+/// Tags last night sick (the energy forecast eases today for it), with a
+/// toast either way.
+Future<void> tagLastNightSick(BuildContext context) async {
+  final today = DateUtils.dateOnly(DateTime.now());
+  final night = DateTime(today.year, today.month, today.day - 1);
+  try {
+    await DailyTagsService.save(night, {
+      ...await DailyTagsService.load(night),
+      'sick',
+    });
+    if (context.mounted) {
+      showToast(
+        context,
+        'Tagged sick for last night. Go easy today.',
+        kind: ToastKind.success,
+      );
+    }
+  } catch (error) {
+    debugPrint('Tag sick failed: $error');
+    if (context.mounted) {
+      showToast(
+        context,
+        "Couldn't save the tag. Try again.",
+        kind: ToastKind.error,
+      );
+    }
+  }
+}
 
 /// "alcohol and late meal", in the offered order.
 String dailyTagsPhrase(Set<String> tags) {

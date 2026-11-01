@@ -295,23 +295,14 @@ void main() {
     });
 
     test('a run of long sleep, but not when it pays back debt', () {
-      // A usual week at 7h 15m, then 5 of 7 nights over 9 hours.
-      DetailInsight week(double before) => sleepInsight(
-        nights: {
-          for (var i = 7; i < 14; i++) back(i): SleepNight(before),
-          for (var i = 0; i < 7; i++) back(i): SleepNight(i < 5 ? 9.25 : 7.5),
-        },
-        today: today,
-        rangeDays: 7,
-        need: 7.25,
-      );
-      expect(
-        week(7.25).text,
-        startsWith('You\'ve slept a lot longer than usual'),
-      );
-      expect(week(7.25).tone, InsightTone.concern);
+      // A week at [before], then 5 of 7 nights over 9 hours (last night
+      // first).
+      List<double?> nights(double before) => [
+        for (var i = 0; i < 14; i++) i >= 7 ? before : (i < 5 ? 9.25 : 7.5),
+      ];
+      expect(longSleepAverage(nights(7.25), 7.25), closeTo(8.75, .01));
       // After a short week, the long nights are recovery.
-      expect(week(5.5).text, isNot(contains('a lot longer')));
+      expect(longSleepAverage(nights(5.5), 7.25), isNull);
       // Not before the need is real.
       expect(longSleepAverage(List.filled(14, 9.5), null), isNull);
     });

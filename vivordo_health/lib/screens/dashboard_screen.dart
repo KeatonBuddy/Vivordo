@@ -23,7 +23,7 @@ import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'physical_health_screen.dart';
-import '../src/services/daily_tags_service.dart';
+import '../widgets/daily_tags.dart' show tagLastNightSick;
 import '../src/utils/metrics_insights.dart';
 import '../src/utils/physical_health_view.dart';
 import '../widgets/building_ring_centre.dart';
@@ -606,21 +606,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (_enabledKeyMetrics.isEmpty)
                 _buildNoKeyMetricsCard()
               else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final tileWidth = (constraints.maxWidth - 12) / 2;
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: _keyMetricOrder
-                          .where(_enabledKeyMetrics.contains)
-                          .map(
-                            (metric) => SizedBox(
-                              width: tileWidth,
-                              child: _buildKeyMetricFor(metric, snap),
+                Builder(
+                  builder: (context) {
+                    final tiles = [
+                      for (final metric in _keyMetricOrder.where(
+                        _enabledKeyMetrics.contains,
+                      ))
+                        _buildKeyMetricFor(metric, snap),
+                    ];
+                    // Rows of two; both tiles in a row take the taller one's
+                    // height, so each tile is only as tall as its text.
+                    return Column(
+                      children: [
+                        for (var i = 0; i < tiles.length; i += 2)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i + 2 < tiles.length ? 10 : 0,
                             ),
-                          )
-                          .toList(),
+                            child: IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(child: tiles[i]),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: i + 1 < tiles.length
+                                        ? tiles[i + 1]
+                                        : const SizedBox.shrink(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -689,7 +707,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const PhysicalHealthScreen())),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           child: Row(
             children: [
               Expanded(
@@ -704,7 +722,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 10,
@@ -715,7 +733,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Text(
                             score == null ? '--' : score.round().toString(),
                             style: const TextStyle(
-                              fontSize: 46,
+                              fontSize: 38,
                               height: 1,
                               fontWeight: FontWeight.w900,
                             ),
@@ -740,7 +758,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     if (view != null && view.score != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
                         view.note,
                         style: TextStyle(
@@ -749,26 +767,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               : view.note.startsWith('↑')
                               ? greenColor
                               : context.vivordoColors.textSecondary,
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Text(
                       explanation,
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
-                        height: 1.35,
+                        fontSize: 13,
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               SizedBox(
-                width: 92,
-                height: 92,
+                width: 76,
+                height: 76,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -778,13 +797,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           : view?.building == null
                           ? 0
                           : buildingProgress(view!.building!) / 100,
-                      strokeWidth: 10,
+                      strokeWidth: 8,
                       strokeCap: StrokeCap.round,
                       color: color,
                       backgroundColor: context.vivordoColors.cardMuted,
                     ),
                     if (view?.building case final building?)
-                      BuildingRingCentre(building, width: 60)
+                      BuildingRingCentre(building, width: 52)
                     else
                       Container(
                         width: 45,
@@ -971,71 +990,61 @@ class _DashboardScreenState extends State<DashboardScreen> {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          // At least 160pt, taller when large text needs it.
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 160),
-            child: Padding(
-              padding: const EdgeInsets.all(15),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 43,
-                    height: 43,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: .1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: color, size: 23),
+          // As tall as its text; the row makes both tiles match.
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 43,
+                  height: 43,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: .1),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, height: 1.2),
-                        ),
-                        const SizedBox(height: 5),
-                        SizedBox(
-                          height: 31,
-                          width: double.infinity,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                value,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: color,
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          detail,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                  child: Icon(icon, color: color, size: 23),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, height: 1.2),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          value,
+                          maxLines: 1,
                           style: TextStyle(
-                            color: context.vivordoColors.textSecondary,
-                            fontSize: 12,
-                            height: 1.2,
+                            color: color,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: context.vivordoColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1076,7 +1085,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 action: switch (insight.action) {
                   MetricsInsightAction.tagSick => (
                     label: 'Tag sick',
-                    onTap: _tagSick,
+                    onTap: () => tagLastNightSick(context),
                   ),
                   null => null,
                 },
@@ -1102,34 +1111,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
-  }
-
-  /// Tags last night sick (the energy forecast eases today for it).
-  Future<void> _tagSick() async {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final night = DateTime(today.year, today.month, today.day - 1);
-    try {
-      await DailyTagsService.save(night, {
-        ...await DailyTagsService.load(night),
-        'sick',
-      });
-      if (mounted) {
-        showToast(
-          context,
-          'Tagged sick for last night. Go easy today.',
-          kind: ToastKind.success,
-        );
-      }
-    } catch (error) {
-      debugPrint('Tag sick failed: $error');
-      if (mounted) {
-        showToast(
-          context,
-          "Couldn't save the tag. Try again.",
-          kind: ToastKind.error,
-        );
-      }
-    }
   }
 
   Widget _insightRow({

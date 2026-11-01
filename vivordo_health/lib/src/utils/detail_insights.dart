@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
+
+part 'sleep_patterns.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
 /// with their own usual rather than population cut-offs.
@@ -356,16 +360,8 @@ DetailInsight sleepInsight({
     text +=
         ' Wake time was within an hour of usual on $onTime of ${woke.length} mornings.';
   }
+  // A run of long sleep shows in sleepPatterns instead.
   final short = need != null && (need - average) * 60 >= 30;
-  if (rangeDays == 7) {
-    final long = longSleepAverage([
-      for (var i = 0; i < 14; i++)
-        nights[DateTime(day.year, day.month, day.day - i)]?.hours,
-    ], need);
-    if (long != null) {
-      return DetailInsight(longSleepText(long, need!), InsightTone.concern);
-    }
-  }
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
 }
 

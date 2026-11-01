@@ -19,6 +19,8 @@ import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import 'package:vivordo_health/widgets/daily_tags.dart' show tagLastNightSick;
+import 'package:vivordo_health/widgets/sleep_patterns_section.dart';
 import 'sleep_preferences_screen.dart';
 import '../src/utils/chart_text.dart';
 
@@ -55,6 +57,22 @@ Future<void> refreshConnectedSleepSources(
   }
 }
 
+/// The minutes after midnight of [day]'s first event in an effort_inputs
+/// document, or null when it has none that day.
+int? firstEventMinutes(String day, Map<String, dynamic> data) {
+  final date = DateTime.tryParse(day);
+  final events = data['events'];
+  if (date == null || events is! List) return null;
+  final starts = [
+    for (final event in events)
+      if (event is Map && event['start'] is Timestamp)
+        (event['start'] as Timestamp).toDate().toLocal(),
+  ].where((start) => DateUtils.isSameDay(start, date));
+  return starts.isEmpty
+      ? null
+      : starts.map((start) => start.hour * 60 + start.minute).reduce(math.min);
+}
+
 bool includesWhoopSleepSource(Iterable<String?> sources) =>
     sources.any((source) => source?.toLowerCase() == 'whoop');
 
@@ -84,7 +102,64 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   void initState() {
     super.initState();
     unawaited(_loadSleepNeed());
+    unawaited(_loadPatternInputs());
   }
+
+  /// "Your patterns" also reads night tags (by evening) and each day's
+  /// first calendar event (minutes after midnight; times only, as
+  /// DayRecordService writes them).
+  Map<DateTime, Set<String>> _tags = const {};
+  Map<DateTime, int> _firstEvents = const {};
+
+  Future<void> _loadPatternInputs() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = FirebaseFirestore.instance.collection('users').doc(uid);
+    final today = DateUtils.dateOnly(DateTime.now());
+    Future<QuerySnapshot<Map<String, dynamic>>> since(String name, int days) =>
+        user
+            .collection(name)
+            .where(
+              FieldPath.documentId,
+              isGreaterThanOrEqualTo: localDayKey(
+                today.subtract(Duration(days: days)),
+              ),
+            )
+            .where(
+              FieldPath.documentId,
+              isLessThanOrEqualTo: localDayKey(today),
+            )
+            .get();
+    try {
+      final [tags, calendar] = await Future.wait([
+        since('daily_tags', 60),
+        since('effort_inputs', 42),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _tags = {
+          for (final doc in tags.docs)
+            ?DateTime.tryParse(doc.id): {
+              ...(doc.data()['tags'] as List? ?? const []).whereType<String>(),
+            },
+        };
+        _firstEvents = {
+          for (final doc in calendar.docs)
+            ?DateTime.tryParse(doc.id): ?firstEventMinutes(doc.id, doc.data()),
+        };
+      });
+    } catch (error) {
+      debugPrint('Sleep pattern inputs failed to load: $error');
+    }
+  }
+
+  void _patternAction(SleepPatternAction action) => switch (action) {
+    SleepPatternAction.preferences => Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SleepPreferencesScreen()),
+    ),
+    SleepPatternAction.tagSick => tagLastNightSick(context),
+  };
 
   /// Capacity's sleep need, as Home and My Day use it (null while it's the
   /// 8 h placeholder).
@@ -316,6 +391,28 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       recorded.map((day) => day.value?.source),
     );
     final averageStages = _averageStages(recorded);
+    final nights = {
+      for (final MapEntry(:key, :value) in byDay.entries)
+        ?DateTime.tryParse(key): SleepNight(
+          value.hours,
+          value.bedtime,
+          value.wakeTime,
+          value.inBed,
+        ),
+    };
+    final patterns = sleepPatterns(
+      nights: nights,
+      today: DateTime.now(),
+      need: need,
+      tags: _tags,
+      ratings: {
+        for (final doc in snapshot?.docs ?? const [])
+          if ((doc.data()['morning_check_in'] as Map?)?['sleep']
+              case final num rating)
+            ?DateTime.tryParse(doc.id): rating.toDouble(),
+      },
+      firstEvents: _firstEvents,
+    );
     final sleepingHeartRate = _rangeIndex == 0 && latest != null
         ? _heartRateDuringSleep(snapshot, latest)
         : const <HeartRateHistoryReading>[];
@@ -361,6 +458,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 ? _sleepHeartRateChart(sleepingHeartRate, latest)
                 : _sleepChart(days),
             const SizedBox(height: 24),
+            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
+            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? "Last night's sleep stages"
@@ -394,15 +493,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             const SizedBox(height: 10),
             _insightCard(
               sleepInsight(
-                nights: {
-                  for (final MapEntry(:key, :value) in byDay.entries)
-                    ?DateTime.tryParse(key): SleepNight(
-                      value.hours,
-                      value.bedtime,
-                      value.wakeTime,
-                      value.inBed,
-                    ),
-                },
+                nights: nights,
                 today: DateTime.now(),
                 rangeDays: _rangeDays,
                 need: _sleepNeed,
