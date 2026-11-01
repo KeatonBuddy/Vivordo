@@ -210,6 +210,10 @@ class _HomeStressCardState extends State<HomeStressCard>
                         ),
                         const SizedBox(width: 14),
                         Expanded(child: _summary(displayedScore)),
+                        if (widget.drivers.isNotEmpty) ...[
+                          const SizedBox(width: 12),
+                          _drivers(),
+                        ],
                       ],
                     ),
                   if (!_noReading) ...[
@@ -444,7 +448,8 @@ class _HomeStressCardState extends State<HomeStressCard>
           const SizedBox(height: 8),
           StressLevelChip(level),
         ],
-      if (widget.drivers.isNotEmpty) ...[
+      // With numbers on, the drivers sit in their own column beside this.
+      if (!widget.showNumbers && widget.drivers.isNotEmpty) ...[
         const SizedBox(height: 10),
         Wrap(
           spacing: 6,
@@ -453,6 +458,29 @@ class _HomeStressCardState extends State<HomeStressCard>
         ),
       ],
     ],
+  );
+
+  // A narrow labelled column, one chip per line; long labels ellipsize.
+  Widget _drivers() => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 136),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Drivers',
+          style: TextStyle(
+            color: _label,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        for (final driver in widget.drivers) ...[
+          const SizedBox(height: 6),
+          _driverChip(driver),
+        ],
+      ],
+    ),
   );
 
   // One line under a hairline, not a boxed panel.
@@ -585,7 +613,7 @@ class _HomeStressCardState extends State<HomeStressCard>
       ),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(20),
@@ -603,7 +631,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
             ),
