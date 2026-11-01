@@ -79,12 +79,13 @@ struct WatchSnapshot: Equatable {
     let hasCapacity = defaults.bool(forKey: "dashboardHasCapacity") && capacityIsToday
     let hasStress = defaults.bool(forKey: "dashboardHasStress")
     let events = events(defaults)
+    let demand = demand(defaults, today: today)
     return WatchSnapshot(
       capacityScore: hasCapacity ? int(defaults, "capacityScore") : nil,
       capacityLabel: hasCapacity ? defaults.string(forKey: "capacityLabel") ?? "" : "",
       capacityNote: hasCapacity ? defaults.string(forKey: "capacityNote") ?? "" : "",
-      demand: int(defaults, "siriDemand"),
-      demandHeadline: defaults.string(forKey: "siriDemandHeadline") ?? "",
+      demand: demand.value,
+      demandHeadline: demand.headline,
       stressScore: hasStress ? int(defaults, "stressScore") : nil,
       stressDrivers: hasStress ? defaults.stringArray(forKey: "stressDrivers") ?? [] : [],
       latestHeartRate: positive(defaults, "siriHeartRateLatest"),
@@ -105,6 +106,16 @@ struct WatchSnapshot: Equatable {
   }
 
   // MARK: Readers
+
+  /// After wrap-up the phone sends -1 (My Day has moved on to tomorrow), so
+  /// nothing is left of today's: 0. Nil when the phone hasn't sent one today.
+  private static func demand(_ d: UserDefaults, today: String) -> (value: Int?, headline: String) {
+    let atMs = d.double(forKey: "siriDemandAt")
+    guard atMs > 0, dayKey(Date(timeIntervalSince1970: atMs / 1000)) == today,
+          let value = int(d, "siriDemand") else { return (nil, "") }
+    let headline = d.string(forKey: "siriDemandHeadline") ?? ""
+    return value < 0 ? (0, "Day's done") : (value, headline)
+  }
 
   private static func int(_ d: UserDefaults, _ key: String) -> Int? {
     d.object(forKey: key) == nil ? nil : d.integer(forKey: key)
