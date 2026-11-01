@@ -173,8 +173,11 @@ Map<String, dynamic> projectScreenFields(
     },
     MetricsProjection.homeHistory => const {
       'stress': ['anchor', 'current', 'avg'],
-      // Bedtime, wake time and hours asleep for the energy forecast.
-      'sleep': ['avg', 'bedtime', 'wakeTime'],
+      // Bedtime, wake time and hours asleep for the energy forecast and
+      // sleep patterns (measure: 'inBed' when it's time in bed).
+      'sleep': ['avg', 'bedtime', 'wakeTime', 'measure'],
+      // "How did you sleep?", for sleep patterns.
+      'morning_check_in': ['sleep'],
       // Whether anything supplies activity (hasActivityData).
       'steps': ['sum'],
       'active_calories': ['sum'],

@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:intl/intl.dart';
 
 import 'day_key.dart';
+import 'detail_insights.dart';
 import 'meeting_patterns.dart';
+import 'server_capacity.dart' show latestSleepNeed;
 
 /// The Sunday weekly review (docs/scores.md §9): last Sunday to Saturday
 /// from the small daily documents Vivordo already saves, and the week ahead
@@ -22,6 +24,8 @@ class WeeklyReviewInput {
     this.openPriorities = const [],
     this.nextWeek = const [],
     this.lastWeekNote,
+    this.nights,
+    this.ratings = const {},
   });
 
   /// The Sunday the reviewed week starts on.
@@ -46,7 +50,24 @@ class WeeklyReviewInput {
 
   /// Last week's "anything else going on" answer, if any.
   final String? lastWeekNote;
+
+  /// Sleep for the patterns, by morning (patternNights); null uses the
+  /// hours in [scores], without bed or wake times.
+  final Map<DateTime, SleepNight>? nights;
+
+  /// "How did you sleep?" answers by morning.
+  final Map<DateTime, double> ratings;
 }
+
+/// Sleep patterns a review names under "What drained you", and the icon.
+const _drainingPatterns = {
+  'running_short': 'sleep',
+  'long_sudden': 'sleep',
+  'weekend_shift': 'lieIn',
+  'irregular': 'lieIn',
+  'bedtime_drift': 'lateNight',
+  'weekday_short': 'sleep',
+};
 
 /// An event behind a review line: its reaction key, its series' key if it
 /// repeats, and its day key. Named from the calendar when shown.
@@ -649,18 +670,30 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       ),
     );
   }
-  // Sleeping in 90+ minutes past the usual wake time (social jet lag).
-  final lieIns = [
-    for (final d in dates)
-      if ((_num(capacityOf(d)?['wakeOffsetMin']) ?? 0) >= 90) d,
-  ];
-  if (lieIns.length >= 2) {
+  // The Sleep screen's patterns up to the week's last morning, so the
+  // review says what Sleep says. The first that drains is named.
+  final sleepPatternsOfWeek = sleepPatterns(
+    nights:
+        input.nights ??
+        {
+          for (final MapEntry(:key, :value) in input.scores.entries)
+            if (_num((value['capacity'] as Map?)?['sleepHours'])
+                case final hours? when hours > 0)
+              DateTime.parse(key): SleepNight(hours),
+        },
+    today: dates.last,
+    need: latestSleepNeed(input.scores),
+    ratings: input.ratings,
+  );
+  final sleepDrain = sleepPatternsOfWeek
+      .where((p) => _drainingPatterns.containsKey(p.id))
+      .firstOrNull;
+  if (sleepDrain != null) {
     drained.add(
       ReviewLine(
-        'lieIn',
-        'Lie-ins',
-        'You slept in 90 minutes or more on ${lieIns.length} mornings. A '
-            'steadier wake time keeps your body clock on track.',
+        _drainingPatterns[sleepDrain.id]!,
+        sleepDrain.title,
+        sleepDrain.body,
       ),
     );
   }
@@ -771,6 +804,13 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       );
     }
   }
+  // Good sleep news, unless sleeping the need already made the list.
+  final steady = sleepPatternsOfWeek
+      .where((p) => p.tone == InsightTone.good)
+      .firstOrNull;
+  if (helped.isEmpty && steady != null) {
+    helped.add(ReviewLine('sleep', steady.title, steady.body));
+  }
   var fixesUsed = 0;
   for (final d in dates) {
     final kinds = input.dayFixes[localDayKey(d)]?['kinds'];
@@ -860,7 +900,8 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
               'mornings started lower as the week went on.'
         : 'Effort was above your Capacity on ${heavy.length} days, but your '
               'mornings bounced back each time.';
-  } else if (nightsOnTarget >= 5 && lieIns.length < 2) {
+  } else if (nightsOnTarget >= 5 &&
+      !sleepPatternsOfWeek.any((p) => p.tone == InsightTone.concern)) {
     headline = 'A good week for sleep';
     why = 'You slept your need on $nightsOnTarget of 7 nights.';
   } else if (heavy.isEmpty && (capAvg - usual).abs() < 5) {

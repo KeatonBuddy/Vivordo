@@ -9,9 +9,11 @@ import '../utils/day_key.dart';
 import '../utils/day_wrap_up.dart';
 import '../utils/meeting_patterns.dart';
 import '../utils/priority_schedule.dart';
+import '../utils/sleep_nights.dart' show patternNights, sleepRatings;
 import '../utils/weekly_review.dart';
 import 'daily_priority_service.dart';
 import 'day_record_service.dart';
+import 'metrics_repository.dart';
 import 'notification_service.dart';
 
 /// What My Day's Sunday card needs: the review, whether it's the first one
@@ -168,6 +170,23 @@ class WeeklyReviewService {
       }
     }
 
+    // Sleep times for the sleep patterns, from Home's window (shared).
+    Map<String, Map<String, dynamic>>? sleepDays;
+    try {
+      sleepDays =
+          (await MetricsRepository.instance
+                  .watchHomeHistory(
+                    uid: FirebaseAuth.instance.currentUser!.uid,
+                    now: DateTime.now(),
+                  )
+                  .first
+                  .timeout(const Duration(seconds: 8)))
+              .days;
+    } catch (error) {
+      // Without them, the patterns use the hours Capacity saved.
+      debugPrint('Weekly review: sleep times unavailable: $error');
+    }
+
     final lastNote = [
       ...?previous?.context,
       if (previous?.note?.trim().isNotEmpty ?? false) previous!.note!.trim(),
@@ -192,6 +211,8 @@ class WeeklyReviewService {
         ],
         nextWeek: nextWeek,
         lastWeekNote: lastNote.isEmpty ? null : lastNote.join(', '),
+        nights: sleepDays == null ? null : patternNights(sleepDays),
+        ratings: sleepDays == null ? const {} : sleepRatings(sleepDays),
       ),
     );
   }

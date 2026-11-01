@@ -529,26 +529,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : const Stream.empty();
     final now = DateTime.now();
     _latestScanStream = uid != null
-        ? combineMetricWindows(
-            MetricsRepository.instance.watch(
-              uid: uid,
-              startDay: homeMetricsWindowStartKey(
-                now,
-                days: kHomeRecentWindowDays,
-              ),
-              endDay: today,
-              projection: MetricsProjection.homeHistory,
-            ),
-            MetricsRepository.instance.watch(
-              uid: uid,
-              startDay: homeMetricsWindowStartKey(now),
-              endDay: homeMetricsWindowStartKey(
-                now,
-                days: kHomeRecentWindowDays + 1,
-              ),
-              projection: MetricsProjection.homeHistory,
-            ),
-          )
+        ? MetricsRepository.instance.watchHomeHistory(uid: uid, now: now)
         : const Stream.empty();
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/metrics_insights.dart';
 
 void main() {
@@ -57,7 +58,9 @@ void main() {
     expect(insights.every((i) => i.tone == MetricsInsightTone.concern), true);
     expect(
       insights.first.text,
-      'Sleep averaged 6h 30m this week, 60 min under your need of 7h 30m.',
+      // The Sleep screen's pattern, from Capacity's hours until the
+      // nights load.
+      'Running short lately. The last 7 nights were under your sleep need.',
     );
     expect(insights[1].text, contains('Capacity averaged 66'));
     expect(insights[1].text, contains('your usual 78'));
@@ -70,7 +73,7 @@ void main() {
     ).first;
     expect(insight.kind, MetricsInsightKind.sleep);
     expect(insight.tone, MetricsInsightTone.concern);
-    expect(insight.text, startsWith('You\'ve slept a lot longer than usual'));
+    expect(insight.text, startsWith('Sleeping longer than usual.'));
     expect(insight.action, MetricsInsightAction.tagSick);
   });
 
@@ -85,10 +88,21 @@ void main() {
   });
 
   test('good news when sleep meets the need and energy is up', () {
+    // 7h 36m a night, bed and up at the same times.
+    final nights = {
+      for (var back = 0; back < 35; back++)
+        DateTime(today.year, today.month, today.day - back): SleepNight(
+          7.6,
+          DateTime(today.year, today.month, today.day - back - 1, 23),
+          DateTime(today.year, today.month, today.day - back, 6, 36),
+        ),
+    };
     final insights = metricsInsights(
       history(usualSleep: 7, recentSleep: 7.6, recentCapacity: 86),
       today,
+      nights: nights,
     );
+    expect(insights.first.text, startsWith('Well rested and steady.'));
     expect(kinds(insights), [
       MetricsInsightKind.sleep,
       MetricsInsightKind.energy,

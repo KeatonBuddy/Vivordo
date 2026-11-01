@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/day_key.dart';
 import '../utils/fitness_activity_history.dart';
 import '../utils/heart_rate_history.dart';
+import '../utils/home_metrics_summary.dart';
 import '../utils/performance_trace.dart';
 import '../utils/screen_metric_projection.dart';
 export '../utils/screen_metric_projection.dart' show MetricsProjection;
@@ -228,6 +229,30 @@ class MetricsRepository {
       );
       controller.onCancel = subscription.cancel;
     });
+  }
+
+  /// Home's metrics history: a live [kHomeRecentWindowDays]-day window and
+  /// the rest of the 90 days. Metrics and the weekly review read their
+  /// sleep patterns from it too, so they share Home's listeners.
+  Stream<MetricWindow> watchHomeHistory({
+    required String uid,
+    required DateTime now,
+  }) {
+    final today = localDayKey(now);
+    return combineMetricWindows(
+      watch(
+        uid: uid,
+        startDay: homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays),
+        endDay: today,
+        projection: MetricsProjection.homeHistory,
+      ),
+      watch(
+        uid: uid,
+        startDay: homeMetricsWindowStartKey(now),
+        endDay: homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays + 1),
+        projection: MetricsProjection.homeHistory,
+      ),
+    );
   }
 
   Future<void> dispose() async {

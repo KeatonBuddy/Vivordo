@@ -380,13 +380,6 @@ double? longSleepAverage(List<double?> nights, double? need) {
   return _mean(recent);
 }
 
-/// The sentence for [longSleepAverage].
-String longSleepText(double average, double need) =>
-    'You\'ve slept a lot longer than usual this week: '
-    '${hoursMinutes(average)} on average against your need of '
-    '${hoursMinutes(need)}. That can be a sign you\'re run down or coming '
-    'down with something.';
-
 /// How Sleep detail's summary card sets its bar.
 enum SleepNeedTone { met, short, learning }
 

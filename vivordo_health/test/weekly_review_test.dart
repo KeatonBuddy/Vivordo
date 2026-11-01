@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/meeting_patterns.dart';
 import 'package:vivordo_health/src/utils/weekly_review.dart';
 
@@ -119,20 +120,38 @@ void main() {
     expect(review.chips, isNot(contains('sleep on target')));
   });
 
-  test('two or more lie-ins are named', () {
-    final week = [for (var i = 0; i < 7; i++) day()];
-    for (final i in [0, 6]) {
-      (week[i]['capacity'] as Map)['wakeOffsetMin'] = 120;
-    }
-    // An early start isn't a lie-in.
-    (week[3]['capacity'] as Map)['wakeOffsetMin'] = -120;
+  test('sleep lines are the Sleep screen\'s patterns', () {
+    // Four weeks of 7h 30m, up at 7 on weeknights and 9:30 after Friday and
+    // Saturday nights.
+    final nights = {
+      for (var i = -27; i < 7; i++)
+        at(i): () {
+          final weekend = at(i).weekday >= DateTime.saturday;
+          final wake = DateTime(
+            2026,
+            10,
+            4 + i,
+            weekend ? 9 : 7,
+            weekend ? 30 : 0,
+          );
+          return SleepNight(
+            7.5,
+            wake.subtract(const Duration(minutes: 450)),
+            wake,
+          );
+        }(),
+    };
     final review = buildWeeklyReview(
-      WeeklyReviewInput(weekStart: sunday, scores: scores(week)),
+      WeeklyReviewInput(
+        weekStart: sunday,
+        scores: scores([for (var i = 0; i < 7; i++) day(sleep: 7.5)]),
+        nights: nights,
+      ),
     )!;
-    expect(
-      review.drained.firstWhere((l) => l.kind == 'lieIn').detail,
-      startsWith('You slept in 90 minutes or more on 2 mornings.'),
-    );
+    final line = review.drained.firstWhere((l) => l.kind == 'lieIn');
+    expect(line.title, 'Weekend shift');
+    expect(line.detail, startsWith('Your sleep runs about 2h 30m later'));
+    expect(review.headline, isNot('A good week for sleep'));
   });
 
   test('a heavy week you handled well, and one that wore on you', () {

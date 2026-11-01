@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../src/services/metrics_repository.dart';
+import '../src/utils/sleep_nights.dart' show patternNights, sleepRatings;
 import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
@@ -71,6 +73,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _scoresStream = scoresDailyStream(35);
   // The latest scores, for a listener that joins the broadcast stream late.
   Map<String, Map<String, dynamic>>? _scores;
+  // Sleep for the insights' sleep pattern: Home's window, so its listeners
+  // are shared rather than repeated.
+  final _sleepWindow = switch (FirebaseAuth.instance.currentUser?.uid) {
+    final uid? => MetricsRepository.instance.watchHomeHistory(
+      uid: uid,
+      now: DateTime.now(),
+    ),
+    null => const Stream<MetricWindow>.empty(),
+  };
   static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -660,17 +671,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 stream: _scoresStream,
                 builder: (context, snapshot) {
                   final scores = snapshot.data ?? _scores;
-                  return Selector<ThemeController, bool>(
-                    selector: (_, c) => c.showScoreNumbers,
-                    builder: (context, showNumbers, _) => _buildInsightsCard(
-                      scores == null
-                          ? null
-                          : metricsInsights(
-                              scores,
-                              DateTime.now(),
-                              numbers: showNumbers,
+                  return VisibleStreamBuilder<MetricWindow>(
+                    stream: _sleepWindow,
+                    builder: (context, window) {
+                      final days = window.data?.days;
+                      return Selector<ThemeController, bool>(
+                        selector: (_, c) => c.showScoreNumbers,
+                        builder: (context, showNumbers, _) =>
+                            _buildInsightsCard(
+                              scores == null
+                                  ? null
+                                  : metricsInsights(
+                                      scores,
+                                      DateTime.now(),
+                                      numbers: showNumbers,
+                                      nights: days == null
+                                          ? null
+                                          : patternNights(days),
+                                      ratings: days == null
+                                          ? const {}
+                                          : sleepRatings(days),
+                                    ),
                             ),
-                    ),
+                      );
+                    },
                   );
                 },
               ),
