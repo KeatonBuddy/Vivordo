@@ -569,7 +569,7 @@ class _CapacityLeftRow extends StatelessWidget {
     ];
     return Semantics(
       label:
-          'Capacity: $left left of ${live.morning} this morning. '
+          'Capacity: $left left, started today at ${live.morning}. '
           '${short ? '$booked booked, ${-tonight} more than you have' : '$booked booked, $tonight free by tonight'}. '
           '$spent spent.',
       child: ExcludeSemantics(
@@ -634,7 +634,7 @@ class _CapacityLeftRow extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'of ${live.morning} this morning',
+                    'started today at ${live.morning}',
                     style: const TextStyle(
                       color: Color(0xFFE8E0FF),
                       fontSize: 12,
@@ -711,8 +711,8 @@ class _CapacityRingPainter extends CustomPainter {
     Paint arc(Color color) => Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = stroke;
+    // Flat ends, so one share doesn't spill into the next.
     canvas.drawArc(rect, 0, math.pi * 2, false, arc(_CapacityLeftRow._spent));
     if (morning <= 0 || left <= 0) return;
     final leftShare = (left / morning).clamp(0.0, 1.0);

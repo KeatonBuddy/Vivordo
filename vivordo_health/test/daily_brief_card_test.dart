@@ -121,7 +121,7 @@ void main() {
       card(capacityLeft(morning: 72, effortSoFar: 31, demand: 23)),
     );
     expect(find.text('41'), findsOneWidget);
-    expect(find.text('of 72 this morning'), findsOneWidget);
+    expect(find.text('started today at 72'), findsOneWidget);
     expect(find.text('18 free by tonight'), findsOneWidget);
     expect(find.text('23 booked'), findsOneWidget);
     expect(find.text('31 spent'), findsOneWidget);

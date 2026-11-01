@@ -438,7 +438,7 @@ private struct CapacityWidgetView: View {
             title: "Capacity left",
             score: live.left,
             state: (live.tonight, live.tonightColor),
-            footnote: "of \(live.morning) this morning",
+            footnote: "started at \(live.morning)",
             progress: live.share
           )
         } else {

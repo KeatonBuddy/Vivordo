@@ -312,10 +312,10 @@ struct VivordoSiriQueryService {
           : "about \(live.byTonight) by tonight"
         return VivordoSiriAnswer(
           metric: metric,
-          dialog: "You have \(live.left) left of this morning's \(live.morning) Capacity, \(tonight).",
+          dialog: "You have \(live.left) Capacity left of the \(live.morning) you started today with, \(tonight).",
           title: "Capacity left",
           value: "\(live.left)",
-          unit: "of \(live.morning) this morning",
+          unit: "started at \(live.morning)",
           status: live.byTonight < 0 ? "Short by \(-live.byTonight) tonight" : "\(live.byTonight) by tonight",
           detail: nil,
           progress: Double(live.left) / Double(max(live.morning, 1))
