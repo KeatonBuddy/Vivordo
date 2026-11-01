@@ -184,5 +184,24 @@ void main() {
         isNull,
       );
     });
+
+    test('exercises in the order they were done, newest-first saved', () {
+      final first = lift([2, 6]);
+      final second = lift([10, 14]);
+      final third = lift([18]);
+      expect(workoutExercisesInOrder([third, cardio, second, first]), [
+        first,
+        second,
+        third,
+        cardio,
+      ]);
+      // Without every set time, the saved order stands.
+      final untimed = [
+        third,
+        lift([null]),
+        first,
+      ];
+      expect(workoutExercisesInOrder(untimed), same(untimed));
+    });
   });
 }

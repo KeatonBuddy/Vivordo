@@ -108,14 +108,13 @@ class TrainingLoadCard extends StatelessWidget {
       padding: const EdgeInsets.only(top: 10),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 14, color: colors.textPrimary),
-            ),
+          // Labels are short; values take the rest, flush right.
+          Text(
+            label,
+            style: TextStyle(fontSize: 14, color: colors.textPrimary),
           ),
-          const SizedBox(width: 8),
-          Flexible(
+          const SizedBox(width: 16),
+          Expanded(
             child: Text(
               value,
               textAlign: TextAlign.right,

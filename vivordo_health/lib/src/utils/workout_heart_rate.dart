@@ -135,6 +135,33 @@ class WorkoutExerciseSpan {
   bool contains(DateTime time) => !time.isBefore(start) && !time.isAfter(end);
 }
 
+/// [exercises] in the order they were done, by each one's first set, when
+/// every set has a time; the active workout lists the newest first and a
+/// template its planned order. Exercises without sets go last. Without set
+/// times the saved order stands.
+List<WorkoutExerciseRecord> workoutExercisesInOrder(
+  List<WorkoutExerciseRecord> exercises,
+) {
+  final timed = <(int, DateTime)>[];
+  for (final (index, exercise) in exercises.indexed) {
+    if (exercise.sets.isEmpty) continue;
+    final times = exercise.sets.map((set) => set.loggedAt).toList();
+    if (times.contains(null)) return exercises;
+    timed.add((
+      index,
+      times.cast<DateTime>().reduce((a, b) => a.isBefore(b) ? a : b),
+    ));
+  }
+  timed.sort((a, b) {
+    final byTime = a.$2.compareTo(b.$2);
+    return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
+  });
+  return [
+    for (final (index, _) in timed) exercises[index],
+    ...exercises.where((exercise) => exercise.sets.isEmpty),
+  ];
+}
+
 /// Where each exercise falls in the workout, from when its sets were
 /// logged. An exercise runs from the end of the one before it (or the start
 /// of the workout) to its last set, so rest before its first set counts

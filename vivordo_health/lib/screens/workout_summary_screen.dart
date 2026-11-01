@@ -78,6 +78,9 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
   // Renaming updates the title here without reopening the screen.
   late SavedWorkout workout = widget.workout;
 
+  /// In the order they were done, for the cards and the graph's track.
+  late final _exercises = workoutExercisesInOrder(widget.workout.exercises);
+
   /// Null until loaded, and when there isn't enough heart rate data.
   WorkoutHeartRate? heartRate;
   List<WorkoutExerciseSpan>? exerciseSpans;
@@ -130,7 +133,7 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
       setState(() {
         heartRate = loaded;
         exerciseSpans = workoutExerciseSpans(
-          workout.exercises,
+          _exercises,
           start: _start,
           end: _end,
         );
@@ -235,7 +238,7 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
                     start: _start,
                     end: _end,
                     spans: exerciseSpans,
-                    exercises: workout.exercises,
+                    exercises: _exercises,
                   ),
                 ],
                 const SizedBox(height: 28),
@@ -259,23 +262,18 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                for (
-                  var index = 0;
-                  index < workout.exercises.length;
-                  index++
-                ) ...[
+                for (var index = 0; index < _exercises.length; index++) ...[
                   _ExerciseSummaryCard(
                     number: index + 1,
-                    exercise: workout.exercises[index],
+                    exercise: _exercises[index],
                     peakBpm: peaks[index],
                     peakZone: peaks[index] == null
                         ? null
                         : heartRate!.zoneOf(peaks[index]!.toDouble()),
                   ),
-                  if (index < workout.exercises.length - 1)
-                    const SizedBox(height: 12),
+                  if (index < _exercises.length - 1) const SizedBox(height: 12),
                 ],
-                if (workout.exercises.isEmpty)
+                if (_exercises.isEmpty)
                   _SurfaceCard(
                     child: Text(
                       'No exercise details were saved for this workout.',
