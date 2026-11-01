@@ -1424,11 +1424,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }),
   );
 
-  void _loadEffortContext(DateTime day) => unawaited(
-    loadTodayEffortContext(day).then((context) {
-      if (mounted) setState(() => _effortContext = context);
-    }),
-  );
+  void _loadEffortContext(DateTime day) {
+    unawaited(
+      loadTodayEffortContext(day).then((context) {
+        if (mounted) setState(() => _effortContext = context);
+      }),
+    );
+    // The Capacity and Demand sheets then open with their chart drawn.
+    unawaited(ScoreHistory.warm(ScoreHistoryKind.plannedVsActual));
+  }
 
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event

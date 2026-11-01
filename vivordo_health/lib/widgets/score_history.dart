@@ -139,6 +139,20 @@ Future<String?> _firestoreEarliest(String collection) async {
 /// One day's values on the chart.
 typedef _Day = ({DateTime day, double? value, double? planned, String detail});
 
+typedef _Setup = ({DateTime? earliest, double? usual});
+
+/// The last loaded setup and pages, so a sheet opens with its chart drawn
+/// while it refreshes. Keyed by account, kind, the sheet's usual and day:
+/// a new day or account starts empty. Firestore loaders only (tests pass
+/// their own).
+final _keptSetups = <String, _Setup>{};
+final _keptPages = <String, List<_Day>>{};
+
+String? _keepKey(ScoreHistoryKind kind, double? usual, DateTime today) {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  return uid == null ? null : '$uid|${kind.name}|$usual|${localDayKey(today)}';
+}
+
 /// A day took well over its plan. Days with nothing planned never count:
 /// any effort at all would be "over" nothing.
 bool _ranOver(double planned, double took) =>
@@ -148,6 +162,132 @@ const _purple = Color(0xFF7F77DD);
 const _line = Color(0xFFA99BFF);
 const _orange = Color(0xFFF08A5D);
 const _grey = Color(0xFF85859B);
+
+/// What a chart needs before its first page: the first saved day, and for
+/// Effort the usual worked out from the 28 days before [today].
+Future<_Setup> _loadSetup(
+  ScoreHistoryKind kind,
+  double? usual,
+  DateTime today,
+  HistoryLoader load,
+  HistoryEarliest earliest,
+) async {
+  final source = kind == ScoreHistoryKind.plannedVsActual
+      ? 'planned_demand'
+      : 'scores_daily';
+  final first = await earliest(source);
+  if (kind == ScoreHistoryKind.effort && usual == null) {
+    final past = await load(
+      'scores_daily',
+      localDayKey(today.subtract(const Duration(days: 28))),
+      localDayKey(today.subtract(const Duration(days: 1))),
+    );
+    final totals = [
+      for (final day in past.values)
+        if ((day['effort'] as Map?)?['total'] case final num total)
+          total.toDouble(),
+    ]..sort();
+    if (totals.length >= 7) usual = totals[totals.length ~/ 2];
+  }
+  return (
+    earliest: first == null ? null : DateTime.tryParse(first),
+    usual: usual,
+  );
+}
+
+/// One page of days, [back] periods before the one holding [today].
+Future<List<_Day>> _loadPage(
+  ScoreHistoryKind kind,
+  ScoreHistoryRange range,
+  int back,
+  DateTime today,
+  HistoryLoader load,
+) async {
+  final period = historyPeriod(range, today, back);
+  final start = localDayKey(period.start);
+  final end = localDayKey(period.end);
+  final (scores, planned) = await (
+    load('scores_daily', start, end),
+    kind == ScoreHistoryKind.plannedVsActual
+        ? load('planned_demand', start, end)
+        : Future.value(const <String, Map<String, dynamic>>{}),
+  ).wait;
+  return [
+    for (
+      var day = period.start;
+      !day.isAfter(period.end);
+      day = DateTime(day.year, day.month, day.day + 1)
+    )
+      _dayOf(
+        kind,
+        today,
+        day,
+        scores[localDayKey(day)],
+        planned[localDayKey(day)],
+      ),
+  ];
+}
+
+_Day _dayOf(
+  ScoreHistoryKind kind,
+  DateTime today,
+  DateTime day,
+  Map<String, dynamic>? scores,
+  Map<String, dynamic>? planned,
+) {
+  final future = day.isAfter(today);
+  final capacity = scores?['capacity'] as Map?;
+  final effort = scores?['effort'] as Map?;
+  final effortTotal = (effort?['total'] as num?)?.toDouble();
+  switch (kind) {
+    case ScoreHistoryKind.capacity:
+      final score = (capacity?['score'] as num?)?.toDouble();
+      final parts = capacity?['parts'] as Map?;
+      final sleep = (capacity?['sleepHours'] as num?)?.toDouble();
+      final low = [
+        for (final (key, name) in [
+          ('sleep', 'sleep'),
+          ('body', 'overnight body'),
+          ('recovery', 'recovery'),
+        ])
+          if ((parts?[key] as num?) case final num v when v < 60) '$name low',
+      ];
+      return (
+        day: day,
+        value: future ? null : score,
+        planned: null,
+        detail: [
+          if (sleep != null) 'Slept ${sleep.toStringAsFixed(1)} h',
+          ...low,
+          if (capacity?['provisional'] == true) 'estimated',
+        ].join(' · '),
+      );
+    case ScoreHistoryKind.effort:
+      final after = (effort?['afterHoursMinutes'] as num?)?.round() ?? 0;
+      return (
+        day: day,
+        value: future ? null : effortTotal,
+        planned: null,
+        detail: effort == null
+            ? ''
+            : [
+                'Schedule: ${((effort['mental'] as num?) ?? 0).round()}',
+                'Activity: ${((effort['physical'] as num?) ?? 0).round()}',
+                if (after > 0) '$after min after hours',
+              ].join(' · '),
+      );
+    case ScoreHistoryKind.plannedVsActual:
+      final plan = (planned?['points'] as num?)?.toDouble();
+      return (
+        day: day,
+        value: future || plan == null ? null : effortTotal,
+        planned: future ? null : plan,
+        detail: plan == null || effortTotal == null
+            ? ''
+            : 'Planned ${plan.round()} · took ${effortTotal.round()}',
+      );
+  }
+}
 
 /// A score's history inside its breakdown sheet: 7D / 30D / 90D pages of
 /// calendar weeks, months or quarters, swiped (or ‹ ›) back to the first
@@ -174,6 +314,25 @@ class ScoreHistory extends StatefulWidget {
 
   @override
   State<ScoreHistory> createState() => _ScoreHistoryState();
+
+  /// Loads [kind]'s setup and this week's page ahead of time, so the first
+  /// sheet opens with its chart drawn. Does nothing when signed out or
+  /// already loaded today.
+  static Future<void> warm(ScoreHistoryKind kind, {double? usual}) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final keep = _keepKey(kind, usual, today);
+    if (keep == null || _keptSetups.containsKey(keep)) return;
+    try {
+      final (setup, days) = await (
+        _loadSetup(kind, usual, today, _firestoreLoad, _firestoreEarliest),
+        _loadPage(kind, ScoreHistoryRange.week, 0, today, _firestoreLoad),
+      ).wait;
+      _keptSetups[keep] = setup;
+      _keptPages['$keep|${ScoreHistoryRange.week.name}:0'] = days;
+    } catch (error) {
+      debugPrint('History warm-up failed: $error');
+    }
+  }
 }
 
 class _ScoreHistoryState extends State<ScoreHistory> {
@@ -184,119 +343,39 @@ class _ScoreHistoryState extends State<ScoreHistory> {
     widget.today ?? DateTime.now(),
   );
   late final PageController _pages = PageController();
-  late final Future<({DateTime? earliest, double? usual})> _setup = _load();
+  late final _keep =
+      widget.load == _firestoreLoad && widget.earliest == _firestoreEarliest
+      ? _keepKey(widget.kind, widget.usual, _today)
+      : null;
+  late final Future<_Setup> _setup =
+      _loadSetup(
+        widget.kind,
+        widget.usual,
+        _today,
+        widget.load,
+        widget.earliest,
+      ).then((setup) {
+        if (_keep != null) _keptSetups[_keep] = setup;
+        return setup;
+      });
   final _cache = <String, Future<List<_Day>>>{};
+
+  Future<List<_Day>> _page(int back) {
+    final key = '${_range.name}:$back';
+    return _cache[key] ??=
+        _loadPage(widget.kind, _range, back, _today, widget.load).then((days) {
+          if (_keep != null) _keptPages['$_keep|$key'] = days;
+          return days;
+        });
+  }
+
+  List<_Day>? _kept(int back) =>
+      _keep == null ? null : _keptPages['$_keep|${_range.name}:$back'];
 
   @override
   void dispose() {
     _pages.dispose();
     super.dispose();
-  }
-
-  String get _source => widget.kind == ScoreHistoryKind.plannedVsActual
-      ? 'planned_demand'
-      : 'scores_daily';
-
-  Future<({DateTime? earliest, double? usual})> _load() async {
-    final first = await widget.earliest(_source);
-    var usual = widget.usual;
-    if (widget.kind == ScoreHistoryKind.effort && usual == null) {
-      final past = await widget.load(
-        'scores_daily',
-        localDayKey(_today.subtract(const Duration(days: 28))),
-        localDayKey(_today.subtract(const Duration(days: 1))),
-      );
-      final totals = [
-        for (final day in past.values)
-          if ((day['effort'] as Map?)?['total'] case final num total)
-            total.toDouble(),
-      ]..sort();
-      if (totals.length >= 7) usual = totals[totals.length ~/ 2];
-    }
-    return (
-      earliest: first == null ? null : DateTime.tryParse(first),
-      usual: usual,
-    );
-  }
-
-  Future<List<_Day>> _page(int back) {
-    final period = historyPeriod(_range, _today, back);
-    final key = '${_range.name}:$back';
-    return _cache[key] ??= () async {
-      final start = localDayKey(period.start);
-      final end = localDayKey(period.end);
-      final scores = await widget.load('scores_daily', start, end);
-      final planned = widget.kind == ScoreHistoryKind.plannedVsActual
-          ? await widget.load('planned_demand', start, end)
-          : const <String, Map<String, dynamic>>{};
-      return [
-        for (
-          var day = period.start;
-          !day.isAfter(period.end);
-          day = DateTime(day.year, day.month, day.day + 1)
-        )
-          _dayOf(day, scores[localDayKey(day)], planned[localDayKey(day)]),
-      ];
-    }();
-  }
-
-  _Day _dayOf(
-    DateTime day,
-    Map<String, dynamic>? scores,
-    Map<String, dynamic>? planned,
-  ) {
-    final future = day.isAfter(_today);
-    final capacity = scores?['capacity'] as Map?;
-    final effort = scores?['effort'] as Map?;
-    final effortTotal = (effort?['total'] as num?)?.toDouble();
-    switch (widget.kind) {
-      case ScoreHistoryKind.capacity:
-        final score = (capacity?['score'] as num?)?.toDouble();
-        final parts = capacity?['parts'] as Map?;
-        final sleep = (capacity?['sleepHours'] as num?)?.toDouble();
-        final low = [
-          for (final (key, name) in [
-            ('sleep', 'sleep'),
-            ('body', 'overnight body'),
-            ('recovery', 'recovery'),
-          ])
-            if ((parts?[key] as num?) case final num v when v < 60) '$name low',
-        ];
-        return (
-          day: day,
-          value: future ? null : score,
-          planned: null,
-          detail: [
-            if (sleep != null) 'Slept ${sleep.toStringAsFixed(1)} h',
-            ...low,
-            if (capacity?['provisional'] == true) 'estimated',
-          ].join(' · '),
-        );
-      case ScoreHistoryKind.effort:
-        final after = (effort?['afterHoursMinutes'] as num?)?.round() ?? 0;
-        return (
-          day: day,
-          value: future ? null : effortTotal,
-          planned: null,
-          detail: effort == null
-              ? ''
-              : [
-                  'Schedule: ${((effort['mental'] as num?) ?? 0).round()}',
-                  'Activity: ${((effort['physical'] as num?) ?? 0).round()}',
-                  if (after > 0) '$after min after hours',
-                ].join(' · '),
-        );
-      case ScoreHistoryKind.plannedVsActual:
-        final plan = (planned?['points'] as num?)?.toDouble();
-        return (
-          day: day,
-          value: future || plan == null ? null : effortTotal,
-          planned: future ? null : plan,
-          detail: plan == null || effortTotal == null
-              ? ''
-              : 'Planned ${plan.round()} · took ${effortTotal.round()}',
-        );
-    }
   }
 
   void _go(int back, int pages) {
@@ -315,6 +394,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
   @override
   Widget build(BuildContext context) => FutureBuilder(
     future: _setup,
+    initialData: _keep == null ? null : _keptSetups[_keep],
     builder: (context, setup) {
       final earliest = setup.data?.earliest;
       // Nothing saved yet (new account, or planned Demand before its first
@@ -378,6 +458,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
               }),
               itemBuilder: (context, back) => FutureBuilder(
                 future: _page(back),
+                initialData: _kept(back),
                 builder: (context, days) => _Chart(
                   kind: widget.kind,
                   days: days.data ?? const [],
@@ -391,6 +472,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
           ),
           FutureBuilder(
             future: _page(_back),
+            initialData: _kept(_back),
             builder: (context, days) => _Detail(
               kind: widget.kind,
               days: days.data ?? const [],
