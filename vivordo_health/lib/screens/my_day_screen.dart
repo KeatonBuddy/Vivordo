@@ -2150,8 +2150,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       score: left,
       words: words,
       summary: words != null
-          ? 'Of this morning\'s Capacity, against the plan still ahead'
-          : '$left left of ${live.morning} this morning · '
+          ? 'Of the Capacity you started today with, against the plan still ahead'
+          : '$left left · started today at ${live.morning} · '
                 '${tonight < 0 ? 'short by ${-tonight} tonight' : '$tonight by tonight'}',
       history: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2167,8 +2167,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               ),
               child: Text(
                 words != null
-                    ? 'Why this morning\'s Capacity ›'
-                    : 'Why ${live.morning} this morning ›',
+                    ? 'Why you started today where you did ›'
+                    : 'Why you started at ${live.morning} ›',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,

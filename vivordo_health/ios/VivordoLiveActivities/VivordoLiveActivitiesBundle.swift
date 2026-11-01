@@ -469,7 +469,7 @@ private struct CapacityGaugeView: View {
       Text(live.map { "\($0.left)" } ?? (entry.hasCapacity ? "\(entry.capacity)" : "—"))
     }
     .gaugeStyle(.accessoryCircular)
-    .accessibilityLabel(live.map { "Capacity \($0.left) left of \($0.morning), \($0.tonight)" }
+    .accessibilityLabel(live.map { "Capacity \($0.left) left, started at \($0.morning), \($0.tonight)" }
       ?? "Capacity")
   }
 }
@@ -480,7 +480,7 @@ private struct CapacityRectangularView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 1) {
       if let live = entry.capacityLeft {
-        Text("Capacity · of \(live.morning)")
+        Text("Capacity · started at \(live.morning)")
           .font(.caption2)
           .foregroundStyle(.secondary)
         Text("\(live.left) left")

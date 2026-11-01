@@ -570,7 +570,7 @@ class _CapacityLeftRow extends StatelessWidget {
     return Semantics(
       label:
           'Capacity: $left left, started today at ${live.morning}. '
-          '${short ? '$booked booked, ${-tonight} more than you have' : '$booked booked, $tonight free by tonight'}. '
+          '${short ? '$booked booked, short by ${-tonight}' : '$booked booked, $tonight free by tonight'}. '
           '$spent spent.',
       child: ExcludeSemantics(
         child: Row(
