@@ -312,9 +312,10 @@ class _HomeStressCardState extends State<HomeStressCard>
     ],
   );
 
-  // Shrinks to fit inside the ring at large text sizes.
+  // Shrinks to fit inside the ring at large text sizes. The padding keeps
+  // the text box inside the ring's 66 pt hole, corners included.
   Widget _ringCenter(double? displayedScore) => Padding(
-    padding: const EdgeInsets.all(11),
+    padding: const EdgeInsets.all(16),
     child: FittedBox(
       fit: BoxFit.scaleDown,
       child: widget.loading
@@ -353,18 +354,18 @@ class _HomeStressCardState extends State<HomeStressCard>
                   displayedScore == null ? '--' : '${displayedScore.round()}%',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 26,
+                    fontSize: 22,
                     height: 1,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -1,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 const Text(
                   'Stress',
                   style: TextStyle(
                     color: _label,
-                    fontSize: 13,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
