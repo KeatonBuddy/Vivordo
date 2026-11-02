@@ -26,7 +26,8 @@ class StepsDetailScreen extends StatefulWidget {
 class _StepsDetailScreenState extends State<StepsDetailScreen> {
   static const _blue = Color(0xFF2878E8);
   static const _purple = Color(0xFF5B42F3);
-  int _rangeIndex = 0;
+  // Opens on Week; Day is a tap away.
+  int _rangeIndex = 1;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
