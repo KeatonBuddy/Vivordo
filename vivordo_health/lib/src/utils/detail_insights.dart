@@ -514,18 +514,61 @@ DetailInsight exerciseInsight({
     return sum;
   }
 
+  // Days since Monday, today included: the calendar week so far.
+  final sinceMonday = day.weekday;
   if (rangeDays == 1) {
     final now = (minutes[day] ?? 0).round();
-    final week = total(0, 7).round();
+    final week = total(0, sinceMonday).round();
     final goalPart = goal <= 0
         ? '.'
         : now >= goal
         ? ', meeting your ${goal.round()}-minute goal.'
         : ', ${(goal - now).round()} to go for your ${goal.round()}-minute goal.';
     return DetailInsight(
-      '$now min of exercise today$goalPart $week min over the last 7 days.',
+      '$now min of exercise today$goalPart $week min this week.',
       goal > 0 && now >= goal ? InsightTone.good : InsightTone.neutral,
     );
+  }
+
+  if (rangeDays == 7) {
+    // Monday to today, against last week up to the same day.
+    final sum = total(0, sinceMonday).round();
+    final before = total(7, 7 + sinceMonday).round();
+    final hadLastWeek = [
+      for (var i = 7; i < 14; i++)
+        ?minutes[DateTime(day.year, day.month, day.day - i)],
+    ].isNotEmpty;
+    final active = [
+      for (var i = 0; i < sinceMonday; i++)
+        if ((minutes[DateTime(day.year, day.month, day.day - i)] ?? 0) > 0) i,
+    ].length;
+    final sunday = sinceMonday == 7;
+    var tone = InsightTone.neutral;
+    var text =
+        '${formatCount(sum.toDouble())} min ${sunday ? 'this week' : 'so far this week'}, '
+        'active on $active of $sinceMonday ${sinceMonday == 1 ? 'day' : 'days'}';
+    final by = sunday ? 'than last week' : 'than by this point last week';
+    if (hadLastWeek && before > 0) {
+      final difference = sum - before;
+      if ((difference / before).abs() >= .1) {
+        text +=
+            ', ${difference.abs()} min ${difference > 0 ? 'more' : 'less'} $by';
+        tone = difference > 0 ? InsightTone.good : InsightTone.concern;
+      } else {
+        text +=
+            ', about the same as ${sunday ? 'last week' : 'by this point last week'}';
+      }
+    }
+    text += '.';
+    final weekly = (goal * 7).round();
+    if (weekly > 0) {
+      text += sum >= weekly
+          ? ' You reached your weekly goal of ${formatCount(weekly.toDouble())} min.'
+          : ' ${formatCount((weekly - sum).toDouble())} min to go for your weekly goal of '
+                '${formatCount(weekly.toDouble())}.';
+      if (sum >= weekly) tone = InsightTone.good;
+    }
+    return DetailInsight(text, tone);
   }
 
   // Only days with data count: a day missing from Health isn't 0 minutes.

@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../widgets/apple_ui.dart';
+import '../widgets/muscle_sets_card.dart';
 import '../src/utils/chart_text.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
@@ -35,6 +36,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     0 => 1,
     1 => 7,
     _ => 30,
+  };
+  String get _previousName => switch (_rangeIndex) {
+    0 => 'yesterday',
+    1 => 'last week',
+    _ => 'the 30 days before',
   };
   String get _rangeName => switch (_rangeIndex) {
     0 => 'Daily',
@@ -120,17 +126,31 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           ((doc.data()['exercise_time'] as Map?)?['sum'] as num?)?.round() ?? 0;
     }
     final today = DateUtils.dateOnly(DateTime.now());
+    // Week is the calendar week, Monday to Sunday, so the weekly goal is
+    // the week's; the chart keeps the days still to come.
+    final rangeStart = _rangeIndex == 1
+        ? DateTime(today.year, today.month, today.day - (today.weekday - 1))
+        : today.subtract(Duration(days: _rangeDays - 1));
     final days = List.generate(_rangeDays, (index) {
-      final date = today.subtract(Duration(days: _rangeDays - index - 1));
+      final date = DateTime(
+        rangeStart.year,
+        rangeStart.month,
+        rangeStart.day + index,
+      );
       return _ExerciseDay(date, minutes[localDayKey(date)] ?? 0);
     });
-    final cutoff = today.subtract(Duration(days: _rangeDays));
+    final elapsed = today.difference(rangeStart).inDays + 1;
+    final previousStart = DateTime(
+      rangeStart.year,
+      rangeStart.month,
+      rangeStart.day - _rangeDays,
+    );
     final previous = (snapshot?.docs ?? const [])
         .where((doc) {
           final date = DateTime.tryParse(doc.id);
           return date != null &&
-              date.isBefore(cutoff) &&
-              !date.isBefore(cutoff.subtract(Duration(days: _rangeDays)));
+              date.isBefore(rangeStart) &&
+              !date.isBefore(previousStart);
         })
         .map(
           (doc) =>
@@ -139,13 +159,13 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               0,
         )
         .toList();
-    final rangeStart = today.subtract(Duration(days: _rangeDays - 1));
     final rangeWorkouts = workouts.where((workout) {
       final date = DateUtils.dateOnly(workout.completedAt.toLocal());
       return !date.isBefore(rangeStart) && !date.isAfter(today);
     }).toList();
     final total = days.fold<int>(0, (total, day) => total + day.minutes);
-    final average = days.isEmpty ? 0 : (total / days.length).round();
+    // A day's average over the days so far.
+    final average = (total / elapsed).round();
     // Both ranges count days without data as no exercise.
     final previousAverage = previous.isEmpty
         ? null
@@ -158,7 +178,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final activeDates = rangeWorkouts
         .map((workout) => localDayKey(workout.completedAt.toLocal()))
         .toSet();
-    final restDays = math.max(0, _rangeDays - activeDates.length);
+    final restDays = math.max(0, elapsed - activeDates.length);
     final progression = _progressions(workouts);
     final exerciseNames = progression.keys.toList()..sort();
     final selected = exerciseNames.contains(_selectedExercise)
@@ -201,6 +221,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             const SizedBox(height: 10),
             _minutesChart(days, goals.exerciseMinutes.toDouble()),
           ],
+          MuscleSetsSection(workouts: workouts, rangeIndex: _rangeIndex),
           const SizedBox(height: 24),
           const Text(
             'Weight progression',
@@ -288,7 +309,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     if (change != null) ...[
                       const SizedBox(height: 8),
                       Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()} min vs previous $_rangeName',
+                        '${change >= 0 ? '↑' : '↓'} ${change.abs()} min${_rangeIndex == 0 ? '' : ' a day'} vs $_previousName',
                         style: TextStyle(
                           color: change >= 0
                               ? context.vivordoColors.success

@@ -417,7 +417,8 @@ void main() {
   });
 
   group('exercise', () {
-    test('Day: today against the goal and the last 7 days', () {
+    test('Day: today against the goal and this week', () {
+      // Thursday: Monday to today is 4 days.
       expect(
         exerciseInsight(
           minutes: days((i) => i == 0 ? 12 : 20, to: 10),
@@ -425,35 +426,47 @@ void main() {
           rangeDays: 1,
           goal: 30,
         ).text,
-        '12 min of exercise today, 18 to go for your 30-minute goal. 132 min '
-        'over the last 7 days.',
+        '12 min of exercise today, 18 to go for your 30-minute goal. 72 min '
+        'this week.',
       );
     });
 
-    test('Week: only days with data count, compared a day at a time', () {
+    test('Week: Monday to today against last week by the same day', () {
       final same = exerciseInsight(
-        minutes: days(
-          (i) => const {2, 4, 6, 9, 11, 13}.contains(i) ? 30 : 0,
-          from: 1,
-          to: 15,
-        ),
+        minutes: days((i) => const {0, 2, 7, 9}.contains(i) ? 30 : 0, to: 14),
         today: today,
         rangeDays: 7,
         goal: 30,
       );
       expect(
         same.text,
-        '90 min over the last 7 full days, active on 3 of them, about the same '
-        'as the 7 days before. You met your 30-minute goal on 3.',
+        '60 min so far this week, active on 2 of 4 days, about the same as by '
+        'this point last week. 150 min to go for your weekly goal of 210.',
       );
       final more = exerciseInsight(
-        minutes: days((i) => i <= 7 ? 40 : 20, from: 1, to: 15),
+        minutes: days((i) => i < 4 ? 40 : 20, to: 14),
         today: today,
         rangeDays: 7,
         goal: 30,
       );
-      expect(more.text, contains('20 min a day more than the 7 days before'));
+      expect(more.text, contains('80 min more than by this point last week'));
       expect(more.tone, InsightTone.good);
+      // Sunday: the whole week, goal reached.
+      final sunday = exerciseInsight(
+        minutes: {for (var i = 0; i < 7; i++) DateTime(2026, 10, 11 - i): 30.0},
+        today: DateTime(2026, 10, 11, 20),
+        rangeDays: 7,
+        goal: 30,
+      );
+      expect(
+        sunday.text,
+        '210 min this week, active on 7 of 7 days. You reached your weekly '
+        'goal of 210 min.',
+      );
+      expect(sunday.tone, InsightTone.good);
+    });
+
+    test('Month: only days with data count', () {
       // Health only has the last 4 days: no missing days counted as 0.
       final thin = exerciseInsight(
         minutes: days((i) => 30, from: 1, to: 5),

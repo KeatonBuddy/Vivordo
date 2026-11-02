@@ -341,7 +341,7 @@ class SavedWorkout {
 String? strengthWorkoutName(List<WorkoutExerciseRecord> exercises) {
   final sets = <String, int>{};
   for (final exercise in exercises) {
-    final group = _muscleGroup(exercise);
+    final group = muscleGroupOf(exercise);
     if (group == null) continue;
     sets[group] = (sets[group] ?? 0) + math.max(exercise.sets.length, 1);
   }
@@ -379,9 +379,11 @@ String? strengthWorkoutName(List<WorkoutExerciseRecord> exercises) {
   return '${upperName()} and Legs';
 }
 
-/// The library files curls and triceps work alike under "Arms", so the name
-/// tells them apart; forearm and grip work stays "Arms".
-String? _muscleGroup(WorkoutExerciseRecord exercise) {
+/// An exercise's muscle group: Chest, Back, Shoulders, Biceps, Triceps,
+/// Arms, Legs or Core; null for cardio and sports. The library files curls
+/// and triceps work alike under "Arms", so the name tells them apart;
+/// forearm and grip work stays "Arms".
+String? muscleGroupOf(WorkoutExerciseRecord exercise) {
   switch (exercise.category) {
     case 'Chest' || 'Back' || 'Shoulders' || 'Legs' || 'Core':
       return exercise.category;
