@@ -913,7 +913,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       suppressed:
                           hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
-                      button: (context, waves) => _buildChatButton(waves),
+                      button: (context, waves, cheers) =>
+                          _buildChatButton(waves, cheers),
                       onButtonTap: (from) => _openChat(from: from),
                       lift: _insightLift,
                       onAsk: (_) => _askAbout(_insights.current),
@@ -1005,7 +1006,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   // can briefly coexist, which a GlobalKey forbids.
   /// The Vivordo AI button: a glass circle like the tab bar, with the 3D
   /// robot standing in it.
-  Widget _buildChatButton(int waves) {
+  Widget _buildChatButton(int waves, int cheers) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1030,7 +1031,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           child: Center(
             child: Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: VivordoRobot3D(size: 46, waves: waves),
+              child: VivordoRobot3D(size: 46, waves: waves, cheers: cheers),
             ),
           ),
         ),

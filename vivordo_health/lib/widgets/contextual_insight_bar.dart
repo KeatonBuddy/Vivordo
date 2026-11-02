@@ -222,7 +222,8 @@ class InsightMemory {
 /// The Vivordo AI button beside the tab bar, and the screen's insight.
 /// A new insight plays once by itself: the button rises above the tab bar
 /// (reporting how far through [lift], so the bar can widen into the space),
-/// then opens into a pill. An insight already seen leaves a dot on the
+/// then opens into a pill. Every time it rises the robot raises both arms,
+/// then waves as it opens. An insight already seen leaves a dot on the
 /// button, the robot waves the first time that happens, and tapping the
 /// button opens it. Without an insight the button calls [onButtonTap].
 class ContextualInsightBar extends StatefulWidget {
@@ -238,8 +239,9 @@ class ContextualInsightBar extends StatefulWidget {
   });
   final ScreenInsight? insight;
 
-  /// The round button; [waves] counts up each time the robot should wave.
-  final Widget Function(BuildContext context, int waves) button;
+  /// The round button; [waves] counts up each time the robot should wave,
+  /// [cheers] each time it should raise both arms and then wave.
+  final Widget Function(BuildContext context, int waves, int cheers) button;
   final ValueChanged<BuildContext> onButtonTap;
   final ValueChanged<String> onAsk;
   final bool suppressed;
@@ -265,6 +267,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
   bool _wantOpen = false;
   bool _expanded = false;
   int _waves = 0;
+  int _cheers = 0;
   // Touches on screen; the button waits for none before it moves, so the
   // tab bar never shifts under a finger.
   final Set<int> _pointers = {};
@@ -332,8 +335,8 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     }
   }
 
-  /// Arriving on a screen: a new insight opens by itself after a moment;
-  /// a seen one gets a wave the first time its dot shows.
+  /// Arriving on a screen: a new insight opens by itself after a moment,
+  /// with a cheer; a seen one gets a wave the first time its dot shows.
   void _schedule() {
     _delay?.cancel();
     _wantOpen = false;
@@ -350,7 +353,10 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
       if (!mounted || widget.insight != insight || widget.suppressed) return;
       if (!_memory.seen(insight)) {
         _memory.markSeen(insight);
-        setState(() => _wantOpen = true);
+        setState(() {
+          _wantOpen = true;
+          _cheers++;
+        });
         _sync();
       } else if (!_memory.waved(insight)) {
         _memory.markWaved(insight);
@@ -386,7 +392,10 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
 
   void _tapButton(BuildContext buttonContext) {
     if (_dot) {
-      setState(() => _wantOpen = true);
+      setState(() {
+        _wantOpen = true;
+        _cheers++;
+      });
       _sync();
       return;
     }
@@ -517,7 +526,9 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Positioned.fill(child: widget.button(buttonContext, _waves)),
+            Positioned.fill(
+              child: widget.button(buttonContext, _waves, _cheers),
+            ),
             if (_dot)
               // Inside the round button's edge, which clips.
               Positioned(

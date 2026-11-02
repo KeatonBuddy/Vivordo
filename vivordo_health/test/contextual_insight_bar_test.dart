@@ -10,6 +10,7 @@ void main() {
     bool suppressed = false,
     ValueNotifier<double>? lift,
     List<int>? waves,
+    List<int>? cheers,
     VoidCallback? onTap,
     ValueChanged<String>? onAsk,
   }) => MaterialApp(
@@ -23,8 +24,9 @@ void main() {
           suppressed: suppressed,
           memory: memory,
           lift: lift,
-          button: (_, count) {
-            waves?.add(count);
+          button: (_, waveCount, cheerCount) {
+            waves?.add(waveCount);
+            cheers?.add(cheerCount);
             return const Text('Robot');
           },
           onButtonTap: (_) => onTap?.call(),
@@ -39,17 +41,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('a new insight opens once; later visits show a dot and wave', (
-    tester,
-  ) async {
+  testWidgets('a new insight opens once with a cheer; later visits show a '
+      'dot and wave', (tester) async {
     final memory = InsightMemory();
     final lift = ValueNotifier<double>(0);
     final waves = <int>[];
+    final cheers = <int>[];
     await tester.pumpWidget(
-      bar(screen: 'my_day', memory: memory, lift: lift, waves: waves),
+      bar(
+        screen: 'my_day',
+        memory: memory,
+        lift: lift,
+        waves: waves,
+        cheers: cheers,
+      ),
     );
     await settle(tester);
     expect(find.text('Advice'), findsOneWidget);
+    expect(cheers.last, 1, reason: 'arms up as it rises, then a wave');
+    expect(waves.last, 0);
     expect(lift.value, 1, reason: 'the button rises so the bar can widen');
     await tester.tap(find.byTooltip('Dismiss insights for this screen'));
     await tester.pumpAndSettle();
@@ -75,15 +85,23 @@ void main() {
     await settle(tester);
     final before = waves.last;
     await tester.pumpWidget(
-      bar(screen: 'my_day', memory: memory, waves: waves..clear()),
+      bar(
+        screen: 'my_day',
+        memory: memory,
+        waves: waves..clear(),
+        cheers: cheers,
+      ),
     );
     await settle(tester);
     expect(waves.last, before, reason: 'only one wave per insight');
 
-    // Tapping the button opens it; new text opens by itself again.
+    // Tapping the button opens it, rising with a cheer; new text opens by
+    // itself again.
+    final cheered = cheers.last;
     await tester.tap(find.text('Robot'));
     await tester.pumpAndSettle();
     expect(find.text('Advice'), findsOneWidget);
+    expect(cheers.last, cheered + 1);
     await tester.pumpWidget(bar(screen: 'fitness', memory: memory));
     await settle(tester);
     await tester.pumpWidget(

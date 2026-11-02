@@ -19,17 +19,25 @@ class VivordoRobot extends StatelessWidget {
 }
 
 /// The 3D robot from Vivordo's marketing renders, standing. Each time [waves]
-/// goes up it waves once (36 frames rendered from the same model, in
-/// assets/robot_wave); with Reduce Motion on it just stands. [size] is the
-/// height.
+/// goes up it waves once (assets/robot_wave); each time [cheers] goes up it
+/// raises both arms, then waves (assets/robot_cheer). Both are frames
+/// rendered from the same model, see videos/vivordo-app-robot-*. With Reduce
+/// Motion on it just stands. [size] is the height.
 class VivordoRobot3D extends StatefulWidget {
-  const VivordoRobot3D({super.key, this.size = 46, this.waves = 0});
+  const VivordoRobot3D({
+    super.key,
+    this.size = 46,
+    this.waves = 0,
+    this.cheers = 0,
+  });
   final double size;
   final int waves;
+  final int cheers;
 
-  static const _frames = 36;
-  static String _frame(int i) =>
-      'assets/robot_wave/${i.toString().padLeft(2, '0')}.png';
+  static const _wave = (dir: 'robot_wave', frames: 36, ms: 1200);
+  static const _cheer = (dir: 'robot_cheer', frames: 51, ms: 1700);
+  static String _frame(String dir, int i) =>
+      'assets/$dir/${i.toString().padLeft(2, '0')}.png';
 
   @override
   State<VivordoRobot3D> createState() => _VivordoRobot3DState();
@@ -37,10 +45,9 @@ class VivordoRobot3D extends StatefulWidget {
 
 class _VivordoRobot3DState extends State<VivordoRobot3D>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _wave = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1200),
-  )..addListener(() => setState(() {}));
+  late final AnimationController _move = AnimationController(vsync: this)
+    ..addListener(() => setState(() {}));
+  var _playing = VivordoRobot3D._wave;
   bool _cached = false;
 
   @override
@@ -48,34 +55,49 @@ class _VivordoRobot3DState extends State<VivordoRobot3D>
     super.didChangeDependencies();
     if (_cached) return;
     _cached = true;
-    // Decoded up front so the first wave doesn't stutter.
-    for (var i = 0; i < VivordoRobot3D._frames; i++) {
-      unawaited(precacheImage(AssetImage(VivordoRobot3D._frame(i)), context));
+    // Decoded up front so the first move doesn't stutter.
+    for (final move in [VivordoRobot3D._wave, VivordoRobot3D._cheer]) {
+      for (var i = 0; i < move.frames; i++) {
+        unawaited(
+          precacheImage(
+            AssetImage(VivordoRobot3D._frame(move.dir, i)),
+            context,
+          ),
+        );
+      }
     }
   }
 
   @override
   void didUpdateWidget(covariant VivordoRobot3D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.waves > oldWidget.waves &&
-        !MediaQuery.disableAnimationsOf(context)) {
-      unawaited(_wave.forward(from: 0));
+    if (MediaQuery.disableAnimationsOf(context)) return;
+    if (widget.cheers > oldWidget.cheers) {
+      _play(VivordoRobot3D._cheer);
+    } else if (widget.waves > oldWidget.waves) {
+      _play(VivordoRobot3D._wave);
     }
+  }
+
+  void _play(({String dir, int frames, int ms}) move) {
+    _playing = move;
+    _move.duration = Duration(milliseconds: move.ms);
+    unawaited(_move.forward(from: 0));
   }
 
   @override
   void dispose() {
-    _wave.dispose();
+    _move.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final frame = _wave.isAnimating
-        ? (_wave.value * (VivordoRobot3D._frames - 1)).round()
+    final frame = _move.isAnimating
+        ? (_move.value * (_playing.frames - 1)).round()
         : 0;
     return Image.asset(
-      VivordoRobot3D._frame(frame),
+      VivordoRobot3D._frame(_playing.dir, frame),
       height: widget.size,
       gaplessPlayback: true,
       filterQuality: FilterQuality.medium,
