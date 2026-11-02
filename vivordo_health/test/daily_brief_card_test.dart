@@ -136,4 +136,36 @@ void main() {
     expect(find.text('Short by 8'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets("the evening keeps today's ring as it ended beside tomorrow's", (
+    tester,
+  ) async {
+    Widget card(double tomorrowDemand) => MaterialApp(
+      home: Scaffold(
+        body: DailyBriefCard(
+          headline: 'Today’s plan is done',
+          summary: '',
+          capacityScore: 50,
+          capacityLabel: 'Your usual',
+          scheduleScore: tomorrowDemand.round(),
+          scheduleLabel: 'Expected tomorrow',
+          footer: '',
+          evening: (
+            today: capacityLeft(morning: 50, effortSoFar: 42, demand: 0),
+            tomorrowDemand: tomorrowDemand,
+            tomorrowCapacity: 50,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(card(32));
+    expect(find.text('8 left of 50'), findsOneWidget);
+    expect(find.text('32 booked of a usual 50'), findsOneWidget);
+    // No full Capacity ring that reads as refilled.
+    expect(find.text('Your usual'), findsNothing);
+
+    await tester.pumpWidget(card(61));
+    expect(find.text('61 booked, more than a usual 50'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -678,9 +678,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// Today's plan from [now] on, whether it's evening (past the end-of-day
   /// time with nothing timed left: open untimed priorities carry over, so
   /// they count towards tomorrow), and before then today's Capacity as it
-  /// stands (docs/scores.md §4): the morning's less the Effort so far. The
-  /// evening keeps the two rings, for tomorrow.
-  ({DayEffort day, bool evening, CapacityLeft? live}) _todayPlan(
+  /// stands (docs/scores.md §4): the morning's less the Effort so far. In
+  /// the evening [ended] holds how today finished instead; [live] stays
+  /// null so the glances don't publish it.
+  ({DayEffort day, bool evening, CapacityLeft? live, CapacityLeft? ended})
+  _todayPlan(
     DateTime now,
     List<_CalendarEvent> timedEvents,
     List<DailyPriority> priorities,
@@ -697,16 +699,19 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       untimedOpen: _untimedOpen(today, priorities),
     );
     final evening = day.aheadMinutes == 0 && !now.isBefore(wrapUp);
+    final state = capacityScore == null
+        ? null
+        : capacityLeft(
+            morning: capacityScore,
+            effortSoFar: _effortSoFar(now, timedEvents, priorities).total,
+            // Nothing is booked once the day has ended.
+            demand: evening ? 0 : day.demand,
+          );
     return (
       day: day,
       evening: evening,
-      live: evening || capacityScore == null
-          ? null
-          : capacityLeft(
-              morning: capacityScore,
-              effortSoFar: _effortSoFar(now, timedEvents, priorities).total,
-              demand: day.demand,
-            ),
+      live: evening ? null : state,
+      ended: evening ? state : null,
     );
   }
 
@@ -1902,6 +1907,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           : capacityEmpty?.label ?? capacityNote,
                       capacityEmptyIcon: capacityEmpty?.icon,
                       capacityLeft: live,
+                      evening:
+                          evening &&
+                              shown &&
+                              plan.ended != null &&
+                              tomorrowCapacity != null
+                          ? (
+                              today: plan.ended!,
+                              tomorrowDemand: demand,
+                              tomorrowCapacity: tomorrowCapacity,
+                            )
+                          : null,
                       onCapacityTap: live != null
                           ? () => _showCapacityToday(
                               live,

@@ -35,12 +35,18 @@ class DailyBriefCard extends StatelessWidget {
     this.onCapacityTap,
     this.onScheduleTap,
     this.capacityLeft,
+    this.evening,
   });
 
   /// Today's Capacity as it stands, during the day: one ring split into
   /// what's free, booked and spent, in place of the Capacity and Demand
   /// rings (which the evening keeps for tomorrow).
   final CapacityLeft? capacityLeft;
+
+  /// After the day ends: today's ring as it ended beside a dashed one for
+  /// tomorrow's Demand against your usual Capacity, in place of the
+  /// Capacity and Demand rings, so Capacity never looks refilled.
+  final BriefEvening? evening;
 
   /// Under the summary: the day's top fix, and in the evening tonight's
   /// wind-down.
@@ -158,6 +164,12 @@ class DailyBriefCard extends StatelessWidget {
                 )
               else if (capacityLeft case final live?)
                 _tappable(_CapacityLeftRow(live), onCapacityTap)
+              else if (evening case final evening?)
+                _EveningRow(
+                  evening,
+                  onTodayTap: onCapacityTap,
+                  onTomorrowTap: onScheduleTap,
+                )
               else
                 LayoutBuilder(
                   builder: (context, constraints) {
@@ -693,6 +705,168 @@ class _CapacityLeftRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The evening row's numbers: how today ended and what tomorrow asks.
+typedef BriefEvening = ({
+  CapacityLeft today,
+  double tomorrowDemand,
+  int tomorrowCapacity,
+});
+
+/// Today's ring as it ended (white what's left, the track what was spent)
+/// and tomorrow's dashed, not yet begun, filled with its Demand.
+class _EveningRow extends StatelessWidget {
+  const _EveningRow(this.evening, {this.onTodayTap, this.onTomorrowTap});
+
+  final BriefEvening evening;
+  final VoidCallback? onTodayTap, onTomorrowTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = evening.today;
+    final left = math.max(0, today.left.round());
+    final demand = evening.tomorrowDemand.round();
+    final usual = evening.tomorrowCapacity;
+    final over = demand > usual;
+    Widget half(
+      CustomPainter painter,
+      int number,
+      String title,
+      String note,
+      String label,
+      VoidCallback? onTap, {
+      Color noteColor = const Color(0xFFE8E0FF),
+    }) => DailyBriefCard._tappable(
+      Semantics(
+        label: label,
+        child: ExcludeSemantics(
+          child: Row(
+            children: [
+              SizedBox(
+                width: 56,
+                height: 56,
+                child: CustomPaint(
+                  painter: painter,
+                  child: Center(
+                    child: Text(
+                      '$number',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      note,
+                      style: TextStyle(color: noteColor, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      onTap,
+    );
+    final todayHalf = half(
+      _CapacityRingPainter(
+        morning: today.morning.toDouble(),
+        left: left.toDouble(),
+        booked: 0,
+      ),
+      left,
+      'Today',
+      '$left left of ${today.morning}',
+      'Today: $left Capacity left of ${today.morning}.',
+      onTodayTap,
+    );
+    final tomorrowHalf = half(
+      _TomorrowRingPainter(demand: evening.tomorrowDemand, usual: usual),
+      demand,
+      'Tomorrow',
+      over
+          ? '$demand booked, more than a usual $usual'
+          : '$demand booked of a usual $usual',
+      'Tomorrow: $demand Demand booked against a usual Capacity of $usual.',
+      onTomorrowTap,
+      noteColor: over ? _CapacityLeftRow._over : const Color(0xFFE8E0FF),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          constraints.maxWidth < 280 ||
+              MediaQuery.textScalerOf(context).scale(12) > 19
+          ? Column(
+              children: [todayHalf, const SizedBox(height: 12), tomorrowHalf],
+            )
+          : Row(
+              children: [
+                Expanded(child: todayHalf),
+                const SizedBox(width: 10),
+                Expanded(child: tomorrowHalf),
+              ],
+            ),
+    );
+  }
+}
+
+/// Tomorrow: a dashed ring for a day not yet begun, filled lilac with its
+/// Demand as a share of your usual Capacity (amber when it's more).
+class _TomorrowRingPainter extends CustomPainter {
+  const _TomorrowRingPainter({required this.demand, required this.usual});
+
+  final double demand;
+  final int usual;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 6.0, dashes = 24;
+    final rect = (Offset.zero & size).deflate(stroke / 2);
+    Paint arc(Color color) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    const step = math.pi * 2 / dashes;
+    for (var i = 0; i < dashes; i++) {
+      canvas.drawArc(
+        rect,
+        i * step,
+        step / 2,
+        false,
+        arc(Colors.white.withValues(alpha: .35)),
+      );
+    }
+    if (usual <= 0 || demand <= 0) return;
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      (demand / usual).clamp(0.0, 1.0) * math.pi * 2,
+      false,
+      arc(demand > usual ? _CapacityLeftRow._over : _CapacityLeftRow._booked),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TomorrowRingPainter old) =>
+      old.demand != demand || old.usual != usual;
 }
 
 class _CapacityRingPainter extends CustomPainter {
