@@ -10,6 +10,9 @@ typedef SleepPeriod = ({DateTime start, DateTime end, double? asleepHours});
 
 enum EnergyPhase { groggy, peak, dip, secondWind, windDown }
 
+/// Why this morning's grogginess is heavier than usual.
+enum HeavyGrogginess { sleepDebt, earlyWake }
+
 class EnergyWindow {
   const EnergyWindow(this.phase, this.start, this.end);
 
@@ -38,6 +41,7 @@ class EnergyForecast {
     this.needIsDefault = false,
     this.usesSchedule = false,
     this.factors = const [],
+    this.heavyGrogginess,
   }) : wakeTarget = wakeTarget ?? bedBy;
 
   final DateTime wake;
@@ -77,6 +81,10 @@ class EnergyForecast {
   /// Last night's tags and yesterday's training, already in the curve.
   final List<EnergyFactor> factors;
 
+  /// The main reason grogginess runs heavier and longer this morning, or
+  /// null when it's the usual.
+  final HeavyGrogginess? heavyGrogginess;
+
   /// Energy at [time], or null outside the waking day.
   double? at(DateTime time) {
     if (curve.isEmpty ||
@@ -113,6 +121,13 @@ const _defaultNeedHours = 8.0;
 /// Nights needed before your own pattern replaces the defaults.
 const _minNights = 5;
 
+/// The body clock follows the last few nights part of the way: their
+/// midpoint (last night weighted 1, then ½, ¼, ⅛) pulls your chronotype by
+/// this share, so a weekend lie-in makes Monday run later (a 3 h later wake
+/// moved the clock ~40 min in Taylor et al. 2008).
+const _recentClockNights = 4;
+const _recentClockPull = 0.35;
+
 /// Body clock: a 24-hour wave peaking 11 h after your sleep midpoint, plus a
 /// 12-hour wave peaking 5.5 h after it (the morning peak and the dip).
 const _clock24PeakHours = 11.0;
@@ -129,10 +144,26 @@ const _pressurePerMissingNight = 0.5;
 const _pressurePerDebtHour = 0.03;
 const _pressureMax = 0.75;
 
-/// Sleep inertia: grogginess that fades over the first ~70 minutes.
+/// Sleep inertia: grogginess that fades over the first ~70 minutes. It's
+/// heavier (so lasts longer) after going to bed in sleep debt, which means
+/// deeper sleep to wake from, a long catch-up night included, and after
+/// waking well before your usual time, nearer the body clock's low
+/// (Hilditch & McHill 2019; Scheer et al. 2008). A long night on its own
+/// adds nothing. It takes a share of the energy you'd otherwise have,
+/// 1 − e^(−1.7 × inertia): ~57% on waking on a usual morning, ~72% after a
+/// short week, 82% at most, so the curve rises from waking and never sits
+/// flat on zero. 1.7 keeps the usual 9 AM peak start of the additive model.
 const _inertiaStart = 0.5;
+const _inertiaShareRate = 1.7;
 const _inertiaFadeHours = 0.75;
 const _inertiaGone = 0.1;
+const _inertiaPerDebtHour = 0.06;
+const _inertiaPerEarlyHour = 0.15;
+const _maxEarlyHours = 3.0;
+const _maxInertiaScale = 2.0;
+
+/// Named as a reason once it adds this much to the usual grogginess.
+const _heavyInertiaScale = 0.2;
 
 const _base = 0.7;
 
@@ -151,6 +182,10 @@ const _morningPrep = Duration(minutes: 60);
 const _windDown = Duration(minutes: 60);
 const _debtDays = 7;
 const _maxDebtHours = 10.0;
+
+/// Share of sleep beyond your need that pays back debt: one long night only
+/// partly makes up for short ones (Banks et al. 2010).
+const _debtPaybackShare = 0.5;
 
 /// Forecasts [day]'s energy from recent [nights] (any order, including last
 /// night). [sleepNeedHours] is Capacity's sleep need; [tomorrowFirstEvent]
@@ -207,26 +242,86 @@ EnergyForecast forecastEnergy({
 
   final anchor = date.add(_fromHours(midSleep));
   final wake = lastNight?.end ?? anchor.add(_fromHours(usualHours / 2));
+
+  // Today's body clock: the chronotype, pulled part of the way towards the
+  // last few nights' midpoints, the latest counting most.
+  var recentWeight = 0.0, recentSum = 0.0;
+  for (final n in recent) {
+    final daysAgo = (date.difference(_midnight(n.end)).inHours / 24).round();
+    if (daysAgo < 0 || daysAgo >= _recentClockNights) continue;
+    final w = math.pow(0.5, daysAgo).toDouble();
+    recentWeight += w;
+    recentSum += w * midOf(n);
+  }
+  final clockAnchor = history && recentWeight > 0
+      ? date.add(
+          _fromHours(
+            midSleep + _recentClockPull * (recentSum / recentWeight - midSleep),
+          ),
+        )
+      : anchor;
   final slept = lastNight != null
       ? asleepOf(lastNight)
       : usual != null
       ? usualHours
       : need;
-  // Tonight's scheduled bedtime, so a Friday uses the weekend's.
+  // Tonight's bedtime from nights like tonight: weekend nights before a
+  // Saturday or Sunday, work nights otherwise. The body clock above prefers
+  // weekends, but a Sunday that followed it would put bed in the small hours.
+  final tomorrow = DateTime(date.year, date.month, date.day + 1);
+  bool isFree(DateTime d) => d.weekday >= DateTime.saturday;
+  final alike = recent.where((n) => isFree(n.end) == isFree(tomorrow));
   final usualBedtime = usual != null
-      ? schedule!
-            .nightEnding(DateTime(date.year, date.month, date.day + 1))
-            .start
-      : _toQuarter(anchor.add(_fromHours(24 - usualHours / 2)));
+      ? schedule!.nightEnding(tomorrow).start
+      : _toQuarter(
+          tomorrow.add(
+            _fromHours(
+              (history && alike.length >= 2
+                      ? _median([for (final n in alike) midOf(n)])
+                      : midSleep) -
+                  usualHours / 2,
+            ),
+          ),
+        );
 
-  final debt = math.min(
-    _maxDebtHours,
-    [
-      for (final n in recent)
-        if (n.end.isAfter(date.subtract(const Duration(days: _debtDays - 1))))
-          math.max(0.0, need - asleepOf(n)),
-    ].fold(0.0, (a, b) => a + b),
-  );
+  // Debt night by night, oldest first: a short night adds what it was short,
+  // a long one pays back part of the extra.
+  double debtOver(Iterable<SleepPeriod> nights) => nights.fold(0.0, (d, n) {
+    final short = need - asleepOf(n);
+    return (d + (short > 0 ? short : short * _debtPaybackShare)).clamp(
+      0.0,
+      _maxDebtHours,
+    );
+  });
+  final week = [
+    for (final n in recent.reversed)
+      if (n.end.isAfter(date.subtract(const Duration(days: _debtDays - 1)))) n,
+  ];
+  final debt = debtOver(week);
+
+  // Grogginess: heavier for debt carried into last night and for waking
+  // before your usual wake on a day like today.
+  final usualWakeHours = usual != null
+      ? _hours(usual.end.difference(date))
+      : () {
+          final wakes = [
+            for (final n in recent)
+              if (n != lastNight && isFree(n.end) == isFree(date))
+                _hours(n.end.difference(_midnight(n.end))),
+          ];
+          return history && wakes.length >= 2 ? _median(wakes) : null;
+        }();
+  final early = lastNight == null || usualWakeHours == null
+      ? 0.0
+      : (usualWakeHours - _hours(lastNight.end.difference(date))).clamp(
+          0.0,
+          _maxEarlyHours,
+        );
+  final fromDebt =
+      _inertiaPerDebtHour * debtOver(week.where((n) => n != lastNight));
+  final fromEarly = _inertiaPerEarlyHour * early;
+  final inertiaStart =
+      _inertiaStart * math.min(_maxInertiaScale, 1 + fromDebt + fromEarly);
 
   final pressureAtWake = math.min(
     _pressureMax,
@@ -236,7 +331,7 @@ EnergyForecast forecastEnergy({
         factors.fold(0.0, (sum, f) => sum + f.pressure),
   );
   double energy(DateTime t) {
-    final phase = _hours(t.difference(anchor));
+    final phase = _hours(t.difference(clockAnchor));
     final clock =
         math.cos(2 * math.pi * (phase - _clock24PeakHours) / 24) +
         _clock12Weight *
@@ -244,8 +339,9 @@ EnergyForecast forecastEnergy({
     final awake = math.max(0.0, _hours(t.difference(wake)));
     final pressure =
         1 - (1 - pressureAtWake) * math.exp(-awake / _pressureRiseHours);
-    final inertia = _inertiaStart * math.exp(-awake / _inertiaFadeHours);
-    return (_base + _clockWeight * clock - _pressureWeight * pressure - inertia)
+    final inertia = inertiaStart * math.exp(-awake / _inertiaFadeHours);
+    return ((_base + _clockWeight * clock - _pressureWeight * pressure) *
+            math.exp(-_inertiaShareRate * inertia))
         .clamp(0.0, 1.0);
   }
 
@@ -270,7 +366,7 @@ EnergyForecast forecastEnergy({
     usualBedtime: usualBedtime,
     bedBy: bedBy,
     curve: curve,
-    windows: _windows(curve, wake, bedBy),
+    windows: _windows(curve, wake, bedBy, inertiaStart),
     sleptHours: slept,
     sleepNeedHours: need,
     sleepDebtHours: debt,
@@ -290,6 +386,11 @@ EnergyForecast forecastEnergy({
     needIsDefault: sleepNeedHours == null,
     usesSchedule: usual != null,
     factors: factors,
+    heavyGrogginess: fromDebt + fromEarly < _heavyInertiaScale
+        ? null
+        : fromDebt >= fromEarly
+        ? HeavyGrogginess.sleepDebt
+        : HeavyGrogginess.earlyWake,
   );
 }
 
@@ -300,11 +401,12 @@ List<EnergyWindow> _windows(
   List<(DateTime, double)> curve,
   DateTime wake,
   DateTime bedBy,
+  double inertiaStart,
 ) {
   if (curve.length < 8) return const [];
   final windows = <EnergyWindow>[];
   final groggyEnd = wake.add(
-    _fromHours(_inertiaFadeHours * math.log(_inertiaStart / _inertiaGone)),
+    _fromHours(_inertiaFadeHours * math.log(inertiaStart / _inertiaGone)),
   );
   windows.add(EnergyWindow(EnergyPhase.groggy, wake, _toQuarter(groggyEnd)));
 

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/meeting_patterns.dart';
 import 'package:vivordo_health/src/utils/weekly_review.dart';
 
@@ -119,20 +120,38 @@ void main() {
     expect(review.chips, isNot(contains('sleep on target')));
   });
 
-  test('two or more lie-ins are named', () {
-    final week = [for (var i = 0; i < 7; i++) day()];
-    for (final i in [0, 6]) {
-      (week[i]['capacity'] as Map)['wakeOffsetMin'] = 120;
-    }
-    // An early start isn't a lie-in.
-    (week[3]['capacity'] as Map)['wakeOffsetMin'] = -120;
+  test('sleep lines are the Sleep screen\'s patterns', () {
+    // Four weeks of 7h 30m, up at 7 on weeknights and 9:30 after Friday and
+    // Saturday nights.
+    final nights = {
+      for (var i = -27; i < 7; i++)
+        at(i): () {
+          final weekend = at(i).weekday >= DateTime.saturday;
+          final wake = DateTime(
+            2026,
+            10,
+            4 + i,
+            weekend ? 9 : 7,
+            weekend ? 30 : 0,
+          );
+          return SleepNight(
+            7.5,
+            wake.subtract(const Duration(minutes: 450)),
+            wake,
+          );
+        }(),
+    };
     final review = buildWeeklyReview(
-      WeeklyReviewInput(weekStart: sunday, scores: scores(week)),
+      WeeklyReviewInput(
+        weekStart: sunday,
+        scores: scores([for (var i = 0; i < 7; i++) day(sleep: 7.5)]),
+        nights: nights,
+      ),
     )!;
-    expect(
-      review.drained.firstWhere((l) => l.kind == 'lieIn').detail,
-      startsWith('You slept in 90 minutes or more on 2 mornings.'),
-    );
+    final line = review.drained.firstWhere((l) => l.kind == 'lieIn');
+    expect(line.title, 'Weekend shift');
+    expect(line.detail, startsWith('Your sleep runs about 2h 30m later'));
+    expect(review.headline, isNot('A good week for sleep'));
   });
 
   test('a heavy week you handled well, and one that wore on you', () {
@@ -152,6 +171,7 @@ void main() {
     )!;
     expect(handled.headline, 'A heavy week you handled well');
     expect(handled.chips.first, '3 heavy days');
+    expect(handled.chips[1], '3 of 3 priorities done');
     expect(handled.drained.first.title, 'Monday: 5 back-to-backs');
     expect(handled.rows.map((r) => r.label), contains('Mood'));
 
@@ -373,6 +393,69 @@ void main() {
     expect(
       afterHoursLine(weeks(4, 10)),
       '3h 30m after hours, 2h 20m more than usual.',
+    );
+  });
+
+  group('calm events named', () {
+    // 2026-10-12 is a Monday.
+    ({String? name, DateTime day}) e(String? name, [int date = 12]) =>
+        (name: name, day: DateTime(2026, 10, date));
+
+    test('one, two and three events read as a list', () {
+      expect(namedEventList([e('Design review')]), 'Design review');
+      expect(
+        namedEventList([e('Design review'), e('1:1 with Sam')]),
+        'Design review and 1:1 with Sam',
+      );
+      expect(namedEventList([e('A'), e('B'), e('C')]), 'A, B and C');
+    });
+
+    test('repeats are counted and come first; past three, "and N more"', () {
+      expect(
+        namedEventList([e('A'), e('Standup'), e('B'), e('Standup')]),
+        'Standup (2×), A and B',
+      );
+      expect(
+        namedEventList([e('A'), e('B'), e('C'), e('D'), e('E'), e('D')]),
+        'D (2×), A, B and 2 more',
+      );
+    });
+
+    test('an event the calendar no longer has is named by its day', () {
+      expect(
+        namedEventList([e('Design review'), e(null, 13)]),
+        'Design review and an event on Tuesday',
+      );
+      expect(namedEventList([e(null, 13), e(null, 13)]), '2 events on Tuesday');
+    });
+
+    test(
+      'the line keeps its event keys when saved, and is named when shown',
+      () {
+        const line = ReviewLine(
+          'calm',
+          'Calmer events',
+          '2 events kept your heart rate under your usual.',
+          events: [
+            (key: 'k1', series: 's1', day: '2026-10-12'),
+            (key: 'k2', series: null, day: '2026-10-13'),
+          ],
+        );
+        final saved = ReviewLine.fromMap(line.toMap());
+        expect(saved.events, line.events);
+        final names = {'s1': 'Team standup'};
+        expect(
+          reviewLineDetail(saved, (e) => names[e.series]),
+          'Team standup and an event on Tuesday kept your heart rate under '
+          'your usual.',
+        );
+        const old = ReviewLine(
+          'calm',
+          'Calmer events',
+          '3 events kept it low.',
+        );
+        expect(reviewLineDetail(old, (_) => 'x'), '3 events kept it low.');
+      },
     );
   });
 }

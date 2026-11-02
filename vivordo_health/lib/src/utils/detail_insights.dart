@@ -1,4 +1,8 @@
-import 'package:flutter/material.dart';
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart';
+
+part 'sleep_patterns.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
 /// with their own usual rather than population cut-offs.
@@ -18,9 +22,12 @@ class DetailInsight {
 
 /// The icon and colour a screen's insight card uses for [tone].
 (IconData, Color) insightStyle(InsightTone tone) => switch (tone) {
-  InsightTone.good => (Icons.trending_up_rounded, const Color(0xFF20B26B)),
-  InsightTone.concern => (Icons.info_outline_rounded, const Color(0xFFE08600)),
-  InsightTone.neutral => (Icons.insights_rounded, const Color(0xFF6B55F5)),
+  InsightTone.good => (CupertinoIcons.arrow_up_right, const Color(0xFF20B26B)),
+  InsightTone.concern => (CupertinoIcons.info, const Color(0xFFE08600)),
+  InsightTone.neutral => (
+    CupertinoIcons.chart_bar_alt_fill,
+    const Color(0xFF6B55F5),
+  ),
 };
 
 /// Day-keyed values (date only). Days with no data are left out, never 0.
@@ -353,16 +360,8 @@ DetailInsight sleepInsight({
     text +=
         ' Wake time was within an hour of usual on $onTime of ${woke.length} mornings.';
   }
+  // A run of long sleep shows in sleepPatterns instead.
   final short = need != null && (need - average) * 60 >= 30;
-  if (rangeDays == 7) {
-    final long = longSleepAverage([
-      for (var i = 0; i < 14; i++)
-        nights[DateTime(day.year, day.month, day.day - i)]?.hours,
-    ], need);
-    if (long != null) {
-      return DetailInsight(longSleepText(long, need!), InsightTone.concern);
-    }
-  }
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
 }
 
@@ -380,13 +379,6 @@ double? longSleepAverage(List<double?> nights, double? need) {
   if (long < 4 || _mean(before) < need - 0.5) return null;
   return _mean(recent);
 }
-
-/// The sentence for [longSleepAverage].
-String longSleepText(double average, double need) =>
-    'You\'ve slept a lot longer than usual this week: '
-    '${hoursMinutes(average)} on average against your need of '
-    '${hoursMinutes(need)}. That can be a sign you\'re run down or coming '
-    'down with something.';
 
 /// How Sleep detail's summary card sets its bar.
 enum SleepNeedTone { met, short, learning }
@@ -522,18 +514,61 @@ DetailInsight exerciseInsight({
     return sum;
   }
 
+  // Days since Monday, today included: the calendar week so far.
+  final sinceMonday = day.weekday;
   if (rangeDays == 1) {
     final now = (minutes[day] ?? 0).round();
-    final week = total(0, 7).round();
+    final week = total(0, sinceMonday).round();
     final goalPart = goal <= 0
         ? '.'
         : now >= goal
         ? ', meeting your ${goal.round()}-minute goal.'
         : ', ${(goal - now).round()} to go for your ${goal.round()}-minute goal.';
     return DetailInsight(
-      '$now min of exercise today$goalPart $week min over the last 7 days.',
+      '$now min of exercise today$goalPart $week min this week.',
       goal > 0 && now >= goal ? InsightTone.good : InsightTone.neutral,
     );
+  }
+
+  if (rangeDays == 7) {
+    // Monday to today, against last week up to the same day.
+    final sum = total(0, sinceMonday).round();
+    final before = total(7, 7 + sinceMonday).round();
+    final hadLastWeek = [
+      for (var i = 7; i < 14; i++)
+        ?minutes[DateTime(day.year, day.month, day.day - i)],
+    ].isNotEmpty;
+    final active = [
+      for (var i = 0; i < sinceMonday; i++)
+        if ((minutes[DateTime(day.year, day.month, day.day - i)] ?? 0) > 0) i,
+    ].length;
+    final sunday = sinceMonday == 7;
+    var tone = InsightTone.neutral;
+    var text =
+        '${formatCount(sum.toDouble())} min ${sunday ? 'this week' : 'so far this week'}, '
+        'active on $active of $sinceMonday ${sinceMonday == 1 ? 'day' : 'days'}';
+    final by = sunday ? 'than last week' : 'than by this point last week';
+    if (hadLastWeek && before > 0) {
+      final difference = sum - before;
+      if ((difference / before).abs() >= .1) {
+        text +=
+            ', ${difference.abs()} min ${difference > 0 ? 'more' : 'less'} $by';
+        tone = difference > 0 ? InsightTone.good : InsightTone.concern;
+      } else {
+        text +=
+            ', about the same as ${sunday ? 'last week' : 'by this point last week'}';
+      }
+    }
+    text += '.';
+    final weekly = (goal * 7).round();
+    if (weekly > 0) {
+      text += sum >= weekly
+          ? ' You reached your weekly goal of ${formatCount(weekly.toDouble())} min.'
+          : ' ${formatCount((weekly - sum).toDouble())} min to go for your weekly goal of '
+                '${formatCount(weekly.toDouble())}.';
+      if (sum >= weekly) tone = InsightTone.good;
+    }
+    return DetailInsight(text, tone);
   }
 
   // Only days with data count: a day missing from Health isn't 0 minutes.

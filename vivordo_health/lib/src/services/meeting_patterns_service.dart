@@ -2,7 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
+import 'package:flutter/foundation.dart';
+
+import '../utils/body_reaction.dart';
 import '../utils/day_key.dart';
+import 'calendar_service.dart';
 import '../utils/heavy_days.dart';
 import '../utils/meeting_patterns.dart';
 
@@ -32,6 +36,32 @@ class MeetingPatternsService {
   /// A series' calendar title, else its description.
   static String nameOf(MeetingPattern p) =>
       p.isSeries ? names[p.id] ?? p.label : p.label;
+
+  /// Single events' titles by reaction key, for the weekly review's calm
+  /// events; like [names], only ever in memory.
+  static final eventNames = <String, String>{};
+  static final _weeks = <String, Future<void>>{};
+
+  /// Reads the week from [weekStart] from the calendar once, for
+  /// [eventNames] and [names].
+  static Future<void> loadWeekNames(DateTime weekStart) =>
+      _weeks.putIfAbsent(localDayKey(weekStart), () async {
+        try {
+          final events = await CalendarService.getEventsBetween(
+            weekStart,
+            DateTime(weekStart.year, weekStart.month, weekStart.day + 7),
+          ).timeout(const Duration(seconds: 15));
+          rememberNames(events);
+          for (final e in events) {
+            final title = e.summary?.trim();
+            if (e.id == null || title == null || title.isEmpty) continue;
+            eventNames[reactionKey(CalendarService.eventKey(e))] = title;
+          }
+        } catch (error) {
+          _weeks.remove(localDayKey(weekStart));
+          debugPrint('Weekly review event names failed to load: $error');
+        }
+      });
 
   /// Drops the cache, after a reaction is saved.
   static void invalidate() => _loading = null;

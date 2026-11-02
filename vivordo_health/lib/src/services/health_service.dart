@@ -12,6 +12,7 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/exercise_minutes.dart';
 import 'day_record_service.dart';
 import 'stress_score_service.dart';
+import '../utils/merge_write.dart';
 import '../utils/metric_cleanup.dart';
 import '../utils/step_totals.dart';
 import '../utils/sleep_stage_aggregation.dart';
@@ -81,7 +82,7 @@ const List<HealthMetricDef> kHealthMetrics = [
     key: 'distance',
     type: HealthDataType.DISTANCE_WALKING_RUNNING,
     label: 'Distance',
-    description: 'Distance walked or run (in km)',
+    description: 'Distance walked or run',
   ),
   // ── Heart ───────────────────────────────────────────────────────────────────
   HealthMetricDef(
@@ -357,6 +358,8 @@ class HealthService {
   /// as it's connected. The server then scores the imported days in order
   /// (functions/history_import.js), so the usuals exist on day one. A part
   /// is marked done only once it's scored; an unfinished one runs again.
+  /// A calendar that came back empty or failed is retried once a day (see
+  /// [calendarHistoryDue]), and with nothing recorded nothing is rescored.
   /// Calls queue behind each other, so onboarding's call after the calendar
   /// connects picks up what the earlier one (from Health) couldn't.
   /// [recent] off skips the usual 30-day sync when there's no Health to
@@ -387,33 +390,60 @@ class HealthService {
         (run['health'] == 'done' ||
             (run['health'] == null && run['state'] == 'done'));
     final importHealth = !healthDone && consent.containsValue(true);
+    final today = localDayKey(DateTime.now());
     final importCalendar =
-        !(run is Map && run['calendar'] == 'done') &&
-        (allowCalendar || data?['onboardingCompleted'] == true) &&
+        calendarHistoryDue(
+          run,
+          explicit: allowCalendar,
+          onboarded: data?['onboardingCompleted'] == true,
+          today: today,
+        ) &&
         await DayRecordService.calendarConnected();
     if (!importHealth && !importCalendar) {
       if (recent) await syncToFirestore(daysBack: 30);
       return;
     }
-    await user.set({
-      'historyImport': {
-        'state': 'running',
-        'startedAt': FieldValue.serverTimestamp(),
-      },
-    }, SetOptions(merge: true));
-    historyStep.value = importHealth ? 'health' : 'calendar';
-    if (importHealth || recent) {
-      await syncToFirestore(daysBack: importHealth ? historyDays : 30);
+    // Marked only once something will be imported: while it's running the
+    // server leaves old days to rebuildHistory, which then rescores them all.
+    var running = false;
+    Future<void> markRunning() async {
+      running = true;
+      await user.set({
+        'historyImport': {
+          'state': 'running',
+          'startedAt': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    }
+
+    if (importHealth) {
+      await markRunning();
+      historyStep.value = 'health';
+      await syncToFirestore(daysBack: historyDays);
     }
     var calendar = false;
     if (importCalendar) {
       historyStep.value = 'calendar';
       try {
-        calendar = await DayRecordService.syncHistory();
+        calendar = await DayRecordService.syncHistory(
+          beforeWrite: running ? null : markRunning,
+        );
       } catch (error) {
         debugPrint('HealthService: calendar history failed: $error');
       }
+      if (!calendar) {
+        await user.set({
+          'historyImport': {'calendarTriedOn': today},
+        }, SetOptions(merge: true));
+      }
     }
+    if (!running) {
+      // The calendar had nothing to record: just the usual sync.
+      if (recent) await syncToFirestore(daysBack: 30);
+      historyStep.value = 'done';
+      return;
+    }
+    if (!importHealth && recent) await syncToFirestore(daysBack: 30);
     if (FirebaseAuth.instance.currentUser?.uid != uid) return;
     historyStep.value = 'scoring';
     try {
@@ -435,6 +465,21 @@ class HealthService {
       );
     }
     historyStep.value = 'done';
+  }
+
+  /// Whether to read the calendar's history now: until it's recorded, when
+  /// onboarding asks ([explicit]), or after onboarding at most once a day,
+  /// so an empty or unreadable calendar isn't fetched on every launch.
+  @visibleForTesting
+  static bool calendarHistoryDue(
+    Object? run, {
+    required bool explicit,
+    required bool onboarded,
+    required String today,
+  }) {
+    if (run is Map && run['calendar'] == 'done') return false;
+    if (explicit) return true;
+    return onboarded && !(run is Map && run['calendarTriedOn'] == today);
   }
 
   /// Request HealthKit permission for a single metric, then sync it.
@@ -502,10 +547,13 @@ class HealthService {
     await _syncMetric(metricKey, daysBack: daysBack);
   }
 
+  /// Syncs one metric. Inside a full sync ([into]) its writes join the
+  /// sync's single commit; on its own it reads its days and commits itself.
   Future<void> _syncMetric(
     String metricKey, {
     int daysBack = 30,
     bool refreshWearableConnections = true,
+    _SyncWrites? into,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -522,8 +570,31 @@ class HealthService {
     // Only explicit user actions request permission; routine syncs read the
     // selected metrics and let HealthKit return the data available to the app.
 
+    final writes =
+        into?.metric() ?? await _SyncWrites.read(_db, uid, daysBack: daysBack);
+    await _stageMetric(uid, metricKey, def, daysBack, writes);
+    if (into != null) {
+      into.add(writes);
+    } else {
+      await _commit(uid, writes);
+    }
+  }
+
+  Future<void> _commit(String uid, _SyncWrites writes) async {
+    await writes.commit(_db);
+    await _promoteAppleHeartRateIfBleStale(uid, writes.heartRates);
+    debugPrint('HealthService: committed ${writes.length} changed write(s).');
+  }
+
+  Future<void> _stageMetric(
+    String uid,
+    String metricKey,
+    HealthMetricDef def,
+    int daysBack,
+    _SyncWrites writes,
+  ) async {
     if (metricKey == 'steps') {
-      await _syncStepTotals(uid, daysBack: daysBack);
+      await _syncStepTotals(uid, writes, daysBack: daysBack);
       return;
     }
 
@@ -533,7 +604,7 @@ class HealthService {
 
     try {
       if (metricKey == 'sleep') {
-        await _syncSleep(uid, start: start, end: now);
+        await _syncSleep(uid, writes, start: start, end: now);
         return;
       }
 
@@ -557,6 +628,7 @@ class HealthService {
           );
           await _deleteMetricForMissingDays(
             uid,
+            writes,
             metricKey,
             start: start,
             end: now,
@@ -565,9 +637,15 @@ class HealthService {
           return;
         }
 
-        final daysWithData = await _writeDataPoints(uid, def, dataPoints);
+        final daysWithData = await _writeDataPoints(
+          uid,
+          writes,
+          def,
+          dataPoints,
+        );
         await _deleteMetricForMissingDays(
           uid,
+          writes,
           metricKey,
           start: start,
           end: now,
@@ -596,6 +674,7 @@ class HealthService {
         }
         await _deleteMetricForMissingDays(
           uid,
+          writes,
           metricKey,
           start: start,
           end: now,
@@ -604,9 +683,10 @@ class HealthService {
         return;
       }
 
-      final daysWithData = await _writeDataPoints(uid, def, dataPoints);
+      final daysWithData = await _writeDataPoints(uid, writes, def, dataPoints);
       await _deleteMetricForMissingDays(
         uid,
+        writes,
         metricKey,
         start: start,
         end: now,
@@ -656,7 +736,8 @@ class HealthService {
   }
 
   Future<void> _syncSleep(
-    String uid, {
+    String uid,
+    _SyncWrites writes, {
     required DateTime start,
     required DateTime end,
   }) async {
@@ -671,7 +752,6 @@ class HealthService {
     final daysWithData = <String>{};
 
     if (summaries.isNotEmpty) {
-      final batch = _db.batch();
       for (final summary in summaries) {
         final day = localDayKey(summary.date);
         daysWithData.add(day);
@@ -692,15 +772,16 @@ class HealthService {
             .doc(uid)
             .collection('metrics_daily')
             .doc(day);
-        final existing = await ref.get();
-        if (_connectedWearableHasPriority(existing.data(), 'sleep')) continue;
+        if (_connectedWearableHasPriority(await writes.day(ref), 'sleep')) {
+          continue;
+        }
         // One night at a time: 90 days of watch heart rate in one read would
         // be over 100,000 samples.
         final sleepingHr = sleepingHeartRate(
           summary,
           await _sleepHeartRateReadings(summary.bedtime, summary.wakeTime),
         );
-        batch.set(ref, {
+        await writes.set(ref, {
           'sleeping_heart_rate': sleepingHr == null
               ? FieldValue.delete()
               : {'avg': sleepingHr, 'unit': 'bpm', 'source': 'apple_health'},
@@ -721,17 +802,13 @@ class HealthService {
           },
           'date': day,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        });
       }
-      await batch.commit();
-      debugPrint(
-        'HealthService.syncMetric(sleep): wrote sleep totals and stages for '
-        '${summaries.length} day(s).',
-      );
     }
 
     await _deleteMetricForMissingDays(
       uid,
+      writes,
       'sleep',
       start: start,
       end: end,
@@ -824,8 +901,16 @@ class HealthService {
     }
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) await _refreshWearableConnections(uid);
-    for (final m in kAvailableHealthMetrics) {
+    if (uid == null) return;
+    await _refreshWearableConnections(uid);
+    final _SyncWrites writes;
+    try {
+      writes = await _SyncWrites.read(_db, uid, daysBack: daysBack);
+    } catch (e) {
+      debugPrint('HealthService.syncToFirestore — could not read days: $e');
+      return;
+    }
+    for (final m in kHealthMetrics) {
       if (consent[m.key] == true) {
         try {
           await PerformanceTrace.async(
@@ -834,6 +919,7 @@ class HealthService {
               m.key,
               daysBack: daysBack,
               refreshWearableConnections: false,
+              into: writes,
             ),
           );
         } catch (e) {
@@ -842,23 +928,23 @@ class HealthService {
         }
       }
     }
-
-    if (uid != null) {
-      try {
-        await _db.collection('users').doc(uid).set({
-          'lastHealthKitSync': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint(
-          'HealthService.syncToFirestore — could not update lastSync: $e',
-        );
-      }
-      // Recompute BaaS stress score now that fresh HealthKit data is in Firestore
-      StressScoreService.computeAndSave(
-        uid: uid,
-        force: true,
-      ).catchError((_) {});
+    try {
+      await _commit(uid, writes);
+    } catch (e) {
+      debugPrint('HealthService.syncToFirestore — commit failed: $e');
     }
+
+    try {
+      await _db.collection('users').doc(uid).set({
+        'lastHealthKitSync': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint(
+        'HealthService.syncToFirestore — could not update lastSync: $e',
+      );
+    }
+    // Recompute BaaS stress score now that fresh HealthKit data is in Firestore
+    StressScoreService.computeAndSave(uid: uid, force: true).catchError((_) {});
   }
 
   Future<void> syncToday() => syncToFirestore(daysBack: 1);
@@ -1194,12 +1280,15 @@ class HealthService {
         type == HealthDataType.DISTANCE_WALKING_RUNNING;
   }
 
-  Future<void> _syncStepTotals(String uid, {int daysBack = 30}) async {
+  Future<void> _syncStepTotals(
+    String uid,
+    _SyncWrites writes, {
+    int daysBack = 30,
+  }) async {
     // Apple Health is the single canonical step source, including steps that
     // a wearable may have contributed to HealthKit.
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final batch = _db.batch();
     final daysWithData = <String>{};
     var daysWritten = 0;
     final hours = await _hourlyStepTotals(
@@ -1210,7 +1299,11 @@ class HealthService {
     for (var i = 0; i < daysBack; i++) {
       final day = today.subtract(Duration(days: i));
       final end = i == 0 ? now : day.add(const Duration(days: 1));
-      var total = (await _health.getTotalStepsInInterval(day, end))?.toDouble();
+      final dayKey = localDayKey(day);
+      final dayHours = hours[dayKey];
+      var total =
+          dayStepTotal(dayHours) ??
+          (await _health.getTotalStepsInInterval(day, end))?.toDouble();
 
       // The plugin reports "no statistics" as 0, not null, and on this device
       // it returned 0 for days Apple Health shows steps for. Writing that 0
@@ -1229,15 +1322,13 @@ class HealthService {
         }
       }
 
-      final dayKey = localDayKey(day);
       daysWithData.add(dayKey);
       final ref = _db
           .collection('users')
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
-      final dayHours = hours[dayKey];
-      batch.set(ref, {
+      await writes.set(ref, {
         'steps': {
           'sum': total,
           'avg': total,
@@ -1252,21 +1343,18 @@ class HealthService {
         },
         'date': dayKey,
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
       daysWritten++;
     }
 
     if (daysWritten == 0) return;
-    await batch.commit();
     await _deleteMetricForMissingDays(
       uid,
+      writes,
       'steps',
       start: today.subtract(Duration(days: daysBack - 1)),
       end: now,
       daysWithData: daysWithData,
-    );
-    debugPrint(
-      'HealthService.syncMetric(steps): wrote Apple Health step totals for $daysWritten day(s).',
     );
   }
 
@@ -1316,6 +1404,7 @@ class HealthService {
 
   Future<void> _deleteMetricForMissingDays(
     String uid,
+    _SyncWrites writes,
     String metricKey, {
     required DateTime start,
     required DateTime end,
@@ -1335,9 +1424,6 @@ class HealthService {
     final days = endDay.difference(startDay).inDays + 1;
     if (days <= 0) return;
 
-    final batch = _db.batch();
-    var deletes = 0;
-
     for (var i = 0; i < days; i++) {
       final dayKey = localDayKey(startDay.add(Duration(days: i)));
       if (daysWithData.contains(dayKey)) continue;
@@ -1347,18 +1433,18 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(dayKey);
-      final snapshot = await ref.get();
+      final existing = await writes.day(ref);
       if (metricKey != 'steps' &&
-          _connectedWearableHasPriority(snapshot.data(), metricKey)) {
+          _connectedWearableHasPriority(existing, metricKey)) {
         continue;
       }
       if (metricKey == 'exercise_time') {
         final exerciseTime =
-            snapshot.data()?['exercise_time'] as Map<String, dynamic>?;
+            existing?['exercise_time'] as Map<String, dynamic>?;
         final workoutMinutes =
             (exerciseTime?['workoutMinutes'] as num?)?.toDouble() ?? 0;
         if (workoutMinutes > 0) {
-          batch.set(ref, {
+          await writes.set(ref, {
             'exercise_time': {
               ...?exerciseTime,
               'healthSum': 0,
@@ -1369,29 +1455,16 @@ class HealthService {
             },
             'date': dayKey,
             'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          });
         } else {
-          batch.set(ref, {
-            metricKey: FieldValue.delete(),
-          }, SetOptions(merge: true));
+          await writes.set(ref, {metricKey: FieldValue.delete()});
         }
       } else {
-        batch.set(ref, {
+        await writes.set(ref, {
           metricKey: FieldValue.delete(),
           if (metricKey == 'sleep') 'sleeping_heart_rate': FieldValue.delete(),
-        }, SetOptions(merge: true));
+        });
       }
-      deletes++;
-    }
-
-    if (deletes == 0) return;
-
-    try {
-      await batch.commit();
-    } catch (e) {
-      debugPrint(
-        'HealthService.syncMetric($metricKey): stale-day cleanup skipped: $e',
-      );
     }
   }
 
@@ -1405,6 +1478,7 @@ class HealthService {
 
   Future<Set<String>> _writeDataPoints(
     String uid,
+    _SyncWrites writes,
     HealthMetricDef def,
     List<HealthDataPoint> dataPoints,
   ) async {
@@ -1453,9 +1527,7 @@ class HealthService {
         ? await _workoutWindows(uid, dataPoints)
         : const <WorkoutWindow>[];
 
-    final batch = _db.batch();
     final daysWithData = <String>{};
-    final appleHeartRatePayloads = <String, Map<String, dynamic>>{};
     for (final entry in byDay.entries) {
       final day = entry.key;
       daysWithData.add(day);
@@ -1465,7 +1537,7 @@ class HealthService {
           .doc(uid)
           .collection('metrics_daily')
           .doc(day);
-      final existingSnapshot = await ref.get();
+      final existing = await writes.day(ref);
       final payload = _buildValueMap(def.type, vals);
       if (hoursByDay[day] case final hours?) {
         payload['avg'] = payload['sum'];
@@ -1473,7 +1545,7 @@ class HealthService {
       }
       if (def.type == HealthDataType.EXERCISE_TIME) {
         final existingExerciseTime =
-            existingSnapshot.data()?['exercise_time'] as Map<String, dynamic>?;
+            existing?['exercise_time'] as Map<String, dynamic>?;
         final healthHours = healthExerciseMinutesByHour(
           exerciseSamplesByDay[day] ?? const [],
           workoutWindows,
@@ -1497,7 +1569,7 @@ class HealthService {
           return aTime.compareTo(bTime);
         });
         payload['entries'] = entries;
-        batch.set(ref, {
+        await writes.set(ref, {
           'heart_rate_sources': {
             'apple_health': {
               ...payload,
@@ -1505,11 +1577,17 @@ class HealthService {
               'syncedAt': FieldValue.serverTimestamp(),
             },
           },
-        }, SetOptions(merge: true));
-        appleHeartRatePayloads[day] = Map<String, dynamic>.from(payload);
+        });
+        final shown = {
+          'heart_rate': {...payload, 'source': 'apple_health'},
+          'date': day,
+        };
+        if (mergeWouldChange(existing, shown)) {
+          writes.heartRates[day] = Map<String, dynamic>.from(payload);
+        }
         continue;
       }
-      if (_connectedWearableHasPriority(existingSnapshot.data(), def.key)) {
+      if (_connectedWearableHasPriority(existing, def.key)) {
         continue;
       }
       if (def.type == HealthDataType.SLEEP_ASLEEP) {
@@ -1534,7 +1612,7 @@ class HealthService {
         debugPrint('DEBUG STEPS: Payload = $payload');
       }
 
-      batch.set(ref, {
+      await writes.set(ref, {
         def.key: {
           ...payload,
           'source': 'apple_health',
@@ -1542,21 +1620,9 @@ class HealthService {
         },
         'date': day,
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
     }
-
-    try {
-      await batch.commit();
-      await _promoteAppleHeartRateIfBleStale(uid, appleHeartRatePayloads);
-      debugPrint(
-        'DEBUG: Firestore batch commit succeeded for ${def.key}. Days written: ${byDay.length}',
-      );
-      return daysWithData;
-    } catch (e, st) {
-      debugPrint('DEBUG: Firestore batch commit FAILED for ${def.key}: $e');
-      debugPrint(st.toString());
-      rethrow;
-    }
+    return daysWithData;
   }
 
   /// Start and end of every in-app workout that could overlap [points], so
@@ -1745,6 +1811,93 @@ class HealthService {
 
       default:
         return {'avg': avg(), 'unit': '', 'dimension': 'other'};
+    }
+  }
+}
+
+/// One Health sync's Firestore writes, committed together at the end.
+///
+/// Every commit makes each live metrics_daily window re-send all its days,
+/// and a sync used to commit about twice per metric (trace 6, Nov 2026:
+/// ~25 full re-sends per window in 55 s). The days are read in one query up
+/// front instead of a get() per day per metric, and writes that wouldn't
+/// change a day are dropped.
+class _SyncWrites {
+  _SyncWrites._(this._days, this._from, this._to);
+
+  static Future<_SyncWrites> read(
+    FirebaseFirestore db,
+    String uid, {
+    required int daysBack,
+  }) async {
+    final now = DateTime.now();
+    final from = localDayKey(
+      DateTime(now.year, now.month, now.day - (daysBack - 1)),
+    );
+    final to = localDayKey(now);
+    final snapshot = await db
+        .collection('users')
+        .doc(uid)
+        .collection('metrics_daily')
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: from)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: to)
+        .get();
+    return _SyncWrites._(
+      {for (final doc in snapshot.docs) doc.id: doc.data()},
+      from,
+      to,
+    );
+  }
+
+  /// Days as they were when the sync started (null: no document), shared by
+  /// every metric of the sync.
+  final Map<String, Map<String, dynamic>?> _days;
+  final String _from;
+  final String _to;
+  final _writes =
+      <(DocumentReference<Map<String, dynamic>>, Map<String, dynamic>)>[];
+
+  /// Apple Health heart rate to show per day, unless a WHOOP strap is live.
+  final heartRates = <String, Map<String, dynamic>>{};
+
+  int get length => _writes.length;
+
+  /// A metric's writes, kept apart until it finishes so a metric that fails
+  /// part-way writes nothing, as when each metric committed on its own.
+  _SyncWrites metric() => _SyncWrites._(_days, _from, _to);
+
+  void add(_SyncWrites metric) {
+    _writes.addAll(metric._writes);
+    heartRates.addAll(metric.heartRates);
+  }
+
+  Future<Map<String, dynamic>?> day(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    final key = ref.id;
+    if (_days.containsKey(key)) return _days[key];
+    if (key.compareTo(_from) >= 0 && key.compareTo(_to) <= 0) return null;
+    // A sample that began before the window (a night, a long reading) lands
+    // on the day before it.
+    return _days[key] = (await ref.get()).data();
+  }
+
+  /// Queues a merge set of [data], unless the day already holds it.
+  Future<void> set(
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, dynamic> data,
+  ) async {
+    if (mergeWouldChange(await day(ref), data)) _writes.add((ref, data));
+  }
+
+  Future<void> commit(FirebaseFirestore db) async {
+    const chunkSize = 400; // Firestore batches are capped at 500 writes.
+    for (var i = 0; i < _writes.length; i += chunkSize) {
+      final batch = db.batch();
+      for (final (ref, data) in _writes.skip(i).take(chunkSize)) {
+        batch.set(ref, data, SetOptions(merge: true));
+      }
+      await batch.commit();
     }
   }
 }

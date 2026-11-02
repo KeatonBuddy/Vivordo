@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -32,21 +33,30 @@ String reviewLineName(ReviewLine line) => line.seriesKey == null
     ? line.title
     : MeetingPatternsService.names[line.seriesKey] ?? 'A recurring meeting';
 
+/// A line's detail with its events named, from the calendar
+/// (MeetingPatternsService.loadWeekNames).
+String reviewLineDetailNamed(ReviewLine line) => reviewLineDetail(
+  line,
+  (e) =>
+      MeetingPatternsService.eventNames[e.key] ??
+      MeetingPatternsService.names[e.series],
+);
+
 IconData _icon(String kind) => switch (kind) {
   'sick' => Icons.sick_outlined,
-  'travel' => Icons.flight_rounded,
-  'heavyDay' => Icons.trending_up_rounded,
-  'bigDay' => Icons.bolt_rounded,
-  'meeting' => Icons.groups_outlined,
-  'lateNight' => Icons.nightlight_outlined,
-  'lieIn' => Icons.wb_twilight_outlined,
-  'afterHours' => Icons.schedule_rounded,
+  'travel' => CupertinoIcons.airplane,
+  'heavyDay' => CupertinoIcons.arrow_up_right,
+  'bigDay' => CupertinoIcons.bolt_fill,
+  'meeting' => CupertinoIcons.person_3,
+  'lateNight' => CupertinoIcons.moon,
+  'lieIn' => CupertinoIcons.sunset,
+  'afterHours' => CupertinoIcons.clock,
   'training' => Icons.fitness_center_rounded,
-  'priority' => Icons.flag_outlined,
-  'sleep' => Icons.bedtime_outlined,
-  'fixes' => Icons.auto_fix_high_rounded,
+  'priority' => CupertinoIcons.flag,
+  'sleep' => CupertinoIcons.moon,
+  'fixes' => CupertinoIcons.wand_stars,
   'calm' => Icons.spa_outlined,
-  _ => Icons.circle_outlined,
+  _ => CupertinoIcons.circle,
 };
 
 Color _nextColor(String label) => switch (label) {
@@ -101,10 +111,9 @@ class WeeklyReviewCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'YOUR WEEK · ${review.range.toUpperCase()}',
+                      'Your week · ${review.range}',
                       style: const TextStyle(
-                        fontSize: 11,
-                        letterSpacing: .8,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: _purple,
                       ),
@@ -116,7 +125,7 @@ class WeeklyReviewCard extends StatelessWidget {
                     onPressed: () =>
                         unawaited(WeeklyReviewService.hideForToday()),
                     icon: Icon(
-                      Icons.close_rounded,
+                      CupertinoIcons.xmark,
                       size: 18,
                       color: colors.textSecondary,
                     ),
@@ -152,24 +161,26 @@ class WeeklyReviewCard extends StatelessWidget {
                     if (state.intro)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Remind me on Sundays',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: colors.textPrimary,
+                        child: MergeSemantics(
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Remind me on Sundays',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: colors.textPrimary,
+                                  ),
                                 ),
                               ),
-                            ),
-                            AppSwitch(
-                              value: state.reminder,
-                              onChanged: (on) => unawaited(
-                                WeeklyReviewService.setReminder(on),
+                              AppSwitch(
+                                value: state.reminder,
+                                onChanged: (on) => unawaited(
+                                  WeeklyReviewService.setReminder(on),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     Align(
@@ -249,8 +260,7 @@ class WeeklyReviewScreen extends StatelessWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 11,
-          letterSpacing: .8,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
           color: colors.textSecondary,
         ),
@@ -299,7 +309,18 @@ class WeeklyReviewScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(line.detail, style: secondary.copyWith(fontSize: 13)),
+                    if (line.events.isEmpty)
+                      Text(line.detail, style: secondary.copyWith(fontSize: 13))
+                    else
+                      FutureBuilder(
+                        future: MeetingPatternsService.loadWeekNames(
+                          DateTime.parse(review.weekStart),
+                        ),
+                        builder: (context, _) => Text(
+                          reviewLineDetailNamed(line),
+                          style: secondary.copyWith(fontSize: 13),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -339,7 +360,7 @@ class WeeklyReviewScreen extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             _Chips(review.chips),
-            section('THE WEEK AT A GLANCE'),
+            section('The week at a glance'),
             card([
               _EffortChart(review: review),
               for (final row in review.rows)
@@ -368,7 +389,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                 ),
             ]),
             if (review.drained.isNotEmpty) ...[
-              section('WHAT DRAINED YOU'),
+              section('What drained you'),
               lines(review.drained, _coral),
             ],
             if (review.offDayNote case final note?)
@@ -377,7 +398,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                 child: Text(note, style: secondary.copyWith(fontSize: 12)),
               ),
             if (review.helped.isNotEmpty) ...[
-              section('WHAT HELPED'),
+              section('What helped'),
               lines(review.helped, _teal),
             ],
             if (review.burnout != null) ...[
@@ -402,7 +423,7 @@ class WeeklyReviewScreen extends StatelessWidget {
               ]),
             ],
             if (review.nextWeek.isNotEmpty) ...[
-              section('NEXT WEEK'),
+              section('Next week'),
               card([
                 if (review.nextHeadline case final headline?)
                   Text(
@@ -485,11 +506,14 @@ class WeeklyReviewScreen extends StatelessWidget {
                       'weekly_review',
                       'Weekly review',
                       '${review.headline}. ${review.why}',
-                      context: review.chatContext(reviewLineName),
+                      context: review.chatContext(
+                        reviewLineName,
+                        detail: reviewLineDetailNamed,
+                      ),
                     ),
                   );
                 },
-                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                icon: const Icon(CupertinoIcons.chat_bubble, size: 18),
                 label: const Text('Plan next week with Vivordo AI'),
                 style: FilledButton.styleFrom(
                   backgroundColor: _purple.withValues(alpha: .14),
@@ -505,7 +529,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                 ),
               ),
             ],
-            section('ANYTHING ELSE GOING ON THIS WEEK?'),
+            section('Anything else going on this week?'),
             _ContextPicker(review: review),
             const SizedBox(height: 24),
             Text(

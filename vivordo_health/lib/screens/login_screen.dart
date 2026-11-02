@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -47,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (success) {
+      TextInput.finishAutofillContext();
       // Route through AuthGate ('/') rather than straight to
       // MainNavigationScreen — AuthGate is what checks emailVerified and
       // redirects to EmailVerificationScreen when it's false. Pushing
@@ -134,12 +138,14 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: resetEmailCtrl,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                autocorrect: false,
                 autofocus: true,
                 style: TextStyle(color: colors.textPrimary),
                 decoration:
                     _inputDecoration(
                       hintText: 'you@example.com',
-                      icon: Icons.mail_outline_rounded,
+                      icon: CupertinoIcons.envelope,
                     ).copyWith(
                       fillColor: colors.input,
                       enabledBorder: OutlineInputBorder(
@@ -184,9 +190,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(
+                          child: CupertinoActivityIndicator(
                             color: Colors.white,
-                            strokeWidth: 2,
+                            radius: 10,
                           ),
                         )
                       : const Text(
@@ -296,67 +302,95 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    // Email
-                    _FieldLabel('Email'),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      style: const TextStyle(fontSize: 15),
-                      decoration: _inputDecoration(
-                        hintText: 'you@example.com',
-                        icon: Icons.mail_outline_rounded,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // Password
-                    _FieldLabel('Password'),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _passCtrl,
-                      obscureText: _obscurePassword,
-                      style: const TextStyle(fontSize: 15),
-                      onSubmitted: (_) => _login(),
-                      decoration:
-                          _inputDecoration(
-                            hintText: '••••••••',
-                            icon: Icons.lock_outline_rounded,
-                          ).copyWith(
-                            suffixIcon: GestureDetector(
-                              onTap: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                              child: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                                color: textGrey,
-                                size: 20,
-                              ),
+                    // Grouped so iOS offers saved logins and, on success, to
+                    // save the password.
+                    AutofillGroup(
+                      onDisposeAction: AutofillContextAction.cancel,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Email
+                          _FieldLabel('Email'),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [
+                              AutofillHints.username,
+                              AutofillHints.email,
+                            ],
+                            autocorrect: false,
+                            textInputAction: TextInputAction.next,
+                            style: const TextStyle(fontSize: 15),
+                            decoration: _inputDecoration(
+                              hintText: 'you@example.com',
+                              icon: CupertinoIcons.envelope,
                             ),
                           ),
+                          const SizedBox(height: 18),
+
+                          // Password
+                          _FieldLabel('Password'),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _passCtrl,
+                            obscureText: _obscurePassword,
+                            autofillHints: const [AutofillHints.password],
+                            textInputAction: TextInputAction.go,
+                            style: const TextStyle(fontSize: 15),
+                            onSubmitted: (_) => _login(),
+                            decoration:
+                                _inputDecoration(
+                                  hintText: '••••••••',
+                                  icon: CupertinoIcons.lock,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    tooltip: _obscurePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    onPressed: () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? CupertinoIcons.eye_slash
+                                          : CupertinoIcons.eye,
+                                      color: textGrey,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
 
-                    const SizedBox(height: 10),
-
-                    // Forgot password
+                    // Forgot password: its padding is the spacing around
+                    // it, so the target is 44 pt tall and nothing moves.
                     Align(
                       alignment: Alignment.centerRight,
-                      child: GestureDetector(
-                        onTap: _showResetPasswordSheet,
-                        child: const Text(
-                          'Forgot password?',
-                          style: TextStyle(
-                            color: accentPurple,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                      child: Semantics(
+                        button: true,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _showResetPasswordSheet,
+                          child: const Padding(
+                            padding: EdgeInsets.fromLTRB(16, 10, 0, 20),
+                            child: Text(
+                              'Forgot password?',
+                              style: TextStyle(
+                                color: accentPurple,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 8),
 
                     // Sign in button
                     SizedBox(
@@ -376,9 +410,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
-                                  strokeWidth: 2.5,
+                                  radius: 11,
                                 ),
                               )
                             : const Text(
@@ -443,9 +477,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? SizedBox(
                                   width: 22,
                                   height: 22,
-                                  child: CircularProgressIndicator(
+                                  child: CupertinoActivityIndicator(
                                     color: dark ? Colors.black : Colors.white,
-                                    strokeWidth: 2.5,
+                                    radius: 11,
                                   ),
                                 )
                               : const Row(
@@ -492,9 +526,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(
+                                child: CupertinoActivityIndicator(
                                   color: Colors.white,
-                                  strokeWidth: 2.5,
+                                  radius: 11,
                                 ),
                               )
                             : Row(
@@ -574,11 +608,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.lock_outline_rounded,
-                            size: 13,
-                            color: textGrey,
-                          ),
+                          Icon(CupertinoIcons.lock, size: 13, color: textGrey),
                           const SizedBox(width: 5),
                           Text(
                             'All data is encrypted and securely stored.',

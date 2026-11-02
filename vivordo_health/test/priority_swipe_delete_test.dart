@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:vivordo_health/screens/my_day_screen.dart';
@@ -7,6 +8,7 @@ import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/add_priority_sheet.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/swipe_to_delete.dart';
 
 // The row never accesses Firestore; this mock only supplies its model reference.
 // ignore: subtype_of_sealed_class, must_be_immutable
@@ -50,8 +52,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('30 min before'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save Changes'));
-    await tester.tap(find.text('Save Changes'));
+    await tester.ensureVisible(find.text('Save'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(result?.title, 'Review notes');
     expect(result?.reminderMinutes, 30);
@@ -93,8 +95,8 @@ void main() {
       expect(find.text('Time'), findsOneWidget);
       await tester.ensureVisible(find.text('Mark as completed'));
       await tester.tap(find.text('Mark as completed'));
-      await tester.ensureVisible(find.text('Save Changes'));
-      await tester.tap(find.text('Save Changes'));
+      await tester.ensureVisible(find.text('Save'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(result?.completed, isTrue);
       expect(result?.date, DateTime(2026, 9, 1));
@@ -105,7 +107,8 @@ void main() {
       await tester.ensureVisible(find.text('Delete Priority'));
       await tester.tap(find.text('Delete Priority'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
+      // The alert's Cancel, above the sheet's.
+      await tester.tap(find.text('Cancel').last);
       await tester.pumpAndSettle();
       expect(result, isNull);
       await tester.tap(find.text('Delete Priority'));
@@ -116,6 +119,36 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('VoiceOver gets Delete as a row action', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: priorityRowForTesting(
+            priority: DailyPriority(
+              id: 'a11y',
+              title: 'Call the bank',
+              completed: false,
+              reference: _Reference(),
+              isAllDay: false,
+              source: 'manual',
+            ),
+            onDelete: () async {},
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.getSemantics(find.byType(SwipeToDelete)),
+      isSemantics(
+        customActions: [const CustomSemanticsAction(label: 'Delete')],
+      ),
+    );
+    // The hidden button behind the row isn't read out on its own.
+    expect(find.bySemanticsLabel('Delete'), findsNothing);
+    handle.dispose();
+  });
   testWidgets('revealed Delete receives taps and removes the priority', (
     tester,
   ) async {

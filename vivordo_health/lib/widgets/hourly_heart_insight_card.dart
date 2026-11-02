@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -185,7 +186,7 @@ class HourlyHeartInsightCardState extends State<HourlyHeartInsightCard>
   @override
   Widget build(BuildContext context) => RepaintBoundary(
     child: HomeInsightRow(
-      icon: Icons.monitor_heart_rounded,
+      icon: CupertinoIcons.waveform_path_ecg,
       color: const Color(0xFFFF3B30),
       title: _insight.title,
       subtitle: _insight.subtitle,
@@ -201,12 +202,16 @@ class HomeInsightRow extends StatelessWidget {
     required this.color,
     required this.title,
     required this.subtitle,
+    this.actions = const [],
   });
 
   final IconData icon;
   final Color color;
   final String title;
   final String subtitle;
+
+  /// Buttons under the subtitle: the one-tap fix for what's missing.
+  final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -245,6 +250,10 @@ class HomeInsightRow extends StatelessWidget {
                   height: 1.4,
                 ),
               ),
+              if (actions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 6, children: actions),
+              ],
             ],
           ),
         ),

@@ -31,6 +31,22 @@ hourly calculator (`docs/calendar_load.md`, classifier v3 + hourly v1):
   Whatever is still unknown
   ("Busy", "Hold", private events, offline) counts as 30 and lowers the
   day's confidence. Nothing is treated as free time.
+- **Your own type** (2026-10-15): an event's details ("Event type")
+  show its type in plain words (High stakes, Focused work, Meeting or
+  class, Social, Errands and routine, Break; "Not sure" for unknown) and
+  where it came from (set by you, Vivordo's guess, Vivordo AI) with its
+  load in My Day's words ("Heavy load on your day"). Picking one
+  applies to every event with that title (case, spacing and notes
+  ignored) and beats the rules and Claude, which is never asked about that
+  title again. Saved on the account as `users/{uid}.eventTypes` (hashed
+  title → category, no titles), so it follows the person to a new phone.
+  Home, My Day and today's day record re-sort straight away; finished days
+  keep their Effort. "Use Vivordo's guess" removes it.
+  Events marked Free in the calendar don't count (reminders, holds,
+  events only followed), except once a type is picked for their title:
+  then they count like any other (2026-10-15; class timetables imported
+  as Free). Their row says "Marked Free in your calendar, so it isn't
+  counted. Choose a type to count it." until then.
 - Pressure: +10 while events overlap (overlapping demand is not summed),
   and a continuous-run ramp: nothing for the first 60 min, rising to +5
   at 120 min. **Gaps under 15 min don't reset the run**, so a chain of
@@ -205,6 +221,11 @@ workouts in their own colour) and after now are Demand (outlined). A
 summary shows **So far** as a word only: "Heavier than usual", "About
 usual" or "Lighter than usual" against your usual Effort by this time of
 day, or "Still learning your usual" until there are 14 days of Effort.
+With score numbers on (2026-10-15), So far is a number instead: Effort so
+far on a bar (mental, then physical), a tick at your usual by now, and the
+word under it; Still ahead moves below. Words view keeps the word only.
+On screen, mental is called **Schedule** and physical **Activity**
+("mental" read badly to users); the stored fields keep their names.
 **Still ahead** shows the planned time and how heavy it is, switching to
 **Tomorrow** after the last item. Implemented in `lib/src/utils/day_effort.dart`
 and Home's card: "usual by this time of day" is the median of the last 28
@@ -309,19 +330,28 @@ morning (even when Capacity itself can't be) and saved as
   heart-rate load ÷ its base when measured, minutes ÷ the minutes base
   otherwise, so 1.0 is an ordinary active day; a rest day is 0.
 - **This week** is the sum of the last 7 complete days; **the usual week**
-  is the sum of days 8–35 ÷ 4, so this week never raises its own bar. The
-  ratio is this week ÷ the usual week. A **hard day** is 1.5× or more.
-- **Learning** (hidden) until 21 of those 28 days have a load and the usual
-  week is at least 1 (an ordinary active day a week).
+  is the average week before it, so this week never raises its own bar:
+  the week before (days 8–14) as soon as that's on record, then the 2
+  weeks before, up to the 4 weeks before (days 8–35), whichever is the
+  most weeks with 3 in 4 days on record (2026-10-15; it was 4 weeks only).
+  Saved as `usualWeeks`. The ratio is this week ÷ the usual week. A **hard
+  day** is 1.5× or more.
+- **Learning** until the week before is covered and the usual week is at
+  least 1 (an ordinary active day a week): about 2 weeks from the first
+  day of activity, or none with the Health import. Saved with `daysToGo`
+  (null when it isn't a matter of time); Fitness shows "Learning your usual
+  week · About N days to go".
+- **The Strained push** needs at least 2 weeks' usual: one light week makes
+  any week look big.
 - **States:** Lighter under 0.8; Steady 0.8–1.3; Building 1.3 or more;
   **High** 1.5 or more with at least 3 hard days; **Strained** is High
   while the body agrees: HRV more than 5% under its 90-day median or
   resting heart rate at least 3 bpm over it, on 2 of the last 3 mornings.
   High and Strained hold until the ratio drops under 1.3.
-- Saved: `{version, state, ratio, thisWeek, usualWeek, hardDays, kind
+- Saved: `{version, state, ratio, thisWeek, usualWeek, usualWeeks, hardDays, kind
   (heart, minutes or mixed), days: [{day, value, kind}] oldest first,
   body: {mornings, hrvLow, restingHigh, restingHrChange, agrees}}`, or
-  `{version, state: "learning", coveredDays}`.
+  `{version, state: "learning", coveredDays, daysToGo}`.
 - **One push when Strained starts** (yesterday wasn't Strained, and none
   in the last 7 days; only for a day still under way): "You've trained a
   lot more than usual", naming the multiple and HRV or resting HR. Sent
@@ -514,6 +544,30 @@ Changes from the current Capacity:
 - the label bands are raised to 80 / 50;
 - the score recalculates when sleep arrives and locks at midnight.
 
+**Live during the day** (My Day, 2026-11-01): this morning's Capacity is
+the day's budget, on the same points scale as Demand and Effort. My Day's
+brief shows one ring, `capacityLeft` in `lib/src/utils/day_effort.dart`:
+- left = this morning's Capacity − Effort so far (counted as Home's Your
+  day counts it: events and priorities, workouts, Health activity by
+  `physicalSoFar`);
+- booked = Demand still ahead; free by tonight = left − booked (below 0:
+  "Short by N", amber);
+- the headline, "Ways to lighten today" and words mode's Today's load
+  compare Demand with what's left, not with the morning's number. At wake
+  nothing is spent, so the morning comparison is unchanged.
+The evening keeps the two rings (your usual Capacity beside tomorrow's
+Demand). The stored Capacity, its history, the weekly review and burnout
+keep the morning value. The ring opens "Capacity today": what's left, why
+this morning's number (the breakdown above), planned Demand against the
+Effort each day took, where today's went and what's booked.
+My Day also sends the rest of today's path (`capacityLeftPath`: what's left
+at each point the plan reaches) to the Capacity widget, the Lock Screen
+sizes, the Watch Today screen and complication, and Siri, which step
+through it between app updates ("41 left · 18 by tonight"). Only timed
+events step it down; untimed priorities count only in "by tonight", since
+nothing says when (or, in the evening, whether) they happen. Before My Day
+has sent today's path they show the morning value.
+
 ## 5. Daily record
 
 One record per day in `users/{uid}/scores_daily/{day}` (server-written,
@@ -665,7 +719,15 @@ and words, never a score.
   to your usual bedtime: body clock (a 24 h wave peaking 11 h after your
   sleep midpoint, plus a 12 h wave peaking 5.5 h after it) − sleep pressure
   (rising while awake, time constant 18.2 h, starting higher after a short
-  night or with sleep debt) − grogginess (fading over ~70 min). The constants
+  night or with sleep debt), times the share grogginess leaves you,
+  e^(−1.7 × grogginess), so it never pins the curve flat at zero
+  (grogginess fades over ~70 min; heavier and
+  longer after going to bed in sleep debt, ×(1 + 0.06 per hour, so a
+  catch-up night included), or after waking before your usual wake for that
+  kind of day, ×(1 + 0.15 per hour early, up to 3 h); at most ×2. A long
+  night on its own adds nothing, since one extended night in a rested
+  sleeper barely changes grogginess (Hilditch, Dement & Carskadon 2022).
+  The sheet names the bigger cause once it adds 0.2 or more). The constants
   are product choices fitted to the textbook day of an 11 PM–7 AM sleeper;
   tune them later against "How's your energy?" answers.
 - **Inputs:** the last 14 nights (sleep start and end), last night, and
@@ -674,8 +736,16 @@ and words, never a score.
   - **Chronotype:** the median sleep midpoint, preferring weekend nights
     when there are at least 2. Until there are 5 nights it comes from your
     usual sleep schedule (below), else 3:30 AM.
-  - **Sleep debt:** the shortfall against your need over the last 7 nights,
-    capped at 10 h.
+  - **Today's body clock** (from 5 nights): the chronotype pulled 35% of
+    the way towards the last 4 nights' midpoints (last night weighted 1,
+    then ½, ¼, ⅛), so a weekend lie-in makes Monday run later than Friday
+    (a 3 h later weekend wake moved the clock ~40 min in Taylor et al.
+    2008). Bedtime, the estimated wake and the sheet's "body clock runs
+    late" still use the chronotype.
+  - **Sleep debt:** the last 7 nights, oldest first: a short night adds
+    its shortfall against your need, a long night pays back half its extra
+    (one recovery night only partly restores, Banks et al. 2010), never
+    below 0 or above 10 h.
 - **Windows:**
   - groggy: until grogginess fades;
   - peak: the high point in the first half of the waking day;

@@ -13,6 +13,38 @@ typedef MetricFieldReader = Object? Function(String path);
 const preparedHeartKey = '_preparedHeart';
 const preparedStressKey = '_preparedStress';
 
+/// [DayHeartReadings] for My Day's event reactions, on the daily-brief
+/// window's days from [reactionHeartDays] before its last day.
+const reactionHeartKey = '_reactionHeart';
+const reactionHeartDays = 14;
+
+/// A day's merged heart-rate readings (mergedHeartRateHistory, no daily
+/// fallback). Equal when the readings are, so a write that doesn't touch
+/// heart rate doesn't rebuild the screen.
+class DayHeartReadings {
+  const DayHeartReadings(this.readings);
+  final List<HeartRateHistoryReading> readings;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! DayHeartReadings) return false;
+    if (identical(readings, other.readings)) return true;
+    if (readings.length != other.readings.length) return false;
+    for (var i = 0; i < readings.length; i++) {
+      final a = readings[i], b = other.readings[i];
+      if (a.bpm != b.bpm ||
+          a.timestamp != b.timestamp ||
+          a.source != b.source) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => readings.length;
+}
+
 /// Small, immutable candidates. Selection stays clock-dependent so a cached
 /// Bluetooth value stops overriding newer readings when it is no longer live.
 class PreparedHeartRate {
@@ -141,14 +173,23 @@ Map<String, dynamic> projectScreenFields(
     },
     MetricsProjection.homeHistory => const {
       'stress': ['anchor', 'current', 'avg'],
-      // Bedtime, wake time and hours asleep for the energy forecast.
-      'sleep': ['avg', 'bedtime', 'wakeTime'],
+      // Bedtime, wake time and hours asleep for the energy forecast and
+      // sleep patterns (measure: 'inBed' when it's time in bed).
+      'sleep': ['avg', 'bedtime', 'wakeTime', 'measure'],
+      // "How did you sleep?", for sleep patterns.
+      'morning_check_in': ['sleep'],
+      // Whether anything supplies activity (hasActivityData).
+      'steps': ['sum'],
+      'active_calories': ['sum'],
+      'exercise_time': ['sum'],
     },
     MetricsProjection.dailyBrief => const {
       // measure: 'inBed' when the night is time in bed (no wearable).
       'sleep': ['avg', 'bedtime', 'wakeTime', 'measure'],
       'stress': ['current', 'avg', 'algorithm_version', 'computedAt'],
       'hrv': ['stressScore'],
+      // For the Sunday weekly review card (WeeklyReviewService.watchCard).
+      'morning_check_in': ['feel', 'sleep', 'dismissed'],
     },
     MetricsProjection.activity => throw ArgumentError(
       'Use activity projection',

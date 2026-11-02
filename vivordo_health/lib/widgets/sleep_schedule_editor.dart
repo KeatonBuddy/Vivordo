@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/sleep_schedule.dart';
@@ -51,26 +52,28 @@ class SleepScheduleEditor extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Weekends are different',
-                    style: TextStyle(fontSize: 15),
-                  ),
-                ),
-                AppSwitch(
-                  value: s.weekendsDiffer,
-                  onChanged: (on) => onChanged(
-                    SleepSchedule(
-                      bed: s.bed,
-                      wake: s.wake,
-                      weekendBed: on ? s.bed : null,
-                      weekendWake: on ? s.wake : null,
+            child: MergeSemantics(
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Weekends are different',
+                      style: TextStyle(fontSize: 15),
                     ),
                   ),
-                ),
-              ],
+                  AppSwitch(
+                    value: s.weekendsDiffer,
+                    onChanged: (on) => onChanged(
+                      SleepSchedule(
+                        bed: s.bed,
+                        wake: s.wake,
+                        weekendBed: on ? s.bed : null,
+                        weekendWake: on ? s.wake : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           if (s.weekendsDiffer) ...[
@@ -143,7 +146,7 @@ class _TimeRow extends StatelessWidget {
             ),
           ),
           Icon(
-            Icons.chevron_right_rounded,
+            CupertinoIcons.chevron_right,
             color: context.vivordoColors.textSecondary,
           ),
         ],

@@ -8,13 +8,21 @@ import '../src/utils/training_load_view.dart';
 import '../widgets/ios_pull_down_menu.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/vivordo_time_picker.dart';
-import 'package:flutter/cupertino.dart' show CupertinoIcons, CupertinoSwitch;
+import 'package:flutter/cupertino.dart'
+    show
+        CupertinoButton,
+        CupertinoIcons,
+        CupertinoSwitch,
+        CupertinoActivityIndicator;
 import '../src/services/notification_service.dart';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -31,10 +39,12 @@ import '../src/services/workout_live_activity_service.dart';
 import '../src/utils/workout_activity_visual.dart';
 import '../src/utils/day_key.dart';
 import '../src/utils/home_metrics_summary.dart' show durationUntilNextLocalDay;
+import '../src/utils/activity_source.dart';
 import '../src/utils/fitness_goal_insight.dart';
 import '../src/services/metrics_repository.dart';
 import 'exercise_detail_screen.dart';
 import 'personal_profile_screen.dart';
+import 'profile_screen.dart' show SettingsScreen;
 import 'workout_summary_screen.dart';
 
 const _purple = Color(0xFF6B5CE7);
@@ -263,22 +273,29 @@ class _FitnessScreenState extends State<FitnessScreen> {
     final colors = context.vivordoColors;
     return Scaffold(
       backgroundColor: colors.page,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
+      body: CollapsingTitle(
+        title: 'Fitness',
+        threshold: 48,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // At large text the actions go under the title, so the
+                // title keeps the width.
+                Builder(
+                  builder: (context) {
+                    final title = Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Fitness',
+                          // Large titles stop growing at 1.5x, as in iOS.
+                          textScaler: MediaQuery.textScalerOf(
+                            context,
+                          ).clamp(maxScaleFactor: 1.5),
                           style: TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w800,
@@ -291,100 +308,115 @@ class _FitnessScreenState extends State<FitnessScreen> {
                           style: TextStyle(color: colors.textSecondary),
                         ),
                       ],
-                    ),
-                  ),
-                  Row(
-                    key: widget.actionsKey,
-                    mainAxisSize: MainAxisSize.min,
+                    );
+                    final actions = Row(
+                      key: widget.actionsKey,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: _WorkoutStreakPill(),
+                        ),
+                        IconButton(
+                          onPressed: _openGoals,
+                          tooltip: 'Goals',
+                          icon: const Icon(
+                            CupertinoIcons.scope,
+                            color: _purple,
+                          ),
+                        ),
+                      ],
+                    );
+                    return MediaQuery.textScalerOf(context).scale(34) > 46
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [title, actions],
+                          )
+                        : Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: title),
+                              actions,
+                            ],
+                          );
+                  },
+                ),
+                const SizedBox(height: 18),
+                KeyedSubtree(
+                  key: widget.ringsKey,
+                  child: _TodayActivityRings(onTap: _openMonthlyRings),
+                ),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<bool>(
+                  key: widget.buttonsKey,
+                  valueListenable: FitnessWorkoutTimerState.isRunning,
+                  builder: (context, isWorkoutRunning, _) => Row(
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: _WorkoutStreakPill(),
-                      ),
-                      IconButton(
-                        onPressed: _openGoals,
-                        tooltip: 'Goals',
-                        icon: const Icon(
-                          Icons.track_changes_rounded,
-                          color: _purple,
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: FilledButton.icon(
+                            onPressed: _startWorkout,
+                            icon: Icon(
+                              isWorkoutRunning && _activeWorkoutDraft != null
+                                  ? CupertinoIcons.timer
+                                  : Icons.fitness_center_rounded,
+                            ),
+                            label: _WorkoutButtonLabel(
+                              draft: isWorkoutRunning
+                                  ? _activeWorkoutDraft
+                                  : null,
+                            ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _purple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              KeyedSubtree(
-                key: widget.ringsKey,
-                child: _TodayActivityRings(onTap: _openMonthlyRings),
-              ),
-              const SizedBox(height: 12),
-              ValueListenableBuilder<bool>(
-                key: widget.buttonsKey,
-                valueListenable: FitnessWorkoutTimerState.isRunning,
-                builder: (context, isWorkoutRunning, _) => Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
+                      const SizedBox(width: 10),
+                      SizedBox(
                         height: 52,
-                        child: FilledButton.icon(
-                          onPressed: _startWorkout,
-                          icon: Icon(
-                            isWorkoutRunning && _activeWorkoutDraft != null
-                                ? Icons.timer_outlined
-                                : Icons.fitness_center_rounded,
+                        child: OutlinedButton.icon(
+                          onPressed: _logActivity,
+                          icon: const Icon(CupertinoIcons.add),
+                          label: const Text(
+                            'Log activity',
+                            style: TextStyle(fontWeight: FontWeight.w800),
                           ),
-                          label: _WorkoutButtonLabel(
-                            draft: isWorkoutRunning
-                                ? _activeWorkoutDraft
-                                : null,
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _purple,
-                            foregroundColor: Colors.white,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _purple,
+                            side: BorderSide(
+                              color: _purple.withValues(alpha: .45),
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      height: 52,
-                      child: OutlinedButton.icon(
-                        onPressed: _logActivity,
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text(
-                          'Log activity',
-                          style: TextStyle(fontWeight: FontWeight.w800),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _purple,
-                          side: BorderSide(
-                            color: _purple.withValues(alpha: .45),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const _SuggestRoutineRow(),
-              const SizedBox(height: 24),
-              KeyedSubtree(
-                key: widget.weekKey,
-                child: _ThisWeekCard(strengthGoals: _strengthGoals),
-              ),
-              const _TrainingLoadSection(),
-              const SizedBox(height: 24),
-              KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
-              const SizedBox(height: 24),
-              KeyedSubtree(key: widget.bodyKey, child: _BodyCard(_recentDays)),
-            ],
+                const _SuggestRoutineRow(),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.weekKey,
+                  child: _ThisWeekCard(strengthGoals: _strengthGoals),
+                ),
+                const _TrainingLoadSection(),
+                const SizedBox(height: 24),
+                KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.bodyKey,
+                  child: _BodyCard(_recentDays),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -427,7 +459,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
   }
 
   void _openMonthlyRings() =>
-      showDialog(context: context, builder: (_) => const MonthlyRingsDialog());
+      showAppleSheet<void>(context, builder: (_) => const MonthlyRingsSheet());
 }
 
 class _TodayActivityRings extends StatefulWidget {
@@ -585,6 +617,10 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                 if (progress[i] < 1) i,
             ]..sort((a, b) => progress[b].compareTo(progress[a]));
             final next = open.isEmpty ? null : rings[open.first];
+            // Nothing supplying activity in the loaded window: a way to
+            // connect, not empty rings that look like a still day.
+            final noSource =
+                snapshot.hasData && !hasActivityData(history.values);
             return Material(
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(24),
@@ -602,54 +638,72 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                   ),
                 ),
                 child: InkWell(
-                  onTap: widget.onTap,
+                  onTap: noSource
+                      ? () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const SettingsScreen(),
+                          ),
+                        )
+                      : widget.onTap,
                   child: Padding(
-                    padding: const EdgeInsets.all(18),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
                     child: Column(
                       children: [
                         Row(
                           children: [
                             SizedBox(
-                              width: 86,
-                              height: 86,
-                              child: CustomPaint(
-                                painter: ActivityRingsPainter(
-                                  move: progress[0],
-                                  exercise: progress[1],
-                                  stand: progress[2],
-                                  moveColor: Colors.white,
-                                  trackColor: Colors.white.withValues(
-                                    alpha: .18,
+                              width: 68,
+                              height: 68,
+                              child: Semantics(
+                                label:
+                                    'Activity rings: '
+                                    'steps ${(progress[0] * 100).round()}%, '
+                                    'calories ${(progress[1] * 100).round()}%, '
+                                    'exercise ${(progress[2] * 100).round()}%',
+                                child: ExcludeSemantics(
+                                  child: CustomPaint(
+                                    painter: ActivityRingsPainter(
+                                      move: progress[0],
+                                      exercise: progress[1],
+                                      stand: progress[2],
+                                      moveColor: Colors.white,
+                                      trackColor: Colors.white.withValues(
+                                        alpha: .18,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'TODAY\'S ACTIVITY',
+                                    'Today\'s activity',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.3,
                                       color: Color(0xFFE8E0FF),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    '${3 - open.length} of 3 closed',
+                                    noSource
+                                        ? 'Connect Apple Health'
+                                        : '${3 - open.length} of 3 closed',
                                     style: const TextStyle(
-                                      fontSize: 25,
+                                      fontSize: 21,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
                                   ),
-                                  const SizedBox(height: 3),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    next == null
+                                    noSource
+                                        ? 'To track your steps, calories and exercise'
+                                        : next == null
                                         ? 'Every goal reached today.'
                                         : '${number.format(next.$2 - next.$1)} ${next.$3} to your next ring',
                                     style: const TextStyle(
@@ -661,38 +715,47 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                               ),
                             ),
                             const Icon(
-                              Icons.chevron_right_rounded,
+                              CupertinoIcons.chevron_right,
                               color: Color(0xFFE8E0FF),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         Container(
                           height: 1,
                           color: Colors.white.withValues(alpha: .15),
                         ),
-                        const SizedBox(height: 12),
-                        IntrinsicHeight(
-                          child: Row(
-                            children: [
-                              for (var i = 0; i < rings.length; i++) ...[
-                                if (i > 0)
-                                  VerticalDivider(
-                                    width: 1,
-                                    color: Colors.white.withValues(alpha: .15),
+                        const SizedBox(height: 9),
+                        // Three numbers in a row: grows only so far, so they
+                        // stay the same size side by side.
+                        MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.3,
+                          child: IntrinsicHeight(
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < rings.length; i++) ...[
+                                  if (i > 0)
+                                    VerticalDivider(
+                                      width: 1,
+                                      color: Colors.white.withValues(
+                                        alpha: .15,
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: _HeroStat(
+                                      color: i == 0
+                                          ? Colors.white
+                                          : ActivityRingsPainter.ringColors[i],
+                                      value: noSource
+                                          ? '—'
+                                          : number.format(rings[i].$1),
+                                      detail:
+                                          '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
+                                    ),
                                   ),
-                                Expanded(
-                                  child: _HeroStat(
-                                    color: i == 0
-                                        ? Colors.white
-                                        : ActivityRingsPainter.ringColors[i],
-                                    value: number.format(rings[i].$1),
-                                    detail:
-                                        '/ ${number.format(rings[i].$2)} ${rings[i].$3}',
-                                  ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -747,7 +810,7 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
             snapshot.data ?? const [],
           );
           return _PillButton(
-            icon: Icons.local_fire_department_rounded,
+            icon: CupertinoIcons.flame_fill,
             label: '$streak-day streak',
             color: Colors.orange,
           );
@@ -768,7 +831,7 @@ class _ProfileMetric extends StatelessWidget {
         label,
         textAlign: TextAlign.center,
         style: const TextStyle(
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: FontWeight.w700,
           color: _muted,
         ),
@@ -803,39 +866,41 @@ class _HeroStat extends StatelessWidget {
   final Color color;
   final String value, detail;
 
+  // One line: the dot, the value and its goal ("● 0 / 10,000 steps").
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
     children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 5),
+      Flexible(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
+                TextSpan(
+                  text: ' $detail',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFE8E0FF),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-      const SizedBox(height: 2),
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          detail,
-          style: const TextStyle(fontSize: 11, color: Color(0xFFE8E0FF)),
         ),
       ),
     ],
@@ -859,7 +924,6 @@ class _SectionHeader extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1.3,
               color: context.vivordoColors.textSecondary,
             ),
           ),
@@ -995,7 +1059,7 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _SectionHeader(
-              'THIS WEEK',
+              'This week',
               trailing: _SectionNote(
                 '${workouts.length} ${workouts.length == 1 ? 'workout' : 'workouts'} · '
                 '$activeDays active ${activeDays == 1 ? 'day' : 'days'}',
@@ -1010,22 +1074,27 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
               child: _Card(
                 child: Column(
                   children: [
-                    SizedBox(
-                      height: 96,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          for (final day in days)
-                            _WeekDayBar(
-                              letter: 'MTWTFSS'[day.date.weekday - 1],
-                              fraction: maxMinutes == 0
-                                  ? 0
-                                  : day.minutes / maxMinutes,
-                              isToday: day.date == today,
-                              workout: day.workout,
-                            ),
-                        ],
+                    // A chart: its day letters grow only as far as the
+                    // other chart labels do (chartTextScaler).
+                    MediaQuery.withClampedTextScaling(
+                      maxScaleFactor: 1.35,
+                      child: SizedBox(
+                        height: 96,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            for (final day in days)
+                              _WeekDayBar(
+                                letter: 'MTWTFSS'[day.date.weekday - 1],
+                                fraction: maxMinutes == 0
+                                    ? 0
+                                    : day.minutes / maxMinutes,
+                                isToday: day.date == today,
+                                workout: day.workout,
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -1039,7 +1108,7 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
                         ),
                         Expanded(
                           child: _ActivityStat(
-                            value: '${km.toStringAsFixed(1)} km',
+                            value: _units(context).formatDistance(km),
                             label: 'Distance',
                           ),
                         ),
@@ -1126,7 +1195,7 @@ class _SuggestRoutineRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(11),
                   ),
                   child: const Icon(
-                    Icons.auto_awesome_rounded,
+                    CupertinoIcons.sparkles,
                     color: _purple,
                     size: 19,
                   ),
@@ -1154,7 +1223,7 @@ class _SuggestRoutineRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+                Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
               ],
             ),
           ),
@@ -1172,32 +1241,71 @@ class _TrainingLoadSection extends StatefulWidget {
 }
 
 class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
-  late final Stream<TrainingLoadView?> _load = watchTrainingLoad(
-    DateTime.now(),
-  );
+  late final _load = watchTrainingLoadRecord(DateTime.now());
 
   @override
-  Widget build(BuildContext context) => VisibleStreamBuilder<TrainingLoadView?>(
-    stream: _load,
-    builder: (context, snapshot) {
-      final view = snapshot.data;
-      if (view == null) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(top: 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SectionHeader('TRAINING LOAD'),
-            const SizedBox(height: 6),
-            TrainingLoadCard(
-              view: view,
-              onTap: () => showTrainingLoadDetails(context, view),
+  Widget build(BuildContext context) =>
+      VisibleStreamBuilder<({TrainingLoadView? view, int? learningDaysToGo})?>(
+        stream: _load,
+        builder: (context, snapshot) {
+          final view = snapshot.data?.view;
+          final daysToGo = snapshot.data?.learningDaysToGo;
+          if (view == null && daysToGo == null) {
+            return const SizedBox.shrink();
+          }
+          final colors = context.vivordoColors;
+          return Padding(
+            padding: const EdgeInsets.only(top: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionHeader('Training load'),
+                const SizedBox(height: 6),
+                if (view != null)
+                  TrainingLoadCard(
+                    view: view,
+                    onTap: () => showTrainingLoadDetails(context, view),
+                  )
+                else
+                  // Still building a usual week to compare with.
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colors.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: colors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Learning your usual week',
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'About $daysToGo ${daysToGo == 1 ? 'day' : 'days'} '
+                          'to go. Then each week is compared with the ones '
+                          'before it.',
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       );
-    },
-  );
 }
 
 class _WeekDayBar extends StatelessWidget {
@@ -1292,25 +1400,12 @@ class _RecentFeedState extends State<_RecentFeed> {
 
   @override
   Widget build(BuildContext context) {
-    final chips = Wrap(
-      spacing: 8,
-      children: [
-        for (final filter in _RecentFilter.values)
-          ChoiceChip(
-            label: Text(filter.label),
-            selected: _filter == filter,
-            showCheckmark: false,
-            selectedColor: _purple,
-            labelStyle: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: _filter == filter ? Colors.white : _muted,
-            ),
-            side: BorderSide(color: context.vivordoColors.border),
-            shape: const StadiumBorder(),
-            onSelected: (_) => setState(() => _filter = filter),
-          ),
-      ],
+    final chips = AppSegmented<_RecentFilter>(
+      segments: {
+        for (final filter in _RecentFilter.values) filter: filter.label,
+      },
+      value: _filter,
+      onChanged: (filter) => setState(() => _filter = filter),
     );
 
     final feed = VisibleStreamBuilder<List<SavedWorkout>>(
@@ -1324,7 +1419,7 @@ class _RecentFeedState extends State<_RecentFeed> {
                   (activities.connectionState == ConnectionState.waiting &&
                       !activities.hasData)) {
                 return const _Card(
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(child: CupertinoActivityIndicator()),
                 );
               }
               final entries = <({DateTime at, Widget row})>[
@@ -1405,7 +1500,7 @@ class _RecentFeedState extends State<_RecentFeed> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          'RECENT',
+          'Recent',
           trailing: TextButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const _AllActivityScreen()),
@@ -1503,7 +1598,7 @@ class _BodyCardState extends State<_BodyCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _SectionHeader(
-                  'BODY',
+                  'Body',
                   trailing: _SectionNote(_updatedLabel(updatedAt)),
                 ),
                 const SizedBox(height: 6),
@@ -1531,10 +1626,10 @@ class _BodyCardState extends State<_BodyCard> {
                         children: [
                           Expanded(
                             child: _ProfileMetric(
-                              label: 'WEIGHT',
+                              label: 'Weight',
                               value: weight == null
                                   ? '--'
-                                  : '${_number(weight * 2.2046226218)} lbs',
+                                  : _units(context).formatBodyWeight(weight),
                             ),
                           ),
                           const _ProfileDivider(),
@@ -1547,14 +1642,14 @@ class _BodyCardState extends State<_BodyCard> {
                           const _ProfileDivider(),
                           Expanded(
                             child: _ProfileMetric(
-                              label: 'BODY FAT',
+                              label: 'Body fat',
                               value: bodyFat == null
                                   ? '--'
                                   : '${_number(bodyFat)}%',
                             ),
                           ),
                           const Icon(
-                            Icons.chevron_right_rounded,
+                            CupertinoIcons.chevron_right,
                             color: _muted,
                           ),
                         ],
@@ -1603,10 +1698,10 @@ class _RecentWorkoutRow extends StatelessWidget {
               if (workout.setCount > 0) '${workout.setCount} sets',
               if (workout.primaryCardioOrSportExercise?.distanceKm
                   case final km? when km > 0)
-                '${km.toStringAsFixed(1)} km',
+                _units(context).formatDistance(km),
             ].join(' · '),
           ),
-          trailing: const Icon(Icons.chevron_right_rounded, color: _muted),
+          trailing: const Icon(CupertinoIcons.chevron_right, color: _muted),
         ),
       ),
     );
@@ -1650,7 +1745,7 @@ class _RecentActivityRow extends StatelessWidget {
       '${_recentDayLabel(activity.day)} · ${activity.minutes} min',
     ];
     if (activity.km != null) {
-      details.add('${activity.km!.toStringAsFixed(1)} km');
+      details.add(_units(context).formatDistance(activity.km!));
     }
     if (activity.sets != null) details.add('${activity.sets} sets');
     final hasSets = activity.sets != null;
@@ -1701,15 +1796,19 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
     final kmText = _km.text;
     final setsText = _sets.text;
     final minutes = int.tryParse(_minutes.text);
-    final km = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    final typed = kmText.trim().isEmpty ? null : double.tryParse(kmText);
+    // Typed in Settings → Units, saved in km.
+    final km = typed == null
+        ? null
+        : context.read<ThemeController>().units.distanceToKm(typed);
     final sets = setsText.trim().isEmpty ? null : int.tryParse(setsText);
     if (name.trim().isEmpty || minutes == null || minutes <= 0) {
       setState(() => _error = 'Enter a name and valid number of minutes.');
       return;
     }
-    if ((kmText.trim().isNotEmpty && km == null) ||
+    if ((kmText.trim().isNotEmpty && typed == null) ||
         (setsText.trim().isNotEmpty && sets == null)) {
-      setState(() => _error = 'Enter valid numbers for kilometres and sets.');
+      setState(() => _error = 'Enter valid numbers for distance and sets.');
       return;
     }
     setState(() {
@@ -1788,7 +1887,7 @@ class _LogActivityDialogState extends State<_LogActivityDialog> {
           AppleFormTextRow(
             label: 'Distance',
             controller: _km,
-            placeholder: 'km',
+            placeholder: _units(context).distanceLabel,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           AppleFormTextRow(
@@ -1933,7 +2032,7 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.track_changes_rounded, color: Colors.white, size: 32),
+              Icon(CupertinoIcons.scope, color: Colors.white, size: 32),
               SizedBox(height: 12),
               Text(
                 'Build consistency',
@@ -1973,12 +2072,11 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
         const Padding(
           padding: EdgeInsets.only(top: 12, bottom: 9),
           child: Text(
-            'WEEKLY STRENGTH GOALS',
+            'Weekly strength goals',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               color: _muted,
               fontWeight: FontWeight.w800,
-              letterSpacing: 1.4,
             ),
           ),
         ),
@@ -2356,6 +2454,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
         void save() {
           final value = controller.text;
@@ -2435,6 +2534,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _finishWorkout() async {
+    final units = context.read<ThemeController>().units;
     if (exercises.isEmpty) {
       showToast(context, 'Add at least one exercise first.');
       return;
@@ -2444,6 +2544,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ? await _refreshTrackedDistance(force: true)
         : null;
     if (!mounted) return;
+    for (final set in exercises.expand((exercise) => exercise.sets)) {
+      set.invalid = false;
+    }
     var assignedTrackedDistance = false;
     final records = <WorkoutExerciseRecord>[];
     for (final exercise in exercises) {
@@ -2477,17 +2580,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       }
       final sets = <WorkoutSetRecord>[];
       for (final set in exercise.sets) {
+        // Untouched rows are dropped; half-filled ones are outlined.
+        if (set.isEmpty) continue;
         final weight = double.tryParse(set.lbs);
         final reps = int.tryParse(set.reps);
         if (weight == null || weight < 0 || reps == null || reps <= 0) {
-          showToast(
-            context,
-            'Enter a valid weight and reps for every ${exercise.name} set.',
-          );
-          return;
+          set.invalid = true;
+          continue;
         }
-        sets.add(WorkoutSetRecord(weightLbs: weight, reps: reps));
+        // Typed in Settings → Units, saved in lb (weightLbs).
+        sets.add(
+          WorkoutSetRecord(
+            weightLbs: units.liftToLbs(weight),
+            reps: reps,
+            loggedAt: set.loggedAt,
+          ),
+        );
       }
+      if (sets.isEmpty) continue;
       records.add(
         WorkoutExerciseRecord(
           name: exercise.definition.name,
@@ -2495,6 +2605,34 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           sets: sets,
         ),
       );
+    }
+
+    final firstInvalid = exercises
+        .expand((exercise) => exercise.sets)
+        .where((set) => set.invalid)
+        .firstOrNull;
+    if (firstInvalid != null) {
+      setState(() {});
+      HapticFeedback.heavyImpact();
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        'Add weight and reps to the outlined sets',
+        Directionality.of(context),
+      );
+      if (firstInvalid.rowKey.currentContext case final row? when row.mounted) {
+        unawaited(
+          Scrollable.ensureVisible(
+            row,
+            alignment: .3,
+            duration: const Duration(milliseconds: 300),
+          ),
+        );
+      }
+      return;
+    }
+    if (records.isEmpty) {
+      showToast(context, 'Log at least one set first.');
+      return;
     }
 
     setState(() => saving = true);
@@ -2572,7 +2710,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               child: SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CupertinoActivityIndicator(radius: 9),
               ),
             )
           else
@@ -2637,11 +2775,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        '●  IN PROGRESS',
+                        '●  In progress',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 1.3,
                           color: Color(0xFFE8E0FF),
                         ),
                       ),
@@ -2676,7 +2813,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CupertinoActivityIndicator(radius: 9),
                         )
                       : const Text(
                           'Finish',
@@ -2747,7 +2884,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           ),
           if (exercises.isNotEmpty) ...[
             const SizedBox(height: 6),
-            const _SectionHeader('EXERCISES'),
+            const _SectionHeader('Exercises'),
             const SizedBox(height: 4),
           ],
           for (final exercise in exercises) ...[
@@ -2759,7 +2896,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 _updateSetCount();
                 unawaited(draft.persist());
               },
-              onRemove: () {
+              onRemove: () async {
+                final filled = exercise.sets.where((set) => !set.isEmpty);
+                if (filled.isNotEmpty &&
+                    !await confirmAction(
+                      context,
+                      title: 'Remove ${exercise.name}?',
+                      message: filled.length == 1
+                          ? 'Its set will be deleted.'
+                          : 'Its ${filled.length} sets will be deleted.',
+                      confirmLabel: 'Remove',
+                    )) {
+                  return;
+                }
+                if (!mounted) return;
                 setState(() => exercises.remove(exercise));
                 _updateSetCount();
                 unawaited(draft.persist());
@@ -2776,7 +2926,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             height: 52,
             child: FilledButton.icon(
               onPressed: _addExercises,
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(CupertinoIcons.add),
               label: const Text(
                 'Add exercise',
                 style: TextStyle(fontWeight: FontWeight.w800),
@@ -2794,7 +2944,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           TextButton.icon(
             onPressed: _addSavedWorkout,
             style: TextButton.styleFrom(foregroundColor: _purple),
-            icon: const Icon(Icons.playlist_add_rounded),
+            icon: const Icon(CupertinoIcons.text_badge_plus),
             label: const Text(
               'Add saved workout',
               style: TextStyle(fontWeight: FontWeight.w800),
@@ -2942,7 +3092,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                 child: TextField(
                   decoration: InputDecoration(
                     hintText: 'Search saved workouts',
-                    prefixIcon: const Icon(Icons.search_rounded),
+                    prefixIcon: const Icon(CupertinoIcons.search),
                     filled: true,
                     fillColor: context.vivordoColors.input,
                     border: OutlineInputBorder(
@@ -2963,13 +3113,13 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                   physics: const BouncingScrollPhysics(),
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
                   children: [
-                    const _PickerSectionTitle('SAVED WORKOUTS'),
+                    const _PickerSectionTitle('Saved workouts'),
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !snapshot.hasData)
                       const Padding(
                         padding: EdgeInsets.all(40),
                         child: Center(
-                          child: CircularProgressIndicator(color: _purple),
+                          child: CupertinoActivityIndicator(color: _purple),
                         ),
                       )
                     else if (templates.isEmpty)
@@ -3128,7 +3278,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
                         const Tooltip(
                           message: 'Suggested by Vivordo AI',
                           child: Icon(
-                            Icons.auto_awesome_rounded,
+                            CupertinoIcons.sparkles,
                             size: 15,
                             color: _purple,
                           ),
@@ -3156,17 +3306,19 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
               const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CupertinoActivityIndicator(radius: 12),
               )
             else ...[
               IconButton(
                 onPressed: onDelete,
                 tooltip: 'Delete saved workout',
-                icon: const Icon(Icons.delete_outline_rounded),
+                icon: const Icon(CupertinoIcons.delete),
                 color: Colors.redAccent,
               ),
               Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                selected
+                    ? CupertinoIcons.checkmark_circle_fill
+                    : CupertinoIcons.circle,
                 color: selected ? _purple : _muted,
               ),
             ],
@@ -3200,9 +3352,6 @@ class _ExerciseDefinition {
   final bool isCustom;
 }
 
-String _compactWorkoutNumber(double value) =>
-    value.toStringAsFixed(value % 1 == 0 ? 0 : 1);
-
 class _WorkoutSet {
   _WorkoutSet({this.previous});
 
@@ -3210,10 +3359,22 @@ class _WorkoutSet {
   String lbs = '';
   String reps = '';
 
+  /// When reps were first entered: roughly when the set was done.
+  DateTime? loggedAt;
+
+  /// Half filled in when Finish was tapped; outlined until edited.
+  bool invalid = false;
+
+  /// Finds the row to scroll to when [invalid].
+  final rowKey = GlobalKey();
+
+  bool get isEmpty => lbs.trim().isEmpty && reps.trim().isEmpty;
+
   Map<String, dynamic> toJson() => {
     'lbs': lbs,
     'reps': reps,
     'previous': previous?.toMap(),
+    'loggedAt': ?loggedAt?.toIso8601String(),
   };
 }
 
@@ -3301,6 +3462,7 @@ class _WorkoutExercise {
             );
             set.lbs = map['lbs'] as String? ?? '';
             set.reps = map['reps'] as String? ?? '';
+            set.loggedAt = DateTime.tryParse(map['loggedAt'] as String? ?? '');
             return set;
           }),
         );
@@ -3434,7 +3596,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             ),
             child: const Row(
               children: [
-                Icon(Icons.timer_outlined, color: _purple, size: 20),
+                Icon(CupertinoIcons.timer, color: _purple, size: 20),
                 SizedBox(width: 9),
                 Expanded(
                   child: Text(
@@ -3464,10 +3626,10 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                     const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CupertinoActivityIndicator(radius: 10),
                     )
                   else
-                    const Icon(Icons.route_rounded, color: _purple, size: 20),
+                    const Icon(CupertinoIcons.map, color: _purple, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -3476,7 +3638,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                         Text(
                           distance.km == null
                               ? 'Tracking distance automatically'
-                              : '${distance.km!.toStringAsFixed(2)} km',
+                              : _units(
+                                  context,
+                                ).formatDistance(distance.km!, decimals: 2),
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
@@ -3496,23 +3660,23 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             ),
           )
         else ...[
-          const Row(
+          Row(
             children: [
-              SizedBox(
+              const SizedBox(
                 width: 70,
                 child: Text(
-                  'PREVIOUS',
+                  'Previous',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: _muted,
                   ),
                 ),
               ),
-              SizedBox(
+              const SizedBox(
                 width: 38,
                 child: Text(
-                  'SET',
+                  'Set',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -3522,9 +3686,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               ),
               Expanded(
                 child: Text(
-                  'LBS',
+                  _units(context).liftLabel,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: _muted,
@@ -3534,7 +3698,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'REPS',
+                  'Reps',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 11,
@@ -3549,7 +3713,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
           const SizedBox(height: 8),
           for (var index = 0; index < exercise.sets.length; index++) ...[
             _WorkoutSetRow(
-              key: ObjectKey(exercise.sets[index]),
+              key: exercise.sets[index].rowKey,
               number: index + 1,
               set: exercise.sets[index],
               repsHint: exercise.definition.targetReps,
@@ -3572,7 +3736,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               );
               onChanged();
             },
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(CupertinoIcons.add),
             label: const Text('Add Set'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(46),
@@ -3606,6 +3770,13 @@ class _WorkoutSetRow extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
+  /// Red while the set is half filled in after Finish; the theme's otherwise.
+  InputBorder? get _invalidBorder => set.invalid
+      ? const OutlineInputBorder(
+          borderSide: BorderSide(color: appleRed, width: 1.5),
+        )
+      : null;
+
   @override
   Widget build(BuildContext context) => Row(
     children: [
@@ -3614,7 +3785,7 @@ class _WorkoutSetRow extends StatelessWidget {
         child: Text(
           set.previous == null
               ? '—'
-              : '${_compactWorkoutNumber(set.previous!.weightLbs)} × ${set.previous!.reps}',
+              : '${_units(context).liftNumber(set.previous!.weightLbs)} × ${set.previous!.reps}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: _muted, fontSize: 12),
@@ -3629,44 +3800,55 @@ class _WorkoutSetRow extends StatelessWidget {
         ),
       ),
       Expanded(
-        child: TextFormField(
-          initialValue: set.lbs,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(),
+        child: Semantics(
+          label: 'Set $number weight, ${_units(context).liftLabel}',
+          child: TextFormField(
+            initialValue: set.lbs,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(),
+              enabledBorder: _invalidBorder,
+            ),
+            onChanged: (value) {
+              set.lbs = value;
+              set.invalid = false;
+              onChanged();
+            },
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            onFieldSubmitted: (_) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
           ),
-          onChanged: (value) {
-            set.lbs = value;
-            onChanged();
-          },
-          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-          onFieldSubmitted: (_) =>
-              FocusManager.instance.primaryFocus?.unfocus(),
         ),
       ),
       const SizedBox(width: 8),
       Expanded(
-        child: TextFormField(
-          initialValue: set.reps,
-          keyboardType: TextInputType.number,
-          textInputAction: TextInputAction.done,
-          textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            isDense: true,
-            border: const OutlineInputBorder(),
-            hintText: repsHint,
-            hintStyle: const TextStyle(color: _muted),
+        child: Semantics(
+          label: 'Set $number reps',
+          child: TextFormField(
+            initialValue: set.reps,
+            keyboardType: TextInputType.number,
+            textInputAction: TextInputAction.done,
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(),
+              enabledBorder: _invalidBorder,
+              hintText: repsHint,
+              hintStyle: const TextStyle(color: _muted),
+            ),
+            onChanged: (value) {
+              set.reps = value;
+              set.invalid = false;
+              if (value.isNotEmpty) set.loggedAt ??= DateTime.now();
+              onChanged();
+            },
+            onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+            onFieldSubmitted: (_) =>
+                FocusManager.instance.primaryFocus?.unfocus(),
           ),
-          onChanged: (value) {
-            set.reps = value;
-            onChanged();
-          },
-          onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-          onFieldSubmitted: (_) =>
-              FocusManager.instance.primaryFocus?.unfocus(),
         ),
       ),
       SizedBox(
@@ -3674,7 +3856,7 @@ class _WorkoutSetRow extends StatelessWidget {
         child: IconButton(
           tooltip: 'Remove set',
           onPressed: onRemove,
-          icon: const Icon(Icons.close_rounded, color: _muted),
+          icon: const Icon(CupertinoIcons.xmark, color: _muted),
         ),
       ),
     ],
@@ -4091,7 +4273,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
               child: TextField(
                 decoration: InputDecoration(
                   hintText: 'Search exercises',
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: const Icon(CupertinoIcons.search),
                   filled: true,
                   fillColor: context.vivordoColors.input,
                   border: OutlineInputBorder(
@@ -4143,7 +4325,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                     const SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 18),
-                        child: _PickerSectionTitle('YOUR EXERCISES'),
+                        child: _PickerSectionTitle('Your exercises'),
                       ),
                     ),
                     SliverToBoxAdapter(
@@ -4175,8 +4357,8 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 18),
                       child: _PickerSectionTitle(
                         _filter == favouritesFilter
-                            ? 'FAVOURITES'
-                            : 'ALL EXERCISES',
+                            ? 'Favourites'
+                            : 'All exercises',
                       ),
                     ),
                   ),
@@ -4268,9 +4450,8 @@ class _PickerSectionTitle extends StatelessWidget {
     child: Text(
       text,
       style: const TextStyle(
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: FontWeight.w800,
-        letterSpacing: 1.5,
         color: _muted,
       ),
     ),
@@ -4337,12 +4518,14 @@ class _ExercisePickerRow extends StatelessWidget {
                   : 'Add to favourites',
               onPressed: onFavourite,
               icon: Icon(
-                favourite ? Icons.star_rounded : Icons.star_border_rounded,
+                favourite ? CupertinoIcons.star_fill : CupertinoIcons.star,
                 color: favourite ? _purple : _muted,
               ),
             ),
             Icon(
-              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              selected
+                  ? CupertinoIcons.checkmark_circle_fill
+                  : CupertinoIcons.circle,
               color: selected ? _purple : _muted,
             ),
           ],
@@ -4366,7 +4549,7 @@ class _ExerciseIcon extends StatelessWidget {
       'Core' => (Icons.self_improvement_rounded, const Color(0xFFE94B9A)),
       'Cardio' => (Icons.directions_run_rounded, const Color(0xFFF43F5E)),
       'Sports' => (Icons.sports_basketball_rounded, const Color(0xFF2563EB)),
-      'Shoulders' => (Icons.accessibility_new_rounded, const Color(0xFF9B51E0)),
+      'Shoulders' => (CupertinoIcons.person_fill, const Color(0xFF9B51E0)),
       _ => (Icons.fitness_center_rounded, _purple),
     };
     return Container(
@@ -4381,55 +4564,57 @@ class _ExerciseIcon extends StatelessWidget {
   }
 }
 
-class MonthlyRingsDialog extends StatelessWidget {
-  const MonthlyRingsDialog({super.key});
+/// The last 30 days of activity rings, in a sheet with Done at the top.
+class MonthlyRingsSheet extends StatelessWidget {
+  const MonthlyRingsSheet({super.key});
   @override
-  Widget build(BuildContext context) => Dialog(
-    insetPadding: const EdgeInsets.all(20),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 700),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ACTIVITY RINGS',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _muted,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      Text(
-                        'Last 30 Days',
-                        style: TextStyle(
-                          fontSize: 23,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AppleGrabber(),
+        SizedBox(
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  'Last 30 days',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: context.vivordoColors.textPrimary,
                   ),
                 ),
-                IconButton(
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
+                  child: Text(
+                    'Done',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: appleTint(context),
+                    ),
+                  ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const _ThirtyDayActivityRings(),
-          ],
+              ),
+            ],
+          ),
         ),
-      ),
+        const Flexible(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 16),
+            child: _ThirtyDayActivityRings(),
+          ),
+        ),
+      ],
     ),
   );
 }
@@ -4530,6 +4715,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
     final selectedSteps = _metricSum(selectedData, 'steps');
     final selectedCalories = _metricSum(selectedData, 'active_calories');
     final selectedExercise = _metricSum(selectedData, 'exercise_time');
+    final colors = context.vivordoColors;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -4553,83 +4739,97 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
             final exercise = _metricSum(data, 'exercise_time');
             final isToday = DateUtils.isSameDay(date, today);
             final isSelected = DateUtils.isSameDay(date, _selectedDay);
-            return InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => setState(
-                () =>
-                    _pickedDay = DateUtils.isSameDay(date, today) ? null : date,
-              ),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? _purple.withValues(alpha: .08)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected ? _purple : Colors.transparent,
-                    width: 1.4,
-                  ),
+            final number = NumberFormat.decimalPattern();
+            return Semantics(
+              button: true,
+              selected: isSelected,
+              label:
+                  '${DateFormat('MMM d').format(date)}: '
+                  '${number.format(steps.round())} of ${number.format(goals.steps)} steps, '
+                  '${number.format(calories.round())} of ${number.format(goals.activeCalories)} kcal, '
+                  '${exercise.round()} of ${goals.exerciseMinutes} min',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(
+                  () => _pickedDay = DateUtils.isSameDay(date, today)
+                      ? null
+                      : date,
                 ),
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: CustomPaint(
-                        painter: ActivityRingsPainter(
-                          move: (steps / goals.steps).clamp(0.0, 1.0),
-                          exercise: (calories / goals.activeCalories).clamp(
-                            0.0,
-                            1.0,
-                          ),
-                          stand: (exercise / goals.exerciseMinutes).clamp(
-                            0.0,
-                            1.0,
+                child: ExcludeSemantics(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? _purple.withValues(alpha: .08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected ? _purple : Colors.transparent,
+                        width: 1.4,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: CustomPaint(
+                            painter: ActivityRingsPainter(
+                              move: (steps / goals.steps).clamp(0.0, 1.0),
+                              exercise: (calories / goals.activeCalories).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                              stand: (exercise / goals.exerciseMinutes).clamp(
+                                0.0,
+                                1.0,
+                              ),
+                              trackColor: colors.textPrimary.withValues(
+                                alpha: .1,
+                              ),
+                            ),
+                            child: const SizedBox.expand(),
                           ),
                         ),
-                        child: const SizedBox.expand(),
-                      ),
+                        Text(
+                          isToday ? 'Today' : '${date.day}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isSelected || isToday ? _purple : _muted,
+                            fontWeight: isSelected || isToday
+                                ? FontWeight.w800
+                                : null,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      isToday ? 'Today' : '${date.day}',
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: isSelected || isToday ? _purple : _muted,
-                        fontWeight: isSelected || isToday
-                            ? FontWeight.w800
-                            : null,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );
           },
         ),
         const SizedBox(height: 18),
-        _SectionTitle(
-          icon: Icons.calendar_today_rounded,
-          title: DateUtils.isSameDay(_selectedDay, today)
-              ? "TODAY'S ACTIVITY"
-              : DateFormat('MMMM d, y').format(_selectedDay).toUpperCase(),
-        ),
-        const SizedBox(height: 9),
-        Wrap(
-          spacing: 14,
-          runSpacing: 8,
+        AppleFormGroup(
+          header: DateUtils.isSameDay(_selectedDay, today)
+              ? "Today's activity"
+              : DateFormat('MMMM d, y').format(_selectedDay),
           children: [
-            _RingLegend(
-              color: _purple,
-              text:
-                  'Steps ${NumberFormat.decimalPattern().format(selectedSteps.round())}',
+            AppleFormRow(
+              leading: const _RingDot(_purple),
+              label: 'Steps',
+              value: NumberFormat.decimalPattern().format(
+                selectedSteps.round(),
+              ),
             ),
-            _RingLegend(
-              color: const Color(0xFFFB923C),
-              text: 'Active calories ${_formatMetric(selectedCalories)}',
+            AppleFormRow(
+              leading: const _RingDot(Color(0xFFFB923C)),
+              label: 'Active calories',
+              value: '${_formatMetric(selectedCalories)} kcal',
             ),
-            _RingLegend(
-              color: const Color(0xFF34D399),
-              text: 'Exercise ${_formatMetric(selectedExercise)} min',
+            AppleFormRow(
+              leading: const _RingDot(Color(0xFF34D399)),
+              label: 'Exercise',
+              value: '${_formatMetric(selectedExercise)} min',
             ),
           ],
         ),
@@ -4782,55 +4982,14 @@ class _PillButton extends StatelessWidget {
   );
 }
 
-class _RingLegend extends StatelessWidget {
+class _RingDot extends StatelessWidget {
+  const _RingDot(this.color);
   final Color color;
-  final String text;
-  const _RingLegend({required this.color, required this.text});
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Container(
-        width: 9,
-        height: 9,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-      const SizedBox(width: 7),
-      Flexible(
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 11,
-            color: _muted,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    ],
-  );
-}
-
-class _SectionTitle extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  const _SectionTitle({required this.icon, required this.title});
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      Icon(icon, size: 16, color: _purple),
-      const SizedBox(width: 7),
-      Expanded(
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.1,
-            color: _muted,
-          ),
-        ),
-      ),
-    ],
+  Widget build(BuildContext context) => Container(
+    width: 9,
+    height: 9,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
 
@@ -4858,35 +5017,39 @@ class _StrengthRow extends StatelessWidget {
     required this.value,
     required this.goal,
   });
+  // A progress chart in fixed columns: grows only as far as chart labels.
   @override
-  Widget build(BuildContext context) => Row(
-    children: [
-      SizedBox(
-        width: 78,
-        child: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.35,
+    child: Row(
+      children: [
+        SizedBox(
+          width: 78,
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+          ),
         ),
-      ),
-      Expanded(
-        child: LinearProgressIndicator(
-          value: (value / goal).clamp(0, 1),
-          minHeight: 7,
-          borderRadius: BorderRadius.circular(8),
-          color: _purple,
-          backgroundColor: context.vivordoColors.input,
+        Expanded(
+          child: LinearProgressIndicator(
+            value: (value / goal).clamp(0, 1),
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+            color: _purple,
+            backgroundColor: context.vivordoColors.input,
+          ),
         ),
-      ),
-      const SizedBox(width: 10),
-      SizedBox(
-        width: 60,
-        child: Text(
-          '$value / $goal sets',
-          textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 10, color: _muted),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 68,
+          child: Text(
+            '$value / $goal sets',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 11, color: _muted),
+          ),
         ),
-      ),
-    ],
+      ],
+    ),
   );
 }
 
@@ -4973,13 +5136,15 @@ class _CustomExerciseBadge extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
     ),
     child: const Text(
-      'CUSTOM',
+      'Custom',
       style: TextStyle(
-        fontSize: 10,
+        fontSize: 13,
         fontWeight: FontWeight.w800,
-        letterSpacing: .8,
         color: _purple,
       ),
     ),
   );
 }
+
+/// The user's Settings → Units, rebuilding when they change.
+Units _units(BuildContext context) => context.watch<ThemeController>().units;

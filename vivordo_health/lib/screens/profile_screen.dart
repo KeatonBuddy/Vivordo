@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/services/account_deletion_service.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'login_screen.dart';
 import 'blocked_users_screen.dart';
+import 'subscription_settings_screen.dart';
 import '../widgets/app_tour.dart';
 import '../widgets/privacy_support_links.dart';
 import '../widgets/outlook_connect.dart';
@@ -30,6 +31,8 @@ import 'package:vivordo_health/src/utils/day_wrap_up.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
+import 'package:vivordo_health/screens/sleep_preferences_screen.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -51,6 +54,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _isUpdatingWhoop = false;
   bool _isUpdatingScanReminder = false;
   bool _isUpdatingCheckInReminder = false;
+
+  /// iOS has Vivordo's notifications off; the switches can't deliver.
+  bool _notificationsOff = false;
   bool _isUpdatingCircleNotifications = false;
   bool _isUpdatingFitnessNotifications = false;
 
@@ -70,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_checkNotificationPermission());
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _userDocStream = uid != null
@@ -206,14 +213,19 @@ class _SettingsScreenState extends State<SettingsScreen>
             final colors = context.vivordoColors;
             return AppleAlert(
               title: 'Permanently delete account?',
+              maxWidth: 340,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Bounded so the alert fits above the keyboard on small
-                  // phones.
+                  // In full, bounded only while the keyboard is up so the
+                  // alert still fits above it on small phones.
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 140),
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.viewInsetsOf(context).bottom > 0
+                          ? 140
+                          : double.infinity,
+                    ),
                     child: SingleChildScrollView(
                       child: Text(
                         'This permanently deletes your Vivordo profile, health '
@@ -236,6 +248,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       controller: passwordController,
                       placeholder: 'Current password',
                       obscureText: true,
+                      autofillHints: const [AutofillHints.password],
                       onChanged: (value) => setDialogState(
                         () => passwordReady = value.isNotEmpty,
                       ),
@@ -627,8 +640,43 @@ class _SettingsScreenState extends State<SettingsScreen>
     }, SetOptions(merge: true));
   }
 
-  /// Runs a settings change, saying so if it fails.
-  Future<void> _setPreferenceWith(Future<void> Function() change) async {
+  Future<void> _checkNotificationPermission() async {
+    final off = await NotificationService().turnedOffInSettings();
+    if (mounted && off != _notificationsOff) {
+      setState(() => _notificationsOff = off);
+    }
+  }
+
+  /// Before a notification switch turns on: asks iOS the first time, and
+  /// when notifications are off there, says so and offers iOS Settings.
+  Future<bool> _notificationsAllowed() async {
+    if (await NotificationService().requestPermission()) {
+      if (mounted && _notificationsOff) {
+        setState(() => _notificationsOff = false);
+      }
+      return true;
+    }
+    if (!mounted) return false;
+    setState(() => _notificationsOff = true);
+    final open = await confirmAction(
+      context,
+      title: 'Notifications are off',
+      message: 'Turn on notifications for Vivordo in Settings to get this.',
+      confirmLabel: 'Open Settings',
+      cancelLabel: 'Not Now',
+      destructive: false,
+    );
+    if (open) unawaited(launchUrl(Uri.parse('app-settings:')));
+    return false;
+  }
+
+  /// Runs a settings change, saying so if it fails. [enabling] is true when
+  /// it turns a notification on, which needs iOS permission first.
+  Future<void> _setPreferenceWith(
+    Future<void> Function() change, {
+    bool enabling = false,
+  }) async {
+    if (enabling && !await _notificationsAllowed()) return;
     try {
       await change();
     } catch (_) {
@@ -643,6 +691,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _setWindDownReminder(bool enabled) async {
+    if (enabled && !await _notificationsAllowed()) return;
     try {
       await WindDownReminders.setEnabled(enabled);
     } catch (_) {
@@ -676,6 +725,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (isUpdating) {
       return;
     }
+    if (enabled && !await _notificationsAllowed()) return;
 
     setState(() {
       if (isScanReminder) {
@@ -849,6 +899,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     // where they tap the verification link while the app is already open
     if (state == AppLifecycleState.resumed) {
       _checkEmailSync();
+      unawaited(_checkNotificationPermission());
       if (OutlookCalendarService.enabled) {
         _refreshOutlookCalendarConnection();
       }
@@ -1014,7 +1065,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: VivordoTheme.brand),
+              child: CupertinoActivityIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -1077,7 +1128,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (authUser != null) UserService.createUser(authUser);
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(color: VivordoTheme.brand),
+              child: CupertinoActivityIndicator(color: VivordoTheme.brand),
             ),
           );
         }
@@ -1155,11 +1206,39 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _pendingEmailBanner(pendingEmail),
                 ],
 
+                const _SectionLabel('Subscription'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        CupertinoIcons.star_circle_fill,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Plan and billing',
+                      subtitle: 'Your plan, renewal and purchases',
+                      trailing: const _Chevron(),
+                      onTap: () {
+                        final uid = FirebaseAuth.instance.currentUser?.uid;
+                        if (uid == null) return;
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                SubscriptionSettingsScreen(uid: uid),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+
                 const _SectionLabel('Connections'),
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge(Icons.favorite_rounded, _red),
+                      leading: const _IconBadge(
+                        CupertinoIcons.heart_fill,
+                        _red,
+                      ),
                       title: 'Apple Health',
                       status: (
                         selectedMetricCount > 0,
@@ -1195,7 +1274,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _connectionRow(
                       leading: const _IconBadge(
-                        Icons.watch_rounded,
+                        CupertinoIcons.clock_fill,
                         Color(0xFF00B0B9),
                       ),
                       name: 'Fitbit',
@@ -1207,7 +1286,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _connectionRow(
                       leading: const _IconBadge(
-                        Icons.calendar_month_rounded,
+                        CupertinoIcons.calendar,
                         Color(0xFF4285F4),
                       ),
                       name: 'Google Calendar',
@@ -1219,7 +1298,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     if (OutlookCalendarService.enabled)
                       _connectionRow(
                         leading: const _IconBadge(
-                          Icons.calendar_month_rounded,
+                          CupertinoIcons.calendar,
                           Color(0xFF0078D4),
                         ),
                         name: 'Outlook Calendar',
@@ -1232,7 +1311,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         _isOutlookCalendarConnected)
                       _SettingsRow(
                         leading: const _IconBadge(
-                          Icons.event_available_rounded,
+                          CupertinoIcons.calendar_badge_plus,
                           VivordoTheme.brand,
                         ),
                         title: 'Default calendar',
@@ -1253,11 +1332,30 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const _SectionLabel('Notifications'),
                 _SettingsCard(
                   children: [
+                    if (_notificationsOff)
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.bell_slash,
+                          appleRed,
+                        ),
+                        title: 'Notifications are off',
+                        subtitle: 'Turn them on in iOS Settings to get these.',
+                        trailing: Text(
+                          'Open Settings',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: appleTint(context),
+                          ),
+                        ),
+                        onTap: () =>
+                            unawaited(launchUrl(Uri.parse('app-settings:'))),
+                      ),
                     Column(
                       children: [
                         _SettingsRow(
                           leading: const _IconBadge(
-                            Icons.monitor_heart_outlined,
+                            CupertinoIcons.waveform_path_ecg,
                             VivordoTheme.brand,
                           ),
                           title: 'Scan reminders',
@@ -1279,7 +1377,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.chat_bubble_outline_rounded,
+                        CupertinoIcons.chat_bubble,
                         _green,
                       ),
                       title: 'End-of-day check-in',
@@ -1294,7 +1392,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.bedtime_outlined,
+                        CupertinoIcons.moon,
                         VivordoTheme.brand,
                       ),
                       title: 'Wind-down reminder',
@@ -1306,7 +1404,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.wb_sunny_outlined,
+                        CupertinoIcons.sun_max,
                         Color(0xFFEF9F27),
                       ),
                       title: 'Morning check-in reminder',
@@ -1315,12 +1413,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                         value: checkInMorningReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => CheckInReminders.setEnabled(value),
+                          enabling: value,
                         ),
                       ),
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.event_note_outlined,
+                        CupertinoIcons.calendar,
                         Color(0xFF7F77DD),
                       ),
                       title: 'Weekly review',
@@ -1329,12 +1428,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                         value: weeklyReviewReminder,
                         onChanged: (value) => _setPreferenceWith(
                           () => WeeklyReviewService.setReminder(value),
+                          enabling: value,
                         ),
                       ),
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.monitor_heart_outlined,
+                        CupertinoIcons.waveform_path_ecg,
                         Color(0xFFE24B4A),
                       ),
                       title: 'Burnout check',
@@ -1346,6 +1446,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'burnoutNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),
@@ -1363,12 +1464,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'trainingLoadNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.emoji_events_outlined,
+                        CupertinoIcons.rosette,
                         Color(0xFFBA7517),
                       ),
                       title: 'Achievements',
@@ -1380,11 +1482,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'achievementNotificationsEnabled',
                             value,
                           ),
+                          enabling: value,
                         ),
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge(Icons.group_outlined, _orange),
+                      leading: const _IconBadge(
+                        CupertinoIcons.person_2,
+                        _orange,
+                      ),
                       title: 'Circle',
                       subtitle:
                           'Likes, comments, friend requests and challenges',
@@ -1419,7 +1525,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   children: [
                     const _SettingsRow(
                       leading: _IconBadge(
-                        Icons.brightness_6_rounded,
+                        CupertinoIcons.circle_lefthalf_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'Appearance',
@@ -1427,7 +1533,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.abc_rounded,
+                        CupertinoIcons.textformat_abc,
                         VivordoTheme.brand,
                       ),
                       title: 'Show score numbers',
@@ -1448,7 +1554,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.wb_twilight_rounded,
+                        CupertinoIcons.sunset_fill,
                         VivordoTheme.brand,
                       ),
                       title: 'End of day',
@@ -1460,9 +1566,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                       onTap: () => _chooseDayWrapUp(dayWrapUp),
                     ),
+                    // Also asked in setup after onboarding; this is where it
+                    // stays once Home's setup card is gone.
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.tour_rounded,
+                        CupertinoIcons.moon_fill,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Sleep schedule',
+                      subtitle: 'Your usual bed and wake times',
+                      trailing: _ValueChevron(
+                        switch (SleepSchedule.fromPreferences(preferences)) {
+                          final s? =>
+                            '${_formatReminderTime(s.bed)} – '
+                                '${_formatReminderTime(s.wake)}',
+                          null => 'Not set',
+                        },
+                      ),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SleepPreferencesScreen(),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        CupertinoIcons.map,
                         VivordoTheme.brand,
                       ),
                       title: 'Take the tour again',
@@ -1474,11 +1603,71 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ],
                 ),
 
+                const _SectionLabel('Units'),
+                _SettingsCard(
+                  children: [
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.monitor_weight_outlined,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Body weight',
+                      trailing: _UnitToggle<MassUnit>(
+                        options: const {MassUnit.kg: 'kg', MassUnit.lb: 'lbs'},
+                        read: (u) => u.bodyWeight,
+                        write: (u, v) => u.copyWith(bodyWeight: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.fitness_center_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Lifting weight',
+                      trailing: _UnitToggle<MassUnit>(
+                        options: const {MassUnit.kg: 'kg', MassUnit.lb: 'lbs'},
+                        read: (u) => u.liftWeight,
+                        write: (u, v) => u.copyWith(liftWeight: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        Icons.straighten_rounded,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Distance',
+                      trailing: _UnitToggle<DistanceUnit>(
+                        options: const {
+                          DistanceUnit.km: 'km',
+                          DistanceUnit.mi: 'mi',
+                        },
+                        read: (u) => u.distance,
+                        write: (u, v) => u.copyWith(distance: v),
+                      ),
+                    ),
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        CupertinoIcons.arrow_up_down,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Height',
+                      trailing: _UnitToggle<HeightUnit>(
+                        options: const {
+                          HeightUnit.cm: 'cm',
+                          HeightUnit.ftIn: 'ft·in',
+                        },
+                        read: (u) => u.height,
+                        write: (u, v) => u.copyWith(height: v),
+                      ),
+                    ),
+                  ],
+                ),
+
                 const _SectionLabel('Privacy'),
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge.muted(Icons.block_rounded),
+                      leading: const _IconBadge.muted(CupertinoIcons.nosign),
                       title: 'Blocked users',
                       trailing: const _Chevron(),
                       onTap: () => Navigator.of(context).push(
@@ -1488,9 +1677,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge.muted(
-                        Icons.auto_awesome_rounded,
-                      ),
+                      leading: const _IconBadge.muted(CupertinoIcons.sparkles),
                       title: 'Vivordo AI consent',
                       subtitle:
                           'Ask again before Vivordo AI sends anything to '
@@ -1504,7 +1691,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge.muted(
-                        Icons.privacy_tip_outlined,
+                        CupertinoIcons.lock_shield,
                       ),
                       title: 'Privacy Policy',
                       trailing: const _ExternalLink(),
@@ -1514,9 +1701,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       ),
                     ),
                     _SettingsRow(
-                      leading: const _IconBadge.muted(
-                        Icons.description_outlined,
-                      ),
+                      leading: const _IconBadge.muted(CupertinoIcons.doc_text),
                       title: 'Terms & Conditions',
                       trailing: const _ExternalLink(),
                       onTap: () =>
@@ -1529,10 +1714,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 _SettingsCard(
                   children: [
                     _SettingsRow(
-                      leading: const _IconBadge(
-                        Icons.bug_report_outlined,
-                        _red,
-                      ),
+                      leading: const _IconBadge(CupertinoIcons.ant, _red),
                       title: 'Report a bug',
                       subtitle: 'Tell us what went wrong',
                       trailing: const _Chevron(),
@@ -1540,7 +1722,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     ),
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.support_agent_rounded,
+                        CupertinoIcons.person_crop_circle_badge_checkmark,
                         VivordoTheme.brand,
                       ),
                       title: 'Contact support',
@@ -1568,7 +1750,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         padding: EdgeInsets.symmetric(vertical: 16),
                         child: Center(
                           child: Text(
-                            'Log out',
+                            'Sign Out',
                             style: TextStyle(
                               color: VivordoTheme.brand,
                               fontSize: 15,
@@ -1598,9 +1780,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                           const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                            child: CupertinoActivityIndicator(
                               color: _red,
+                              radius: 8,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1627,11 +1809,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final name = user.displayName?.trim() ?? '';
     final photoUrl = user.photoUrl;
     final fallback = name.isEmpty
-        ? const Icon(
-            Icons.person_outline_rounded,
-            color: Colors.white,
-            size: 26,
-          )
+        ? const Icon(CupertinoIcons.person, color: Colors.white, size: 26)
         : Text(
             name[0].toUpperCase(),
             style: const TextStyle(
@@ -1742,7 +1920,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     ),
     child: Row(
       children: [
-        const Icon(Icons.mail_outline_rounded, color: _orange, size: 18),
+        const Icon(CupertinoIcons.envelope, color: _orange, size: 18),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -1765,68 +1943,72 @@ class _SettingsScreenState extends State<SettingsScreen>
     context: context,
     useRootNavigator: true,
     showDragHandle: true,
-    backgroundColor: context.vivordoColors.page,
-    builder: (sheetContext) {
-      void edit(String field, String current) {
-        Navigator.pop(sheetContext);
-        _showEditDialog(context, field, current);
-      }
+    backgroundColor: raisedColors(context).page,
+    builder: (_) => RaisedSheetTheme(
+      child: Builder(
+        builder: (sheetContext) {
+          void edit(String field, String current) {
+            Navigator.pop(sheetContext);
+            _showEditDialog(context, field, current);
+          }
 
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Account',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: sheetContext.vivordoColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 14),
-              _SettingsCard(
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.person_outline_rounded,
-                      VivordoTheme.brand,
+                  Text(
+                    'Account',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: sheetContext.vivordoColors.textPrimary,
                     ),
-                    title: 'Name',
-                    subtitle: user.displayName ?? 'Set your name',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Name', user.displayName ?? ''),
                   ),
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.mail_outline_rounded,
-                      VivordoTheme.brand,
-                    ),
-                    title: 'Email',
-                    subtitle: user.email ?? 'Set your email',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Email', user.email ?? ''),
-                  ),
-                  _SettingsRow(
-                    leading: const _IconBadge(
-                      Icons.lock_outline_rounded,
-                      VivordoTheme.brand,
-                    ),
-                    title: 'Password',
-                    subtitle: '••••••••',
-                    trailing: const _Chevron(),
-                    onTap: () => edit('Password', ''),
+                  const SizedBox(height: 14),
+                  _SettingsCard(
+                    children: [
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.person,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Name',
+                        subtitle: user.displayName ?? 'Set your name',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Name', user.displayName ?? ''),
+                      ),
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.envelope,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Email',
+                        subtitle: user.email ?? 'Set your email',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Email', user.email ?? ''),
+                      ),
+                      _SettingsRow(
+                        leading: const _IconBadge(
+                          CupertinoIcons.lock,
+                          VivordoTheme.brand,
+                        ),
+                        title: 'Password',
+                        subtitle: '••••••••',
+                        trailing: const _Chevron(),
+                        onTap: () => edit('Password', ''),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      );
-    },
+            ),
+          );
+        },
+      ),
+    ),
   );
 
   /// A wearable or calendar row. Connected rows open their actions; others
@@ -1854,9 +2036,9 @@ class _SettingsScreenState extends State<SettingsScreen>
         ? const SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
+            child: CupertinoActivityIndicator(
               color: VivordoTheme.brand,
+              radius: 10,
             ),
           )
         : connected
@@ -1960,87 +2142,94 @@ class _SettingsScreenState extends State<SettingsScreen>
     useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,
-    backgroundColor: context.vivordoColors.page,
-    builder: (sheetContext) {
-      var sending = false;
-      return StatefulBuilder(
-        builder: (sheetContext, setSheetState) {
-          final colors = sheetContext.vivordoColors;
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              0,
-              20,
-              20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Report a bug',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Tell us what went wrong and we’ll look into it.',
-                    style: TextStyle(fontSize: 13, color: colors.textSecondary),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _bugReportController,
-                    autofocus: true,
-                    minLines: 4,
-                    maxLines: 8,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      hintText: 'Describe the bug…',
-                      contentPadding: EdgeInsets.all(14),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _bugReportController,
-                    builder: (context, value, _) => FilledButton(
-                      onPressed: sending || value.text.trim().isEmpty
-                          ? null
-                          : () async {
-                              setSheetState(() => sending = true);
-                              final sent = await _submitBugReport();
-                              if (sent && sheetContext.mounted) {
-                                Navigator.pop(sheetContext);
-                              } else if (sheetContext.mounted) {
-                                setSheetState(() => sending = false);
-                              }
-                            },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: VivordoTheme.brand,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+    backgroundColor: raisedColors(context).page,
+    builder: (_) => RaisedSheetTheme(
+      child: Builder(
+        builder: (sheetContext) {
+          var sending = false;
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              final colors = sheetContext.vivordoColors;
+              return Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  0,
+                  20,
+                  20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Report a bug',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: colors.textPrimary,
                         ),
                       ),
-                      child: Text(sending ? 'Sending…' : 'Send report'),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tell us what went wrong and we’ll look into it.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _bugReportController,
+                        autofocus: true,
+                        minLines: 4,
+                        maxLines: 8,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          hintText: 'Describe the bug…',
+                          contentPadding: EdgeInsets.all(14),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _bugReportController,
+                        builder: (context, value, _) => FilledButton(
+                          onPressed: sending || value.text.trim().isEmpty
+                              ? null
+                              : () async {
+                                  setSheetState(() => sending = true);
+                                  final sent = await _submitBugReport();
+                                  if (sent && sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  } else if (sheetContext.mounted) {
+                                    setSheetState(() => sending = false);
+                                  }
+                                },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: VivordoTheme.brand,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          child: Text(sending ? 'Sending…' : 'Send report'),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
-      );
-    },
+      ),
+    ),
   );
 }
 
@@ -2067,7 +2256,7 @@ class _AppleHealthSettingsPage extends StatefulWidget {
 class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
   late final Stream<DocumentSnapshot<Map<String, dynamic>>> _userDocStream;
   bool _isConnectingAll = false;
-  String? _togglingMetric;
+  bool _isDeleting = false;
 
   @override
   void initState() {
@@ -2099,29 +2288,29 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
     }
   }
 
-  Future<void> _toggleMetric(HealthMetricDef metric, bool enable) async {
-    if (_togglingMetric != null) return;
-    setState(() => _togglingMetric = metric.key);
+  Future<void> _deleteSaved() async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete saved Health data?',
+      message:
+          'Vivordo stops reading Apple Health and deletes the Health data it '
+          'has saved. Scores that use it stay empty until you request access '
+          'again. Apple Health itself isn’t changed.',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _isDeleting = true);
     try {
-      if (enable) {
-        final granted = await HealthService().enableMetric(metric.key);
-        if (!granted) {
-          _showMessage(
-            '${metric.label} wasn’t turned on. Check Vivordo’s permissions in '
-            'Apple Health.',
-          );
-        }
-      } else {
-        await HealthService().disableMetric(metric.key);
-      }
+      await HealthService().disableAll();
+      _showMessage('Saved Health data deleted.');
     } catch (e) {
-      debugPrint('Apple Health ${metric.key} toggle failed: $e');
+      debugPrint('Apple Health delete failed: $e');
       _showMessage(
-        'Couldn’t update ${metric.label}. Try again.',
+        'Couldn’t delete the data. Try again.',
         kind: ToastKind.error,
       );
     } finally {
-      if (mounted) setState(() => _togglingMetric = null);
+      if (mounted) setState(() => _isDeleting = false);
     }
   }
 
@@ -2147,25 +2336,44 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                   children: [
                     _SettingsRow(
                       leading: const _IconBadge(
-                        Icons.favorite_rounded,
+                        CupertinoIcons.heart_fill,
                         _SettingsScreenState._red,
                       ),
                       title: 'Health data sync',
                       status: (
                         selected > 0,
                         selected > 0
-                            ? '$selected of ${kAvailableHealthMetrics.length} metrics'
-                            : 'No metrics selected',
+                            ? '$selected of ${kHealthMetrics.length} metrics'
+                            : 'Not connected',
                       ),
+                    ),
+                    // Access is Apple's to manage (HIG HealthKit), so this
+                    // sends people to the Health app instead of mirroring
+                    // its switches here.
+                    _SettingsRow(
+                      leading: const _IconBadge(
+                        CupertinoIcons.slider_horizontal_3,
+                        VivordoTheme.brand,
+                      ),
+                      title: 'Manage access',
+                      subtitle:
+                          'In the Health app: your profile, then Apps, then '
+                          'Vivordo.',
+                      trailing: Icon(
+                        CupertinoIcons.arrow_up_right_square,
+                        size: 18,
+                        color: colors.textSecondary,
+                      ),
+                      onTap: () =>
+                          unawaited(launchUrl(Uri.parse('x-apple-health://'))),
                     ),
                   ],
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
                   child: Text(
-                    'Apple controls access. Vivordo only reads the metrics you '
-                    'approve. Turning a metric off removes its saved data from '
-                    'Vivordo but does not change Apple Health permissions.',
+                    'Apple controls which data Vivordo can read. Vivordo only '
+                    'reads it and never writes to Apple Health.',
                     style: TextStyle(
                       fontSize: 12.5,
                       height: 1.4,
@@ -2181,23 +2389,23 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                          child: CupertinoActivityIndicator(
                             color: VivordoTheme.brand,
+                            radius: 9,
                           ),
                         )
                       : TextButton(
                           onPressed: _enableAll,
                           style: TextButton.styleFrom(
                             foregroundColor: VivordoTheme.brand,
-                            minimumSize: const Size(0, 32),
+                            minimumSize: const Size(0, 44),
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             textStyle: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          child: const Text('Turn all on'),
+                          child: const Text('Request access'),
                         ),
                 ),
                 _SettingsCard(
@@ -2206,6 +2414,24 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       _metricRow(metric, enabled: consent[metric.key] == true),
                   ],
                 ),
+                if (selected > 0) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: _isDeleting ? null : _deleteSaved,
+                      style: TextButton.styleFrom(
+                        foregroundColor: _SettingsScreenState._red,
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      child: Text(
+                        _isDeleting ? 'Deleting…' : 'Delete saved Health data',
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2215,52 +2441,37 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
   }
 
   Widget _metricRow(HealthMetricDef metric, {required bool enabled}) {
-    final toggling = _togglingMetric == metric.key;
+    final colors = context.vivordoColors;
     return _SettingsRow(
       leading: _IconBadge(
         _metricIcon(metric.key),
-        enabled ? VivordoTheme.brand : context.vivordoColors.textSecondary,
+        enabled ? VivordoTheme.brand : colors.textSecondary,
       ),
       title: metric.label,
-      subtitle: toggling
-          ? (enabled
-                ? 'Removing saved Vivordo data…'
-                : 'Requesting Apple Health access…')
-          : metric.description,
-      trailing: toggling
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: VivordoTheme.brand,
-              ),
-            )
-          : AppSwitch(
-              value: enabled,
-              onChanged: _togglingMetric == null
-                  ? (value) => _toggleMetric(metric, value)
-                  : null,
-            ),
+      subtitle: metric.description,
+      trailing: Text(
+        enabled ? 'Reading' : 'Off',
+        style: TextStyle(fontSize: 14, color: colors.textSecondary),
+      ),
     );
   }
 }
 
 IconData _metricIcon(String key) => switch (key) {
   'steps' => Icons.directions_walk_rounded,
-  'active_calories' => Icons.local_fire_department_rounded,
+  'active_calories' => CupertinoIcons.flame_fill,
   'exercise_time' => Icons.fitness_center_rounded,
   'distance' => Icons.straighten_rounded,
-  'heart_rate' => Icons.favorite_rounded,
-  'resting_heart_rate' => Icons.favorite_border_rounded,
-  'hrv' => Icons.show_chart_rounded,
-  'blood_oxygen' => Icons.air_rounded,
-  'respiratory_rate' => Icons.wind_power_rounded,
-  'sleep' => Icons.bedtime_rounded,
+  'heart_rate' => CupertinoIcons.heart_fill,
+  'resting_heart_rate' => CupertinoIcons.heart,
+  'hrv' => CupertinoIcons.graph_square,
+  'blood_oxygen' => CupertinoIcons.wind,
+  'respiratory_rate' => CupertinoIcons.wind,
+  'sleep' => CupertinoIcons.moon_fill,
   'weight' => Icons.monitor_weight_rounded,
-  'body_fat' => Icons.percent_rounded,
-  'vo2max' => Icons.speed_rounded,
-  _ => Icons.monitor_heart_outlined,
+  'body_fat' => CupertinoIcons.percent,
+  'vo2max' => CupertinoIcons.speedometer,
+  _ => CupertinoIcons.waveform_path_ecg,
 };
 
 // ── Shared settings pieces ──────────────────────────────────────────────────
@@ -2287,7 +2498,7 @@ class _SettingsHeader extends StatelessWidget {
                 width: 40,
                 height: 40,
                 child: Icon(
-                  Icons.arrow_back_ios_new_rounded,
+                  CupertinoIcons.back,
                   size: 16,
                   color: colors.textPrimary,
                   semanticLabel: 'Back',
@@ -2328,11 +2539,10 @@ class _SectionLabel extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              text.toUpperCase(),
+              text,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 1.3,
                 color: context.vivordoColors.textSecondary,
               ),
             ),
@@ -2393,85 +2603,108 @@ class _SettingsRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
 
+  /// How far a pill toggle's segments reach past the drawn pill, top and
+  /// bottom, to make 44 pt targets. The row's padding gives up the same
+  /// amount, and everything else pads it back, so nothing moves.
+  static const toggleSlop = 6.0;
+
+  bool get _trailingIsToggle =>
+      trailing is _AppearanceToggle || trailing is _UnitToggle;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final status = this.status;
-    return InkWell(
+    const slop = EdgeInsets.symmetric(vertical: toggleSlop);
+    final row = InkWell(
       onTap: onTap,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12 - toggleSlop,
+          ),
           child: Row(
             children: [
-              leading,
+              Padding(padding: slop, child: leading),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textPrimary,
-                      ),
-                    ),
-                    if (subtitle case final subtitle?) ...[
-                      const SizedBox(height: 2),
+                child: Padding(
+                  padding: slop,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        subtitle,
+                        title,
                         style: TextStyle(
-                          fontSize: 12.5,
-                          height: 1.35,
-                          color: colors.textSecondary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
                         ),
                       ),
-                    ],
-                    if (status != null) ...[
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              color: status.$1
-                                  ? _SettingsScreenState._green
-                                  : colors.border,
-                              shape: BoxShape.circle,
-                            ),
+                      if (subtitle case final subtitle?) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            height: 1.35,
+                            color: colors.textSecondary,
                           ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              status.$2,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: colors.textSecondary,
+                        ),
+                      ],
+                      if (status != null) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: status.$1
+                                    ? _SettingsScreenState._green
+                                    : colors.border,
+                                shape: BoxShape.circle,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                status.$2,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               if (trailing case final trailing?) ...[
                 const SizedBox(width: 10),
-                trailing,
+                _trailingIsToggle
+                    ? trailing
+                    : Padding(padding: slop, child: trailing),
               ],
             ],
           ),
         ),
       ),
     );
+    // A switch row has no tap of its own: merge so VoiceOver reads the
+    // title with the switch instead of a bare "Switch, off". Toggles keep
+    // a node per segment.
+    return onTap == null && trailing != null && !_trailingIsToggle
+        ? MergeSemantics(child: row)
+        : row;
   }
 }
 
@@ -2534,7 +2767,7 @@ class _Chevron extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    Icons.chevron_right_rounded,
+    CupertinoIcons.chevron_right,
     color: context.vivordoColors.textSecondary,
   );
 }
@@ -2544,7 +2777,7 @@ class _ExternalLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Icon(
-    Icons.open_in_new_rounded,
+    CupertinoIcons.arrow_up_right_square,
     size: 18,
     color: context.vivordoColors.textSecondary,
   );
@@ -2623,56 +2856,127 @@ class _AppearanceToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<ThemeController>();
+    return _PillToggle(
+      options: const {
+        ThemeMode.system: 'System',
+        ThemeMode.light: 'Light',
+        ThemeMode.dark: 'Dark',
+      },
+      value: controller.mode,
+      semanticsSuffix: 'appearance',
+      onChanged: controller.setMode,
+    );
+  }
+}
+
+/// A Units row's choice, saved straight away.
+class _UnitToggle<T extends Object> extends StatelessWidget {
+  const _UnitToggle({
+    required this.options,
+    required this.read,
+    required this.write,
+  });
+
+  final Map<T, String> options;
+  final T Function(Units units) read;
+  final Units Function(Units units, T value) write;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController>();
+    return _PillToggle(
+      options: options,
+      value: read(controller.units),
+      semanticsSuffix: 'units',
+      // Equal segments so the four unit toggles line up.
+      segmentWidth: 54,
+      onChanged: (value) => controller.setUnits(write(controller.units, value)),
+    );
+  }
+}
+
+/// A compact segmented choice for a settings row's trailing edge.
+class _PillToggle<T extends Object> extends StatelessWidget {
+  const _PillToggle({
+    required this.options,
+    required this.value,
+    required this.semanticsSuffix,
+    required this.onChanged,
+    this.segmentWidth = 0,
+  });
+
+  final Map<T, String> options;
+  final T value;
+  final String semanticsSuffix;
+  final ValueChanged<T> onChanged;
+  final double segmentWidth;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: colors.input,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (mode, label) in const [
-            (ThemeMode.system, 'System'),
-            (ThemeMode.light, 'Light'),
-            (ThemeMode.dark, 'Dark'),
-          ])
-            Semantics(
-              button: true,
-              selected: controller.mode == mode,
-              label: '$label appearance',
-              excludeSemantics: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => controller.setMode(mode),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: controller.mode == mode
-                        ? VivordoTheme.brand
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      color: controller.mode == mode
-                          ? Colors.white
-                          : colors.textSecondary,
+    return Stack(
+      children: [
+        Positioned.fill(
+          top: _SettingsRow.toggleSlop,
+          bottom: _SettingsRow.toggleSlop,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.input,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final MapEntry(key: option, value: label) in options.entries)
+                Semantics(
+                  button: true,
+                  selected: value == option,
+                  label: '$label $semanticsSuffix',
+                  excludeSemantics: true,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onChanged(option),
+                    // Invisible margin above and below: a 44 pt target.
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: _SettingsRow.toggleSlop + 3,
+                      ),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        constraints: BoxConstraints(minWidth: segmentWidth),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: value == option
+                              ? VivordoTheme.brand
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: value == option
+                                ? Colors.white
+                                : colors.textSecondary,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2859,7 +3163,7 @@ class _SlideToDeleteState extends State<SlideToDelete> {
                             : null,
                       ),
                       child: const Icon(
-                        Icons.chevron_right_rounded,
+                        CupertinoIcons.chevron_right,
                         color: Colors.white,
                         size: 30,
                       ),

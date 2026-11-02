@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/screens/personal_profile_screen.dart';
 import 'package:vivordo_health/src/services/personal_profile_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -16,6 +17,10 @@ void main() {
         (double, double, double?, DateTime)? result;
         await tester.pumpWidget(
           MaterialApp(
+            builder: (_, child) => ChangeNotifierProvider(
+              create: (_) => ThemeController(),
+              child: child,
+            ),
             theme: dark ? VivordoTheme.dark : VivordoTheme.light,
             home: Builder(
               builder: (context) => Scaffold(
@@ -46,7 +51,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Today'), findsOneWidget);
         expect(find.text('Optional'), findsOneWidget);
-        await tester.tap(find.text('Date'));
+        await tester.tap(find.text('Date').last);
         await tester.pumpAndSettle();
         await tester.tap(find.text('1').last);
         await tester.tap(find.text('Done'));
@@ -69,6 +74,10 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        builder: (_, child) => ChangeNotifierProvider(
+          create: (_) => ThemeController(),
+          child: child,
+        ),
         home: Scaffold(
           body: const MeasurementEditorSheet(
             title: 'Add Measurement',

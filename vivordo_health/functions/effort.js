@@ -143,6 +143,27 @@ function workoutIntensity(workout) {
 }
 
 /**
+ * A day's logged activities (Log activity: a name, minutes and a day, no
+ * time) as workouts for physicalLoad. A watch usually records the same
+ * session in Health, so only minutes beyond the day's Health exercise
+ * minutes count, or a logged run would count twice.
+ * @param {object[]} activities {name, minutes}.
+ * @param {number|null} healthMinutes The day's Health exercise minutes.
+ * @return {object[]} {name, minutes} for the minutes Health didn't cover.
+ */
+function loggedWorkouts(activities, healthMinutes) {
+  let covered = finite(healthMinutes) ? healthMinutes : 0;
+  const workouts = [];
+  for (const activity of activities) {
+    const minutes = finite(activity?.minutes) ? activity.minutes : 0;
+    const extra = Math.max(0, minutes - covered);
+    covered = Math.max(0, covered - minutes);
+    if (extra > 0) workouts.push({name: activity.name, minutes: extra});
+  }
+  return workouts;
+}
+
+/**
  * A day's physical load in Effort points, uncapped: in-app workouts
  * (minutes × intensity) plus Health exercise minutes (× 0.2), or, with
  * neither, active calories above the usual (1 point per 50). Effort caps it
@@ -354,6 +375,10 @@ async function effortFor(db, uid, day, now = new Date()) {
         .select("active_calories", "exercise_time")
         .get();
     const today = metrics.docs.find((d) => d.id === day)?.data();
+    const logged = await user.collection("recent_activities")
+        .where("exerciseGoalDay", "==", day)
+        .select("name", "minutes")
+        .get();
     const pastCalories = metrics.docs.filter((d) => d.id < day)
         .map((d) => d.data().active_calories?.sum)
         .filter((v) => finite(v) && v > 0);
@@ -366,7 +391,8 @@ async function effortFor(db, uid, day, now = new Date()) {
         exerciseCategories: (d.get("exercises") || [])
             .map((e) => e?.category).filter(Boolean),
         minutes: d.get("durationMinutes"),
-      })),
+      })).concat(loggedWorkouts(logged.docs.map((d) => d.data()),
+          today?.exercise_time?.healthSum ?? null)),
       healthMinutes: today?.exercise_time?.healthSum ?? null,
       activeCalories: today?.active_calories?.sum ?? null,
       healthMinutesByHour: today?.exercise_time?.healthByHour ?? null,
@@ -438,12 +464,17 @@ async function refreshEffort(db, uid, day, timestamp, now = new Date(),
 function effortInputsChanged(before, after) {
   const hours = (doc) => JSON.stringify([doc?.exercise_time?.healthByHour,
     doc?.active_calories?.byHour]);
+  // workoutMinutes: a logged activity (a tracked workout has its own
+  // trigger, so this re-runs those too; it's the same result).
   return before?.exercise_time?.healthSum !== after?.exercise_time?.healthSum ||
+    before?.exercise_time?.workoutMinutes !==
+      after?.exercise_time?.workoutMinutes ||
     before?.active_calories?.sum !== after?.active_calories?.sum ||
     hours(before) !== hours(after);
 }
 
 module.exports = {
-  VERSION, hourlyLoads, workoutIntensity, physicalLoad, computeEffort,
+  VERSION, hourlyLoads, workoutIntensity, physicalLoad, loggedWorkouts,
+  computeEffort,
   effortFor, refreshEffort, effortInputsChanged,
 };

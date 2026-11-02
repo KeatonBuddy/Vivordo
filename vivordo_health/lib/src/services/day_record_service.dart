@@ -151,7 +151,10 @@ class DayRecordService {
   /// Records the last [historyDays] days for the history import. False,
   /// with nothing written, when no calendar is connected or the read came
   /// back empty: those days would be recorded as quiet ones for good.
-  static Future<bool> syncHistory() async {
+  /// [beforeWrite] runs once there are events to record, before any is.
+  static Future<bool> syncHistory({
+    Future<void> Function()? beforeWrite,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || !await calendarConnected()) return false;
     final now = DateTime.now();
@@ -161,6 +164,7 @@ class DayRecordService {
     // A failed read throws; four weeks read fine but with no events at all
     // is still likelier a wrong calendar than a real month, so not recorded.
     if (calendar.events.isEmpty) return false;
+    await beforeWrite?.call();
     await _sync(historyDays, true);
     return true;
   }
@@ -300,7 +304,7 @@ class DayRecordService {
     if (events == null) throw StateError('The calendar could not be read.');
     final inputs = <(CalendarCognitiveEvent, String?)>[
       for (final event in events)
-        if (_fromGoogle(event) case final input?)
+        if (CalendarCognitiveEvent.fromCalendar(event) case final input?)
           (input, CalendarService.eventKey(event)),
     ];
     // Claude sorts what the local rules can't, with the user's AI consent.
@@ -335,26 +339,4 @@ class DayRecordService {
         .timeout(const Duration(seconds: 5), onTimeout: () => false)
         .catchError((_) => false),
   );
-
-  static CalendarCognitiveEvent? _fromGoogle(gcal.Event event) {
-    final start = event.start?.dateTime;
-    final end = event.end?.dateTime;
-    if (start == null || end == null) return null;
-    return CalendarCognitiveEvent(
-      id: '${CalendarService.eventKey(event)}:${start.toUtc().toIso8601String()}',
-      title: event.summary ?? '',
-      description: event.description ?? '',
-      start: start.toLocal(),
-      end: end.toLocal(),
-      attendeeCount: event.attendees?.length ?? 0,
-      isOrganizer: event.organizer?.self == true,
-      showsAsFree: event.transparency == 'transparent',
-      isCancelled: event.status == 'cancelled',
-      isDeclined:
-          event.attendees?.any(
-            (a) => a.self == true && a.responseStatus == 'declined',
-          ) ??
-          false,
-    );
-  }
 }

@@ -1,5 +1,5 @@
 import 'day_key.dart';
-import 'detail_insights.dart' show longSleepAverage, longSleepText;
+import 'detail_insights.dart';
 import 'physical_health_view.dart';
 
 enum MetricsInsightKind { sleep, energy, effort, afterHours, physical }
@@ -20,8 +20,9 @@ class MetricsInsight {
 }
 
 /// The Metrics screen's insights, from the `scores_daily` documents it
-/// already streams for Physical Health (keyed by day). "This week" is the
-/// last 7 days; "usual" is the 28 days before that. Concerns come first,
+/// already streams for Physical Health (keyed by day), and sleep patterns
+/// from [nights] and [ratings] (sleepPatterns). "This week" is the last 7
+/// days; "usual" is the 28 days before that. Concerns come first,
 /// then the Physical Health win, then good news; at most [limit]. Without
 /// [numbers] (words mode), Capacity and Effort are said without scores.
 List<MetricsInsight> metricsInsights(
@@ -29,6 +30,8 @@ List<MetricsInsight> metricsInsights(
   DateTime today, {
   int limit = 3,
   bool numbers = true,
+  Map<DateTime, SleepNight>? nights,
+  Map<DateTime, double> ratings = const {},
 }) {
   final date = DateTime(today.year, today.month, today.day);
   final week = [for (var i = 0; i < 7; i++) localDayKey(_back(date, i))];
@@ -50,9 +53,9 @@ List<MetricsInsight> metricsInsights(
   final concerns = <MetricsInsight>[];
   final good = <MetricsInsight>[];
 
-  // Sleep against the person's own need (Capacity's 90-day median), once
-  // it's settled: the 8 h placeholder isn't "your need".
-  final sleep = values(week, 'capacity', 'sleepHours');
+  // Sleep: the Sleep screen's top pattern, so the two never disagree.
+  // [nights] come from Home's metrics window; until it loads, the hours
+  // Capacity saved (no bed or wake times).
   final latest = [
     for (final day in week) // today first
       if (days[day]?['capacity'] case {'sleepNeed': num _} && final c) c,
@@ -60,51 +63,34 @@ List<MetricsInsight> metricsInsights(
   final need = latest?['sleepNeedSettled'] == false
       ? null
       : (latest?['sleepNeed'] as num?)?.toDouble();
-  if (sleep.length >= 4 && latest != null && need == null) {
-    good.add(
+  final pattern = sleepPatterns(
+    nights:
+        nights ??
+        {
+          for (var i = 0; i < 35; i++)
+            if (value(localDayKey(_back(date, i)), 'capacity', 'sleepHours')
+                case final hours? when hours > 0)
+              _back(date, i): SleepNight(hours),
+        },
+    today: date,
+    need: need,
+    ratings: ratings,
+  ).firstOrNull;
+  if (pattern != null && pattern.progress == null) {
+    (pattern.tone == InsightTone.concern ? concerns : good).add(
       MetricsInsight(
         MetricsInsightKind.sleep,
-        MetricsInsightTone.neutral,
-        'Sleep averaged ${_hoursMinutes(_mean(sleep))} this week.',
+        switch (pattern.tone) {
+          InsightTone.concern => MetricsInsightTone.concern,
+          InsightTone.good => MetricsInsightTone.good,
+          InsightTone.neutral => MetricsInsightTone.neutral,
+        },
+        '${pattern.title}. ${pattern.body}',
+        pattern.action == SleepPatternAction.tagSick
+            ? MetricsInsightAction.tagSick
+            : null,
       ),
     );
-  }
-  // A run of long sleep that isn't paying back debt.
-  final longSleep = longSleepAverage([
-    for (var i = 0; i < 14; i++)
-      value(localDayKey(_back(date, i)), 'capacity', 'sleepHours'),
-  ], need);
-  if (longSleep != null) {
-    concerns.add(
-      MetricsInsight(
-        MetricsInsightKind.sleep,
-        MetricsInsightTone.concern,
-        longSleepText(longSleep, need!),
-        MetricsInsightAction.tagSick,
-      ),
-    );
-  } else if (sleep.length >= 4 && need != null) {
-    final average = _mean(sleep);
-    final shortMinutes = ((need - average) * 60).round();
-    if (shortMinutes >= 20) {
-      concerns.add(
-        MetricsInsight(
-          MetricsInsightKind.sleep,
-          MetricsInsightTone.concern,
-          'Sleep averaged ${_hoursMinutes(average)} this week, '
-          '$shortMinutes min under your need of ${_hoursMinutes(need)}.',
-        ),
-      );
-    } else if (shortMinutes <= 0) {
-      good.add(
-        MetricsInsight(
-          MetricsInsightKind.sleep,
-          MetricsInsightTone.good,
-          'Sleep averaged ${_hoursMinutes(average)} this week, '
-          'meeting your need of ${_hoursMinutes(need)}.',
-        ),
-      );
-    }
   }
 
   // Capacity this week against the weeks before.

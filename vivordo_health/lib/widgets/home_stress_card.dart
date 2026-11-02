@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/src/utils/stress_view.dart';
@@ -20,6 +22,7 @@ class HomeStressCard extends StatefulWidget {
     required this.onInfoTap,
     this.showWhoopBadge = false,
     this.showNumbers = true,
+    this.onScanTap,
   });
 
   final double? score;
@@ -39,6 +42,9 @@ class HomeStressCard extends StatefulWidget {
   /// and percentage.
   final bool showNumbers;
 
+  /// Opens a heart scan: offered when there's no reading at all.
+  final VoidCallback? onScanTap;
+
   @override
   State<HomeStressCard> createState() => _HomeStressCardState();
 }
@@ -54,7 +60,12 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget? _cachedCard;
   Brightness? _brightness;
 
-  double get _visibleScore => widget.revealScore ? widget.score ?? 0 : 0;
+  // Rounded like the label, so a 50.4 shows "50%" on a ring filled to 50.
+  double get _visibleScore =>
+      widget.revealScore ? (widget.score ?? 0).roundToDouble() : 0;
+
+  /// No reading and no usual to stand in for one: no watch heart data yet.
+  bool get _noReading => widget.score == null && !widget.loading;
 
   @override
   void initState() {
@@ -168,13 +179,14 @@ class _HomeStressCardState extends State<HomeStressCard>
                 ),
               ),
             ),
+            // The header's 44 pt info target takes 10 pt from the padding
+            // above and the gap below it, so nothing moves.
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _header(),
-                  const SizedBox(height: 10),
                   if (!widget.showNumbers)
                     _summary(displayedScore)
                   else
@@ -182,8 +194,8 @@ class _HomeStressCardState extends State<HomeStressCard>
                       children: [
                         RepaintBoundary(
                           child: SizedBox(
-                            width: 104,
-                            height: 104,
+                            width: 84,
+                            height: 84,
                             child: AnimatedBuilder(
                               animation: _scoreAnimation,
                               child: _ringCenter(displayedScore),
@@ -196,14 +208,27 @@ class _HomeStressCardState extends State<HomeStressCard>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 14),
                         Expanded(child: _summary(displayedScore)),
+                        if (widget.drivers.isNotEmpty) ...[
+                          const SizedBox(width: 12),
+                          _drivers(),
+                        ],
                       ],
                     ),
-                  const SizedBox(height: 14),
-                  _action(action),
-                  const SizedBox(height: 12),
-                  _footer(),
+                  if (!_noReading) ...[
+                    const SizedBox(height: 10),
+                    _action(action),
+                  ] else if (widget.onScanTap case final onScan?) ...[
+                    const SizedBox(height: 12),
+                    _scanButton(onScan),
+                  ],
+                  // "Updated …" sits in the header; only the longer notes
+                  // (no reading yet) keep a line of their own.
+                  if (widget.updatedAt == null && !widget.updating) ...[
+                    const SizedBox(height: 10),
+                    _footer(),
+                  ],
                 ],
               ),
             ),
@@ -231,27 +256,59 @@ class _HomeStressCardState extends State<HomeStressCard>
   Widget _header() => Row(
     children: [
       const Text(
-        'RIGHT NOW',
+        'Right now',
         style: TextStyle(
           color: _label,
-          fontSize: 11,
+          fontSize: 13,
           fontWeight: FontWeight.w700,
-          letterSpacing: 1.1,
         ),
       ),
+      if (widget.updatedAt != null || widget.updating) ...[
+        if (widget.updating) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CupertinoActivityIndicator(
+              color: Colors.white.withValues(alpha: 0.72),
+              radius: 6,
+            ),
+          ),
+        ],
+        Flexible(
+          child: Text(
+            widget.updating ? '  Updating' : ' · ${_updatedLabel()}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _label,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
       const Spacer(),
+      // The dark badge keeps the white WHOOP mark legible on the gradient.
+      if (widget.showWhoopBadge)
+        Theme(
+          data: VivordoTheme.dark,
+          child: const WhoopSourceBadge(compact: true),
+        ),
       Semantics(
         button: true,
         label: 'About your stress score',
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onInfoTap,
-          child: const Padding(
-            padding: EdgeInsets.all(3),
-            child: Icon(
-              Icons.info_outline_rounded,
-              color: _palePurple,
-              size: 18,
+          child: const SizedBox.square(
+            dimension: 44,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.all(3),
+                child: Icon(CupertinoIcons.info, color: _palePurple, size: 18),
+              ),
             ),
           ),
         ),
@@ -259,41 +316,73 @@ class _HomeStressCardState extends State<HomeStressCard>
     ],
   );
 
-  Widget _ringCenter(double? displayedScore) => Center(
-    child: widget.loading
-        ? const SizedBox(
-            width: 26,
-            height: 26,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: Colors.white,
-            ),
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                displayedScore == null ? '--' : '${displayedScore.round()}%',
-                style: const TextStyle(
+  // Shrinks to fit inside the ring at large text sizes. The padding keeps
+  // the text box inside the ring's 66 pt hole, corners included.
+  Widget _ringCenter(double? displayedScore) => Padding(
+    padding: const EdgeInsets.all(16),
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: widget.loading
+          ? const SizedBox(
+              width: 26,
+              height: 26,
+              child: CupertinoActivityIndicator(
+                color: Colors.white,
+                radius: 13,
+              ),
+            )
+          : _noReading
+          ? const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  CupertinoIcons.waveform_path_ecg,
                   color: Colors.white,
-                  fontSize: 26,
-                  height: 1,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
+                  size: 28,
                 ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'STRESS',
-                style: TextStyle(
-                  color: _label,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
+                SizedBox(height: 4),
+                Text(
+                  'No reading',
+                  style: TextStyle(
+                    color: _label,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  displayedScore == null ? '--' : '${displayedScore.round()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Stress',
+                  style: TextStyle(
+                    color: _label,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+    ),
+  );
+
+  static const _summaryStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 22,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.3,
   );
 
   Widget _summary(double? displayedScore) => Column(
@@ -303,33 +392,42 @@ class _HomeStressCardState extends State<HomeStressCard>
         const SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.5,
-            color: Colors.white,
+          child: CupertinoActivityIndicator(color: Colors.white, radius: 11),
+        )
+      else if (widget.showNumbers && homeStressLevel(displayedScore) != null)
+        // One word ("Moderate"): shrinks rather than breaking mid-word.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            homeStressLevel(displayedScore)!,
+            maxLines: 1,
+            style: _summaryStyle,
           ),
         )
       else
         Text(
           (widget.showNumbers
-                  ? homeStressLevel(displayedScore)
+                  ? null
                   : homeStressSentence(displayedScore, usual: widget.usual)) ??
-              'No score yet',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
+              'No stress reading yet',
+          style: _summaryStyle,
         ),
       const SizedBox(height: 3),
       Row(
         children: [
-          Icon(_comparisonIcon(), color: _palePurple, size: 16),
+          Icon(
+            _noReading ? CupertinoIcons.clock : _comparisonIcon(),
+            color: _palePurple,
+            size: 16,
+          ),
           const SizedBox(width: 5),
           Expanded(
             child: Text(
               switch (widget.score) {
-                null => 'Learning your usual.',
+                null =>
+                  'Wear a watch or ring that syncs heart rate, or take a '
+                      'heart scan.',
                 final score when widget.showNumbers => stressUsualHeadline(
                   score,
                   widget.usual,
@@ -350,7 +448,8 @@ class _HomeStressCardState extends State<HomeStressCard>
           const SizedBox(height: 8),
           StressLevelChip(level),
         ],
-      if (widget.drivers.isNotEmpty) ...[
+      // With numbers on, the drivers sit in their own column beside this.
+      if (!widget.showNumbers && widget.drivers.isNotEmpty) ...[
         const SizedBox(height: 10),
         Wrap(
           spacing: 6,
@@ -361,13 +460,37 @@ class _HomeStressCardState extends State<HomeStressCard>
     ],
   );
 
+  // A narrow labelled column, one chip per line; long labels ellipsize.
+  Widget _drivers() => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 136),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Drivers',
+          style: TextStyle(
+            color: _label,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        for (final driver in widget.drivers) ...[
+          const SizedBox(height: 6),
+          _driverChip(driver),
+        ],
+      ],
+    ),
+  );
+
+  // One line under a hairline, not a boxed panel.
   Widget _action(String action) => Container(
     width: double.infinity,
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.only(top: 10),
     decoration: BoxDecoration(
-      color: const Color(0xFF171344).withValues(alpha: 0.28),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      border: Border(
+        top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+      ),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,43 +515,50 @@ class _HomeStressCardState extends State<HomeStressCard>
     ),
   );
 
-  Widget _footer() => Row(
-    children: [
-      if (widget.updating) ...[
-        SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.7,
-            valueColor: AlwaysStoppedAnimation<Color>(
-              Colors.white.withValues(alpha: 0.72),
+  Widget _scanButton(VoidCallback onScan) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onScan,
+      borderRadius: BorderRadius.circular(16),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.fingerprint_rounded, color: Color(0xFF3C3489), size: 18),
+            SizedBox(width: 8),
+            Text(
+              'Take a heart scan',
+              style: TextStyle(
+                color: Color(0xFF3C3489),
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-          ),
-        ),
-        const SizedBox(width: 6),
-      ],
-      Text(
-        _updatedLabel(),
-        style: const TextStyle(
-          color: _label,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
+          ],
         ),
       ),
-      const Spacer(),
-      // The dark badge keeps the white WHOOP mark legible on the gradient.
-      if (widget.showWhoopBadge)
-        Theme(
-          data: VivordoTheme.dark,
-          child: const WhoopSourceBadge(compact: true),
-        ),
-    ],
+    ),
+  );
+
+  Widget _footer() => Text(
+    _updatedLabel(),
+    style: const TextStyle(
+      color: _label,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+    ),
   );
 
   String _updatedLabel() {
     if (widget.updating) return 'Updating';
     final updatedAt = widget.updatedAt;
-    if (updatedAt == null) return 'Waiting for data';
+    if (updatedAt == null) {
+      return _noReading
+          ? 'Readings come from your heart rate and HRV'
+          : 'Waiting for data';
+    }
     final elapsed = DateTime.now().difference(updatedAt);
     if (elapsed.isNegative || elapsed.inMinutes < 1) return 'Updated now';
     if (elapsed.inMinutes < 60) return 'Updated ${elapsed.inMinutes}m ago';
@@ -444,25 +574,25 @@ class _HomeStressCardState extends State<HomeStressCard>
         (widget.showNumbers
             ? (score - usual).round().abs() <= 1
             : (score - usual).abs() < 5)) {
-      return Icons.trending_flat_rounded;
+      return CupertinoIcons.arrow_right;
     }
     return score < usual
-        ? Icons.trending_down_rounded
-        : Icons.trending_up_rounded;
+        ? CupertinoIcons.arrow_down_right
+        : CupertinoIcons.arrow_up_right;
   }
 
   Widget _driverChip(HomeStressDriver driver) {
     final (icon, color) = switch (driver.type) {
       HomeStressDriverType.sleep => (
-        Icons.dark_mode_rounded,
+        CupertinoIcons.moon_fill,
         const Color(0xFF9B8CFF),
       ),
       HomeStressDriverType.heartRate => (
-        Icons.favorite_rounded,
+        CupertinoIcons.heart_fill,
         const Color(0xFFFF6BAE),
       ),
       HomeStressDriverType.hrv => (
-        Icons.monitor_heart_rounded,
+        CupertinoIcons.waveform_path_ecg,
         const Color(0xFFFF6BAE),
       ),
       HomeStressDriverType.activity => (
@@ -470,20 +600,20 @@ class _HomeStressCardState extends State<HomeStressCard>
         const Color(0xFF69E987),
       ),
       HomeStressDriverType.mood => (
-        Icons.mood_rounded,
+        CupertinoIcons.smiley,
         const Color(0xFFFFA44D),
       ),
       HomeStressDriverType.other => (
-        Icons.insights_rounded,
+        CupertinoIcons.chart_bar_alt_fill,
         const Color(0xFF9B8CFF),
       ),
       HomeStressDriverType.calendar => (
-        Icons.calendar_month_rounded,
+        CupertinoIcons.calendar,
         const Color(0xFF9B8CFF),
       ),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(20),
@@ -501,7 +631,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -510,6 +640,21 @@ class _HomeStressCardState extends State<HomeStressCard>
       ),
     );
   }
+}
+
+/// The filled sweep in each of the ring's [count] segments for [progress]
+/// (0–1). A remainder too small to see is dropped: drawn with round caps it
+/// became a dot past the gap, as at exactly 50%.
+@visibleForTesting
+List<double> stressRingSweeps(double progress, double segmentSweep, int count) {
+  var remaining = progress.clamp(0.0, 1.0) * segmentSweep * count;
+  final sweeps = <double>[];
+  while (sweeps.length < count && remaining > 1e-6) {
+    final painted = math.min(segmentSweep, remaining);
+    sweeps.add(painted);
+    remaining -= painted;
+  }
+  return sweeps;
 }
 
 class _StressRingPainter extends CustomPainter {
@@ -549,17 +694,11 @@ class _StressRingPainter extends CustomPainter {
       canvas.drawArc(rect, angle, segmentSweep, false, trackPaint);
     }
 
-    var remainingSweep = value * segmentSweep * segmentCount;
-    for (
-      var segment = 0;
-      segment < segmentCount && remainingSweep > 0;
-      segment++
-    ) {
+    final sweeps = stressRingSweeps(value, segmentSweep, segmentCount);
+    for (var segment = 0; segment < sweeps.length; segment++) {
       final angle =
           startAngle + gapAngle / 2 + segment * (segmentSweep + gapAngle);
-      final paintedSweep = math.min(segmentSweep, remainingSweep);
-      canvas.drawArc(rect, angle, paintedSweep, false, progressPaint);
-      remainingSweep -= paintedSweep;
+      canvas.drawArc(rect, angle, sweeps[segment], false, progressPaint);
     }
   }
 

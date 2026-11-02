@@ -179,7 +179,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('WAYS TO LIGHTEN TOMORROW'), findsOneWidget);
+    expect(find.text('Ways to lighten tomorrow'), findsOneWidget);
     expect(find.byTooltip('Hide until morning'), findsOneWidget);
 
     await tester.pumpWidget(

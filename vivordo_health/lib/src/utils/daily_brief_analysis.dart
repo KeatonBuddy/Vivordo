@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'sleep_schedule.dart';
+
 class BriefCommitment {
   const BriefCommitment(this.key, this.title, this.start, this.end);
   final String key, title;
@@ -62,6 +64,17 @@ String sleepComparison(
       ? '$hours in bed, $amount $side your need.'
       : 'Slept $amount $side your need.';
 }
+
+/// Up before your usual wake time with no sleep recorded yet: today's
+/// Capacity comes from a night that hasn't happened, so nothing is missing
+/// and there's no sleep to wait for.
+bool beforeTonightsSleep(
+  DateTime now, {
+  required bool sleepRecorded,
+  SleepSchedule? schedule,
+}) =>
+    !sleepRecorded &&
+    now.isBefore((schedule ?? SleepSchedule.fallback).nightEnding(now).end);
 
 /// What is left today, e.g. "3 events and 2 priorities left."
 String remainingToday(int events, int priorities) {

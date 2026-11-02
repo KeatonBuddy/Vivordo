@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../src/services/meeting_patterns_service.dart';
@@ -28,8 +30,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 12,
-          letterSpacing: 1.1,
+          fontSize: 13,
           fontWeight: FontWeight.w700,
           color: colors.textSecondary,
         ),
@@ -42,7 +43,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
         builder: (context, snapshot) {
           final data = snapshot.data;
           if (data == null) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final p = data.patterns;
           return ListView(
@@ -61,7 +62,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Learning which events get to you',
+                        'Learning which events affect you',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -70,10 +71,11 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Vivordo needs your watch\'s heart rate during a few '
-                        'weeks of events before it can say anything honest. '
-                        'A repeating event needs 4 measured times; a kind '
-                        'of event needs 8.',
+                        'Vivordo needs your wearable\'s heart rate during a '
+                        'few weeks of events before it can say anything '
+                        'honest. A repeating event needs 4 measured times; a '
+                        'group of similar events, like 1:1s or anything '
+                        'before 10 AM, needs 8.',
                         style: secondary(),
                       ),
                       const SizedBox(height: 12),
@@ -97,14 +99,14 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                 ),
               ],
               if (p.high.isNotEmpty) ...[
-                section('RAISE YOUR HEART RATE MOST'),
+                section('Raise your heart rate most'),
                 _Card(child: _PatternList(p.high)),
               ],
               if (p.calm.isNotEmpty) ...[
-                section('KEEP IT LOWEST'),
+                section('Keep it lowest'),
                 _Card(child: _PatternList(p.calm)),
               ],
-              section('HEAVY CALENDAR DAYS'),
+              section('Heavy calendar days'),
               _Card(child: _HeavyDaysView(data.heavy)),
               const SizedBox(height: 18),
               Text(
@@ -197,7 +199,7 @@ class _PatternList extends StatelessWidget {
                     ),
                   ),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_right,
                     color: colors.textSecondary,
                     size: 20,
                   ),

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -13,8 +14,12 @@ class ForceUpdateScreen extends StatelessWidget {
 
   static const Color accentPurple = VivordoTheme.brand;
 
+  /// Vivordo's App Store listing, used when Remote Config has no
+  /// `update_url`, so the button always leads somewhere.
+  static const _appStoreUrl = 'itms-apps://apps.apple.com/app/id6783567993';
+
   Future<void> _openUpdateLink() async {
-    final uri = Uri.tryParse(updateUrl);
+    final uri = Uri.tryParse(updateUrl.isEmpty ? _appStoreUrl : updateUrl);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
@@ -40,7 +45,7 @@ class ForceUpdateScreen extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
-                    Icons.system_update_rounded,
+                    CupertinoIcons.arrow_down_circle,
                     color: accentPurple,
                     size: 40,
                   ),
@@ -56,7 +61,7 @@ class ForceUpdateScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "You're on a version of Vivordo Health that's no longer "
+                  "You're on a version of Vivordo that's no longer "
                   'supported. Update to keep using the app.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -70,7 +75,7 @@ class ForceUpdateScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: updateUrl.isEmpty ? null : _openUpdateLink,
+                    onPressed: _openUpdateLink,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: accentPurple,
                       foregroundColor: Colors.white,

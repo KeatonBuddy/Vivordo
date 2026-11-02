@@ -5,6 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
+import '../src/utils/units.dart';
+
+export '../src/utils/units.dart';
+
 /// Semantic colors used by Vivordo surfaces.
 ///
 /// Screens should use these roles (or [ThemeData.colorScheme]) instead of
@@ -20,6 +24,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     required this.textSecondary,
     required this.border,
     required this.shadow,
+    required this.success,
+    required this.warning,
+    required this.danger,
   });
 
   final Color page;
@@ -31,15 +38,40 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
   final Color border;
   final Color shadow;
 
+  /// Status colours for text: dark enough in light mode to read at 4.5:1,
+  /// the bright system tones in dark mode. Fills and chart marks can keep
+  /// the bright tones in both.
+  final Color success;
+  final Color warning;
+  final Color danger;
+
   static const light = VivordoColors(
     page: Color(0xFFFBFAFF),
     card: Color(0xFFFFFFFF),
     cardMuted: Color(0xFFF4F2FA),
     input: Color(0xFFF2F2F7),
     textPrimary: Color(0xFF1C1C1E),
-    textSecondary: Color(0xFF747486),
+    textSecondary: Color(0xFF66667A),
     border: Color(0xFFE1E1E8),
     shadow: Color(0x1A000000),
+    success: Color(0xFF15803D),
+    warning: Color(0xFFA15C00),
+    danger: Color(0xFFC0392B),
+  );
+
+  /// For Increase Contrast: darker secondary text and borders.
+  static const lightHighContrast = VivordoColors(
+    page: Color(0xFFFFFFFF),
+    card: Color(0xFFFFFFFF),
+    cardMuted: Color(0xFFEDEBF5),
+    input: Color(0xFFEBEBF0),
+    textPrimary: Color(0xFF000000),
+    textSecondary: Color(0xFF3F3F4E),
+    border: Color(0xFF8E8E9C),
+    shadow: Color(0x26000000),
+    success: Color(0xFF0F5F2E),
+    warning: Color(0xFF7A4500),
+    danger: Color(0xFF9B1C1C),
   );
 
   static const dark = VivordoColors(
@@ -47,12 +79,30 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     card: Color(0xFF1B1B21),
     cardMuted: Color(0xFF25242D),
     input: Color(0xFF292830),
-    // A light Vivordo purple keeps primary copy legible without reverting to
-    // stark white and clearly distinguishes the dark appearance.
-    textPrimary: Color(0xFFB8AEFF),
+    // Near-white like iOS's label colour; purple is kept for what can be
+    // tapped, so plain text doesn't look like a link.
+    textPrimary: Color(0xFFF2F2F7),
     textSecondary: Color(0xFFAAA7B5),
     border: Color(0xFF383640),
     shadow: Color(0x66000000),
+    success: Color(0xFF30D158),
+    warning: Color(0xFFFFB340),
+    danger: Color(0xFFFF6961),
+  );
+
+  /// For Increase Contrast.
+  static const darkHighContrast = VivordoColors(
+    page: Color(0xFF000000),
+    card: Color(0xFF16161B),
+    cardMuted: Color(0xFF222128),
+    input: Color(0xFF2A2931),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFD4D2DC),
+    border: Color(0xFF6E6C78),
+    shadow: Color(0x80000000),
+    success: Color(0xFF5BE584),
+    warning: Color(0xFFFFC870),
+    danger: Color(0xFFFF8A80),
   );
 
   @override
@@ -65,6 +115,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     Color? textSecondary,
     Color? border,
     Color? shadow,
+    Color? success,
+    Color? warning,
+    Color? danger,
   }) => VivordoColors(
     page: page ?? this.page,
     card: card ?? this.card,
@@ -74,6 +127,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
     textSecondary: textSecondary ?? this.textSecondary,
     border: border ?? this.border,
     shadow: shadow ?? this.shadow,
+    success: success ?? this.success,
+    warning: warning ?? this.warning,
+    danger: danger ?? this.danger,
   );
 
   @override
@@ -88,6 +144,9 @@ class VivordoColors extends ThemeExtension<VivordoColors> {
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       border: Color.lerp(border, other.border, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
     );
   }
 }
@@ -102,6 +161,10 @@ abstract final class VivordoTheme {
 
   static ThemeData get light => _build(Brightness.light, VivordoColors.light);
   static ThemeData get dark => _build(Brightness.dark, VivordoColors.dark);
+  static ThemeData get lightHighContrast =>
+      _build(Brightness.light, VivordoColors.lightHighContrast);
+  static ThemeData get darkHighContrast =>
+      _build(Brightness.dark, VivordoColors.darkHighContrast);
 
   static ThemeData _build(Brightness brightness, VivordoColors colors) {
     final scheme =
@@ -132,6 +195,11 @@ abstract final class VivordoTheme {
       cardColor: colors.card,
       dividerColor: colors.border,
       shadowColor: colors.shadow,
+      // iOS has no ripple: a pressed row just shades until the finger lifts.
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: brightness == Brightness.dark
+          ? Colors.white.withValues(alpha: .08)
+          : Colors.black.withValues(alpha: .06),
       extensions: <ThemeExtension<dynamic>>[colors],
       cardTheme: CardThemeData(
         color: colors.card,
@@ -230,11 +298,13 @@ abstract final class VivordoTheme {
   }
 }
 
-/// Keeps the selected appearance, and whether scores show as numbers or
-/// words, in the signed-in user's Firestore profile.
+/// Keeps the selected appearance, whether scores show as numbers or words,
+/// and the units measurements show in, in the signed-in user's Firestore
+/// profile.
 class ThemeController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
   bool _showScoreNumbers = true;
+  Units _units = _deviceUnits;
   String? _boundUid;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
 
@@ -244,6 +314,18 @@ class ThemeController extends ChangeNotifier {
   /// switched off): scores show as sentences and state chips. Measurements
   /// (sleep, heart rate, steps) always show.
   bool get showScoreNumbers => _showScoreNumbers;
+
+  /// Settings → Units (`preferences.units`), each measure defaulting to the
+  /// device region's (Units.forCountry) until chosen.
+  Units get units => _units;
+
+  /// The signed-in user's units for code without a BuildContext (the AI
+  /// requests); the latest any controller has seen.
+  static Units current = _deviceUnits;
+
+  static Units get _deviceUnits => Units.forCountry(
+    WidgetsBinding.instance.platformDispatcher.locale.countryCode,
+  );
 
   String get modeLabel => switch (_mode) {
     ThemeMode.system => 'System Default',
@@ -260,6 +342,7 @@ class ThemeController extends ChangeNotifier {
     if (user == null) {
       _setMode(ThemeMode.system);
       _setShowScoreNumbers(true);
+      _setUnits(_deviceUnits);
       return;
     }
 
@@ -285,6 +368,7 @@ class ThemeController extends ChangeNotifier {
           };
           _setMode(nextMode);
           _setShowScoreNumbers(preferences?['showScoreNumbers'] != false);
+          _setUnits(Units.fromPreferences(preferences?['units'], _deviceUnits));
         });
   }
 
@@ -300,6 +384,22 @@ class ThemeController extends ChangeNotifier {
   void _setShowScoreNumbers(bool show) {
     if (_showScoreNumbers == show) return;
     _showScoreNumbers = show;
+    notifyListeners();
+  }
+
+  Future<void> setUnits(Units units) async {
+    _setUnits(units);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'preferences.units': units.toMap(),
+    });
+  }
+
+  void _setUnits(Units units) {
+    current = units;
+    if (_units == units) return;
+    _units = units;
     notifyListeners();
   }
 

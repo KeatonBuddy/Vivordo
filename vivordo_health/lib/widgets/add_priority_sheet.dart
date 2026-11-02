@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,7 @@ import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'apple_ui.dart';
 import 'priority_reminder_picker.dart';
 import 'priority_duration_picker.dart';
+import 'swipe_to_delete.dart';
 
 const _purple = Color(0xFF6254F4);
 
@@ -21,10 +23,11 @@ class PriorityDraft {
     required this.repeat,
     required this.selectedWeekdays,
     required this.repeatEnd,
-    this.reminderMinutes = 60,
+    this.reminderMinutes,
     this.reminderTimeMinutes,
     this.completed = false,
     this.deleteRequested = false,
+    this.deleteAll = false,
     this.planning = const {},
     this.habit = false,
     this.target = 1,
@@ -38,10 +41,15 @@ class PriorityDraft {
   final PriorityRepeat repeat;
   final Set<int> selectedWeekdays;
   final DateTime? repeatEnd;
-  final int reminderMinutes;
+
+  /// Null: no notification unless one is chosen.
+  final int? reminderMinutes;
   final int? reminderTimeMinutes;
   final bool completed;
   final bool deleteRequested;
+
+  /// With [deleteRequested]: every repeat, not just this one.
+  final bool deleteAll;
 
   /// A daily habit, done [target] times a day.
   final bool habit;
@@ -153,13 +161,31 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   PriorityRepeat _repeat = PriorityRepeat.once;
   late Set<int> _selectedWeekdays;
   DateTime? _repeatEnd;
-  int _reminderMinutes = 60;
+  int? _reminderMinutes;
   TimeOfDay? _reminderTime;
   bool _completed = false;
   late Map<String, dynamic> _planning;
   bool _habit = false;
   int _target = 1;
   bool get _editing => widget.initial != null;
+
+  /// What the form held when it opened; any difference asks before closing.
+  late final List<Object?> _initialValues;
+  List<Object?> get _values => [
+    _controller.text,
+    _date,
+    _time,
+    _addToCalendar,
+    _repeat,
+    ...(_selectedWeekdays.toList()..sort()),
+    _repeatEnd,
+    _reminderMinutes,
+    _reminderTime,
+    _completed,
+    _planning.toString(),
+    _habit,
+    _target,
+  ];
 
   @override
   void initState() {
@@ -177,7 +203,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     _completed = initial?.completed ?? false;
     _habit = initial?.habit ?? false;
     _target = initial?.target ?? 1;
-    _reminderMinutes = initial?.reminderMinutes ?? 60;
+    _reminderMinutes = initial?.reminderMinutes;
     final reminder = initial?.reminderTimeMinutes;
     _reminderTime = reminder == null
         ? null
@@ -185,6 +211,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     _selectedWeekdays = initial == null
         ? {_date.weekday}
         : {...initial.selectedWeekdays};
+    _initialValues = _values;
   }
 
   @override
@@ -265,7 +292,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     }
   }
 
-  void _submit({bool deleteRequested = false}) {
+  void _submit({bool deleteRequested = false, bool deleteAll = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
     if (!deleteRequested &&
@@ -295,6 +322,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         reminderMinutes: _reminderMinutes,
         completed: _completed,
         deleteRequested: deleteRequested,
+        deleteAll: deleteAll,
         reminderTimeMinutes: _reminderTime == null
             ? null
             : _reminderTime!.hour * 60 + _reminderTime!.minute,
@@ -321,9 +349,16 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DiscardChangesGuard(
+    dirty: !listEquals(_values, _initialValues),
+    child: _sheet(context),
+  );
+
+  Widget _sheet(BuildContext context) {
     final colors = context.vivordoColors;
-    final lightMode = Theme.of(context).brightness == Brightness.light;
+    final canSubmit =
+        _controller.text.trim().isNotEmpty &&
+        !(_repeat == PriorityRepeat.selectedDays && _selectedWeekdays.isEmpty);
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -340,7 +375,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         ),
         child: Column(
           children: [
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Container(
               width: 48,
               height: 5,
@@ -349,31 +384,15 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                 borderRadius: BorderRadius.circular(99),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 10, 14, 2),
-              child: Row(
-                children: [
-                  const SizedBox(width: 42),
-                  Expanded(
-                    child:
-                        widget.header ??
-                        Text(
-                          '${_editing ? 'Edit' : 'Add'} '
-                          '${_habit ? 'Habit' : 'Priority'}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: colors.textPrimary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+            AppleSheetBar(
+              title:
+                  widget.header ??
+                  Text(
+                    '${_editing ? 'Edit' : 'New'} '
+                    '${_habit ? 'Habit' : 'Priority'}',
                   ),
-                  IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
+              doneLabel: _editing ? 'Save' : 'Add',
+              onDone: canSubmit ? _submit : null,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -381,7 +400,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _Label(_habit ? 'HABIT' : 'PRIORITY'),
+                    _Label(_habit ? 'Habit' : 'Priority'),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _controller,
@@ -407,7 +426,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       _Card(
                         children: [
                           _SwitchRow(
-                            icon: Icons.loop_rounded,
+                            icon: CupertinoIcons.arrow_2_circlepath,
                             label: 'Habit',
                             detail: 'A small thing you do most days',
                             value: _habit,
@@ -424,7 +443,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                     ],
                     if (_habit) ...[
                       const SizedBox(height: 26),
-                      const _Label('GOAL'),
+                      const _Label('Goal'),
                       const SizedBox(height: 10),
                       _Card(
                         children: [
@@ -433,7 +452,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             child: Row(
                               children: [
                                 const Icon(
-                                  Icons.flag_outlined,
+                                  CupertinoIcons.flag,
                                   color: _purple,
                                   size: 23,
                                 ),
@@ -452,7 +471,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                   onPressed: _target > 1
                                       ? () => setState(() => _target--)
                                       : null,
-                                  icon: const Icon(Icons.remove_circle_outline),
+                                  icon: const Icon(CupertinoIcons.minus_circle),
                                 ),
                                 SizedBox(
                                   width: 28,
@@ -472,13 +491,13 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                   onPressed: _target < 20
                                       ? () => setState(() => _target++)
                                       : null,
-                                  icon: const Icon(Icons.add_circle_outline),
+                                  icon: const Icon(CupertinoIcons.plus_circle),
                                 ),
                               ],
                             ),
                           ),
                           _Row(
-                            icon: Icons.notifications_outlined,
+                            icon: CupertinoIcons.bell,
                             label: 'Reminder',
                             value: _reminderTime?.format(context) ?? 'Off',
                             onTap: _pickReminderTime,
@@ -493,12 +512,12 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       ),
                     ] else ...[
                       const SizedBox(height: 26),
-                      const _Label('WORKLOAD ESTIMATE'),
+                      const _Label('Workload estimate'),
                       const SizedBox(height: 10),
                       _Card(
                         children: [
                           _Row(
-                            icon: Icons.timer_outlined,
+                            icon: CupertinoIcons.timer,
                             label: 'Estimated duration',
                             value: _planning['minutes'] == null
                                 ? 'Not set'
@@ -522,7 +541,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             },
                           ),
                           _Row(
-                            icon: Icons.bar_chart_rounded,
+                            icon: CupertinoIcons.chart_bar_fill,
                             label: 'Effort (optional)',
                             value:
                                 (_planning['effort'] != null &&
@@ -593,29 +612,31 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                         ],
                       ),
                       const SizedBox(height: 26),
-                      const _Label('SCHEDULE'),
+                      const _Label('Schedule'),
                       const SizedBox(height: 10),
                       _Card(
                         children: [
                           _Row(
-                            icon: Icons.calendar_month_rounded,
+                            icon: CupertinoIcons.calendar,
                             label: 'Date',
                             value: _dateLabel,
                             onTap: _pickDate,
                           ),
                           _Row(
-                            icon: Icons.schedule_rounded,
+                            icon: CupertinoIcons.clock,
                             label: 'Time',
                             value: _time?.format(context) ?? 'Add time',
                             onTap: _pickTime,
                           ),
                           _Row(
-                            icon: Icons.notifications_outlined,
+                            icon: CupertinoIcons.bell,
                             label: 'Reminder',
                             value: _time == null
                                 ? (_reminderTime?.format(context) ??
                                       'Choose reminder time')
-                                : priorityReminderLabel(_reminderMinutes),
+                                : _reminderMinutes == null
+                                ? 'None'
+                                : priorityReminderLabel(_reminderMinutes!),
                             onTap: () async {
                               if (_time == null) return _pickReminderTime();
                               final value = await showPriorityReminderPicker(
@@ -623,7 +644,9 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                                 _reminderMinutes,
                               );
                               if (value != null && mounted) {
-                                setState(() => _reminderMinutes = value);
+                                setState(
+                                  () => _reminderMinutes = value.minutes,
+                                );
                               }
                             },
                           ),
@@ -639,7 +662,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                               child: const Text('Remove time'),
                             ),
                           _SwitchRow(
-                            icon: Icons.event_available_rounded,
+                            icon: CupertinoIcons.calendar_badge_plus,
                             label: 'Add to calendar',
                             detail: 'Create an event in your calendar',
                             value: _addToCalendar,
@@ -657,7 +680,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       )
                     else ...[
                       _Label(
-                        widget.occurrenceOnly ? 'THIS OCCURRENCE' : 'REPEAT',
+                        widget.occurrenceOnly ? 'This occurrence' : 'Repeat',
                       ),
                       const SizedBox(height: 10),
                       if (widget.occurrenceOnly)
@@ -665,9 +688,13 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           'Changes apply to this priority only, not the original calendar event or recurring schedule.',
                         )
                       else
-                        _RepeatSelector(
+                        AppSegmented<PriorityRepeat>(
+                          segments: {
+                            if (!_habit) PriorityRepeat.once: 'Once',
+                            PriorityRepeat.daily: 'Every day',
+                            PriorityRepeat.selectedDays: 'Selected days',
+                          },
                           value: _repeat,
-                          allowOnce: !_habit,
                           onChanged: (value) => setState(() => _repeat = value),
                         ),
                       if (_repeat == PriorityRepeat.selectedDays) ...[
@@ -718,43 +745,6 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4148F5), Color(0xFF5D45DC)],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: FilledButton(
-                          onPressed:
-                              _controller.text.trim().isEmpty ||
-                                  (_repeat == PriorityRepeat.selectedDays &&
-                                      _selectedWeekdays.isEmpty)
-                              ? null
-                              : _submit,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            disabledBackgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: Colors.white.withValues(
-                              alpha: lightMode ? .78 : .58,
-                            ),
-                            shadowColor: Colors.transparent,
-                          ),
-                          child: Text(
-                            _editing
-                                ? 'Save Changes'
-                                : _habit
-                                ? 'Add Habit'
-                                : 'Add Priority',
-                            style: const TextStyle(fontSize: 17),
-                          ),
-                        ),
-                      ),
-                    ),
                     if (_editing) ...[
                       const SizedBox(height: 16),
                       Center(
@@ -762,13 +752,23 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           style: TextButton.styleFrom(
                             foregroundColor: Colors.redAccent,
                           ),
-                          icon: const Icon(Icons.delete_outline),
+                          icon: const Icon(CupertinoIcons.delete),
                           label: Text(
                             widget.forSchedule
                                 ? 'Delete Habit'
                                 : 'Delete Priority',
                           ),
                           onPressed: () async {
+                            // One day's copy of a repeating priority.
+                            if (_editing &&
+                                widget.habitSwitch &&
+                                !widget.forSchedule) {
+                              final all = await askRepeatingDelete(context);
+                              if (all != null && mounted) {
+                                _submit(deleteRequested: true, deleteAll: all);
+                              }
+                              return;
+                            }
                             final confirmed = await confirmAction(
                               context,
                               title: widget.forSchedule
@@ -807,7 +807,6 @@ class _Label extends StatelessWidget {
       color: Color(0xFFA9A7D8),
       fontSize: 13,
       fontWeight: FontWeight.w700,
-      letterSpacing: 1.4,
     ),
   );
 }
@@ -883,7 +882,7 @@ class _Row extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
           ],
         ),
       ),
@@ -929,67 +928,6 @@ class _SwitchRow extends StatelessWidget {
             ),
           ),
           AppSwitch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
-
-class _RepeatSelector extends StatelessWidget {
-  const _RepeatSelector({
-    required this.value,
-    required this.onChanged,
-    this.allowOnce = true,
-  });
-  final PriorityRepeat value;
-  final ValueChanged<PriorityRepeat> onChanged;
-  final bool allowOnce;
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    final choices = [
-      if (allowOnce) (PriorityRepeat.once, 'Once'),
-      (PriorityRepeat.daily, 'Every day'),
-      (PriorityRepeat.selectedDays, 'Selected days'),
-    ];
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: .035),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: colors.textPrimary.withValues(alpha: .13)),
-      ),
-      child: Row(
-        children: [
-          for (final choice in choices)
-            Expanded(
-              child: InkWell(
-                onTap: () => onChanged(choice.$1),
-                borderRadius: BorderRadius.circular(13),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: value == choice.$1
-                        ? const LinearGradient(
-                            colors: [Color(0xFF494AF5), Color(0xFF6546E7)],
-                          )
-                        : null,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: Text(
-                    choice.$2,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: value == choice.$1
-                          ? Colors.white
-                          : colors.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

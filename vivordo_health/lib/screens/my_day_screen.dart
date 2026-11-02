@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/calendar_snapshot_service.dart';
 import '../src/services/daily_priority_service.dart';
 import '../src/services/day_record_service.dart';
 import '../src/services/outlook_calendar_service.dart';
@@ -27,13 +29,18 @@ import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
+import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
+import '../widgets/score_breakdown_sheet.dart';
+import '../widgets/score_history.dart';
+import '../src/services/planned_demand_service.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/swipe_to_delete.dart';
 import '../widgets/habit_chips.dart';
 import '../src/utils/priority_schedule.dart';
+import '../widgets/plan_my_day_sheet.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
@@ -43,12 +50,14 @@ import '../widgets/tomorrow_preview.dart';
 import '../widgets/daily_brief_card.dart';
 import '../src/utils/owned_stream_snapshot.dart';
 import '../src/utils/server_capacity.dart';
+import '../src/utils/screen_metric_projection.dart';
 import '../src/services/metrics_repository.dart';
 import '../src/utils/day_key.dart';
 import '../widgets/burnout_card.dart';
 import '../widgets/training_load_card.dart';
 import '../src/services/weekly_review_service.dart';
 import '../src/services/daily_tags_service.dart';
+import '../src/services/today_effort_context.dart';
 import '../src/utils/energy_factors.dart';
 import 'weekly_review_screen.dart';
 import '../src/services/home_widget_service.dart';
@@ -58,6 +67,8 @@ import '../src/utils/meeting_patterns.dart';
 import '../src/utils/training_load_view.dart';
 import '../src/utils/burnout_view.dart';
 import '../src/utils/day_fixes.dart';
+import '../src/utils/plan_my_day.dart';
+import '../src/utils/score_breakdown.dart';
 import '../src/utils/my_day_alerts.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
@@ -119,6 +130,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// day_fixes/{tomorrow}.eveningHidden); it comes back as the morning card.
   String? _eveningFixesHiddenDay;
 
+  /// The day "Plan my day" was swiped away, and the priorities it was
+  /// hidden for (day_fixes/{day}.planHidden): it comes back tomorrow, or
+  /// when a priority without a time is added.
+  String? _planHiddenDay;
+  Set<String> _planHiddenIds = const {};
+
   /// The day the fix being applied belongs to, for logging it.
   DateTime? _openFixDay;
 
@@ -136,6 +153,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// never flashes before the check.
   bool _calendarConnected = true;
   DateTime? _calendarLoadedAt;
+
+  /// Showing the schedule saved on the phone while the live one loads.
+  bool _eventsFromSnapshot = false;
+  DateTime? _snapshotSavedAt;
   bool _showCompleted = false;
   bool _showEarlier = false;
   Timer? _clockTimer;
@@ -213,9 +234,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _burnoutSnapshot.connect(_burnoutStreamFor(day));
     _trainingLoadSnapshot.connect(watchTrainingLoad(day));
     _weeklyReviewSnapshot.connectFactory(
-      () => WeeklyReviewService.watchCard(day),
+      () => WeeklyReviewService.watchCard(
+        day,
+        // The same shared window as the brief below: no second listener.
+        checkIns: (_metricsStreamFor(day) ?? const Stream.empty()).map((w) {
+          if (w.error != null && w.days.isEmpty) throw w.error!;
+          return w.days[localDayKey(day)]?['morning_check_in'] as Map?;
+        }),
+      ),
     );
     _loadEnergyFactors(day);
+    _loadEffortContext(day);
     final stream = _metricsStreamFor(day);
     _briefSnapshot.connect(
       (stream ?? const Stream<MetricWindow>.empty()).map((snapshot) {
@@ -226,9 +255,21 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           snapshot.days.entries
               .map((d) => MetricDayEntry(dayKey: d.key, data: d.value))
               .toList(),
-          isFromCache: snapshot.isFromCache || snapshot.error != null,
+          // Only when the listener failed: without metadata updates, a
+          // window first read from the cache never reports reaching the
+          // server, so the note would stick.
+          isFromCache: snapshot.error != null,
         );
         _briefMetrics = metrics;
+        _takeHeart(snapshot.days, day);
+        final today = snapshot.days[localDayKey(day)];
+        _todayActivity = (
+          healthMinutes:
+              ((today?['exercise_time'] as Map?)?['healthSum'] as num?)
+                  ?.toDouble(),
+          calories: ((today?['active_calories'] as Map?)?['sum'] as num?)
+              ?.toDouble(),
+        );
         return metrics.summarize(DateTime.now());
       }),
     );
@@ -259,12 +300,39 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _priorityDay = DateUtils.dateOnly(DateTime.now());
+    _capacitySnapshot.addListener(_onCapacity);
+    for (final source in [
+      _briefSnapshot,
+      _capacitySnapshot,
+      _prioritySnapshot,
+    ]) {
+      source.addListener(_publishCapacityLeft);
+    }
     _connectBriefMetrics(_priorityDay);
     _connectPriorities();
     _loadTodayEvents();
     unawaited(_loadWrapUp());
     unawaited(_loadFixHistory());
     CalendarService.eventsChanged.addListener(_onEventsChanged);
+  }
+
+  bool? _capacityProvisional;
+
+  /// With the calendar and priorities, what Effort so far needs (as Home's
+  /// Your day counts it): today's workouts and usual calories, and Health's
+  /// exercise minutes and active calories so far.
+  TodayEffortContext? _effortContext;
+  ({double? healthMinutes, double? calories})? _todayActivity;
+
+  /// A light tap when today's Capacity locks in with last night's sleep,
+  /// as the number settles on screen. Hidden updates publish when the tab
+  /// is shown, so it lands when you see it.
+  void _onCapacity() {
+    final provisional = _capacitySnapshot.value.data?.provisional;
+    if (_capacityProvisional == true && provisional == false && _screenActive) {
+      unawaited(HapticFeedback.lightImpact());
+    }
+    _capacityProvisional = provisional;
   }
 
   /// Set when the calendar changed while this tab was hidden.
@@ -343,7 +411,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   List<HeartRateHistoryReading> _heartToday = const [];
   List<HeartRateHistoryReading> _heartHistory = const [];
   String? _heartHistoryDay;
-  DateTime? _heartLoadedAt;
 
   /// Today's past events with enough heart rate to judge, by sourceEventKey.
   Map<String, BodyReaction> _reactions = const {};
@@ -360,49 +427,32 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// saved again only when late-syncing samples or the event's rating change.
   final _reactionsSaved = <String, String>{};
 
-  Future<void> _loadHeart() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final day = _priorityDay;
+  /// The brief window's days last read for heart readings.
+  Map<String, Map<String, dynamic>>? _heartDays;
+
+  /// Today's heart readings and the [reactionHeartDays] before, from My
+  /// Day's own metrics window, which already listens to those days; updated
+  /// whenever new heart rate syncs.
+  void _takeHeart(Map<String, Map<String, dynamic>> days, DateTime day) {
+    if (identical(days, _heartDays) ||
+        !DateUtils.isSameDay(day, _priorityDay)) {
+      return;
+    }
+    _heartDays = days;
     final key = localDayKey(day);
-    _heartLoadedAt = DateTime.now();
-    final days = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('metrics_daily');
-    List<HeartRateHistoryReading> readings(
-      String id,
-      Map<String, dynamic>? data,
-    ) => data == null
-        ? const []
-        : mergedHeartRateHistory(
-            data,
-            fallbackDate: DateTime.parse(id),
-            includeDailyFallback: false,
-          );
-    try {
-      var history = _heartHistory;
-      if (_heartHistoryDay != key) {
-        final docs = await days
-            .orderBy(FieldPath.documentId)
-            .startAt([localDayKey(DateTime(day.year, day.month, day.day - 14))])
-            .endBefore([key])
-            .get();
-        history = [
-          for (final doc in docs.docs) ...readings(doc.id, doc.data()),
-        ];
-      }
-      final today = await days.doc(key).get();
-      if (!mounted || !DateUtils.isSameDay(day, _priorityDay)) return;
-      _heartHistory = history;
-      _heartHistoryDay = key;
-      _heartToday = readings(key, today.data());
-      _updateReactions();
-      if (DateUtils.isSameDay(day, DateTime.now())) {
-        unawaited(_catchUpYesterday(day));
-      }
-    } catch (error) {
-      debugPrint('Could not load heart rate for event reactions: $error');
+    List<HeartRateHistoryReading> of(String id) =>
+        (days[id]?[reactionHeartKey] as DayHeartReadings?)?.readings ??
+        const [];
+    _heartHistory = [
+      for (final id
+          in (days.keys.where((id) => id.compareTo(key) < 0).toList()..sort()))
+        ...of(id),
+    ];
+    _heartToday = of(key);
+    _heartHistoryDay = key;
+    if (mounted) _updateReactions();
+    if (DateUtils.isSameDay(day, DateTime.now())) {
+      unawaited(_catchUpYesterday(day));
     }
   }
 
@@ -539,15 +589,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _showReaction(_CalendarEvent e, BodyReaction reaction) =>
-      showBodyReactionSheet(
-        context,
-        title: e.title,
-        start: e.start,
-        end: e.end,
-        reaction: reaction,
-      );
-
   /// Rated items for Demand: [events] and the timed priorities on [day]
   /// that aren't linked to one of them.
   List<EffortItem> _effortItems(
@@ -590,6 +631,131 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ];
   }
 
+  /// Priorities ticked off on [day] that have no time slot there, for
+  /// Effort so far (a linked one counts through its event).
+  List<({DateTime doneAt, Object? effort})> _untimedDone(
+    DateTime day,
+    List<DailyPriority> priorities,
+  ) => [
+    for (final p in priorities)
+      if (p.completed &&
+          p.completedAt != null &&
+          DateUtils.isSameDay(p.completedAt, day) &&
+          _linkedKey(p) == null &&
+          (p.isAllDay ||
+              p.sourceStart == null ||
+              !DateUtils.isSameDay(p.sourceStart, day)))
+        (doneAt: p.completedAt!, effort: p.planning['effort']),
+  ];
+
+  /// Today's Effort so far as Home's Your day counts it: what events and
+  /// priorities took, and activity by the server's rules
+  /// ([physicalSoFar]).
+  ({double total, double physical}) _effortSoFar(
+    DateTime now,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final day = buildDayEffort(
+      now: now,
+      from: today,
+      until: today.add(const Duration(days: 1)),
+      wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+      items: _effortItems(today, events, priorities),
+      untimedDone: _untimedDone(today, priorities),
+      workouts: _effortContext?.workouts ?? const [],
+    );
+    final physical = physicalSoFar(
+      workoutPoints: day.workoutSoFar,
+      healthMinutes: _todayActivity?.healthMinutes,
+      calories: _todayActivity?.calories,
+      usualCalories: _effortContext?.usualCalories,
+    );
+    return (total: day.soFar - day.workoutSoFar + physical, physical: physical);
+  }
+
+  /// Today's plan from [now] on, whether it's evening (past the end-of-day
+  /// time with nothing timed left: open untimed priorities carry over, so
+  /// they count towards tomorrow), and before then today's Capacity as it
+  /// stands (docs/scores.md §4): the morning's less the Effort so far. In
+  /// the evening [ended] holds how today finished instead; [live] stays
+  /// null so the glances don't publish it.
+  ({DayEffort day, bool evening, CapacityLeft? live, CapacityLeft? ended})
+  _todayPlan(
+    DateTime now,
+    List<_CalendarEvent> timedEvents,
+    List<DailyPriority> priorities,
+    int? capacityScore,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final wrapUp = today.add(Duration(minutes: _wrapUpMinutes));
+    final day = buildDayEffort(
+      now: now,
+      from: today,
+      until: today.add(const Duration(days: 1)),
+      wrapUp: wrapUp,
+      items: _effortItems(today, timedEvents, priorities),
+      untimedOpen: _untimedOpen(today, priorities),
+    );
+    final evening = day.aheadMinutes == 0 && !now.isBefore(wrapUp);
+    final state = capacityScore == null
+        ? null
+        : capacityLeft(
+            morning: capacityScore,
+            effortSoFar: _effortSoFar(now, timedEvents, priorities).total,
+            // Nothing is booked once the day has ended.
+            demand: evening ? 0 : day.demand,
+          );
+    return (
+      day: day,
+      evening: evening,
+      live: evening ? null : state,
+      ended: evening ? state : null,
+    );
+  }
+
+  /// Sends today's live Capacity to the Capacity widget, the Watch and Siri,
+  /// which step through the rest of today from it. Runs whenever it can
+  /// move (priorities, Capacity, Health, the calendar, the clock), not only
+  /// while the brief is on screen; only a live calendar sends it.
+  void _publishCapacityLeft() {
+    final priorities = _prioritySnapshot.value;
+    final now = DateTime.now();
+    if (_isLoading ||
+        _calendarLoadError != null ||
+        !priorities.hasData ||
+        priorities.hasError ||
+        !DateUtils.isSameDay(_priorityDay, now)) {
+      return;
+    }
+    final plan = _todayPlan(
+      now,
+      [
+        for (final e in _events)
+          if (!e.isAllDay) e,
+      ],
+      priorities.data!,
+      _capacitySnapshot.value.data?.score ??
+          _briefSnapshot.value.data?.capacity.score,
+    );
+    final live = plan.live;
+    if (live == null) return;
+    unawaited(
+      publishCapacityLeft(
+        live,
+        capacityLeftPath(
+          day: plan.day,
+          live: live,
+          now: now,
+          wrapUp: DateUtils.dateOnly(
+            now,
+          ).add(Duration(minutes: _wrapUpMinutes)),
+        ),
+      ),
+    );
+  }
+
   /// Efforts of the open priorities on [day] that have no time slot there.
   List<Object?> _untimedOpen(DateTime day, List<DailyPriority> priorities) => [
     for (final p in priorities)
@@ -617,6 +783,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final active = TickerMode.valuesOf(context).enabled;
+    // Set first: showing publishes held-back updates, and _onCapacity reads
+    // it.
+    final changed = _screenActive != active;
+    _screenActive = active;
     _briefSnapshot.setActive(active);
     _capacitySnapshot.setActive(active);
     _burnoutSnapshot.setActive(active);
@@ -626,13 +796,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     _tomorrowPrioritySnapshot.setActive(active);
     _habitSnapshot.setActive(active);
     _templateSnapshot.setActive(active);
-    if (_screenActive == active) return;
-    _screenActive = active;
+    if (!changed) return;
     _clockTimer?.cancel();
     if (!active) return;
     if (!_handleDayRollover()) {
       // Tags saved elsewhere (Home's check-in, Journal) since last shown.
       _loadEnergyFactors(_priorityDay);
+      _loadEffortContext(_priorityDay);
       _refreshBriefClock();
       if (_eventsStale) unawaited(_loadTodayEvents());
     }
@@ -641,11 +811,6 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       if (!_handleDayRollover()) {
         _refreshBriefClock();
         setState(() {});
-        final loaded = _heartLoadedAt;
-        if (loaded != null &&
-            DateTime.now().difference(loaded) > const Duration(minutes: 15)) {
-          unawaited(_loadHeart());
-        }
       }
     });
   }
@@ -711,6 +876,58 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// [forceRefresh] bypasses the shared calendar cache. Used by pull-to-refresh
   /// and after the user edits an event, where reusing a cached range would
   /// show them what they just changed away from.
+  /// Today's and tomorrow's events, in start order.
+  (List<_CalendarEvent>, List<_CalendarEvent>) _splitDays(
+    List<gcal.Event> calendarEvents,
+    DateTime dayStart,
+  ) {
+    final dayEnd = dayStart.add(const Duration(days: 1));
+    final tomorrowEnd = dayStart.add(const Duration(days: 2));
+    final allEvents =
+        calendarEvents
+            .map(_CalendarEvent.fromGoogle)
+            .whereType<_CalendarEvent>()
+            .toList()
+          ..sort((a, b) => a.start.compareTo(b.start));
+    return (
+      allEvents
+          .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
+          .toList(),
+      allEvents
+          .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
+          .toList(),
+    );
+  }
+
+  /// Fills the screen with the schedule saved last time, unless the live
+  /// one got here first. Display only: nothing is rated, synced or saved
+  /// from it.
+  Future<void> _showSnapshot(
+    String uid,
+    int generation,
+    DateTime dayStart,
+    DateTime tomorrowEnd,
+  ) async {
+    final saved = await CalendarSnapshotService.eventsBetween(
+      uid,
+      dayStart,
+      tomorrowEnd,
+    );
+    if (saved == null ||
+        !mounted ||
+        generation != _loadGeneration ||
+        _calendarLoadedAt != null) {
+      return;
+    }
+    final (events, tomorrowEvents) = _splitDays(saved.events, dayStart);
+    setState(() {
+      _events = events;
+      _tomorrowEvents = tomorrowEvents;
+      _eventsFromSnapshot = true;
+      _snapshotSavedAt = saved.savedAt;
+    });
+  }
+
   Future<void> _loadTodayEvents({bool forceRefresh = false}) async {
     final generation = ++_loadGeneration;
     _eventsStale = false;
@@ -721,6 +938,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final tomorrowEnd = DateTime(now.year, now.month, now.day + 2);
 
     final connected = _anyCalendarConnected();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final snapshotShown =
+        _calendarLoadedAt == null && !_eventsFromSnapshot && uid != null
+        ? _showSnapshot(uid, generation, dayStart, tomorrowEnd)
+        : null;
+    final failuresBefore = CalendarService.fetchFailures;
     late List<dynamic> results;
     try {
       results = await Future.wait([
@@ -744,24 +967,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final calendarEvents = results[0] as List<gcal.Event>;
     final calendarConnected = await connected;
     MeetingPatternsService.rememberNames(calendarEvents);
-    final allEvents =
-        calendarEvents
-            .map(_CalendarEvent.fromGoogle)
-            .whereType<_CalendarEvent>()
-            .toList()
-          ..sort((a, b) => a.start.compareTo(b.start));
-    final events = allEvents
-        .where((e) => e.start.isBefore(dayEnd) && e.end.isAfter(dayStart))
-        .toList();
-    final tomorrowEvents = allEvents
-        .where((e) => e.start.isBefore(tomorrowEnd) && e.end.isAfter(dayEnd))
-        .toList();
+    final (events, tomorrowEvents) = _splitDays(calendarEvents, dayStart);
 
     if (!mounted || generation != _loadGeneration) return;
+    // A calendar that couldn't be read comes back empty, like a free day.
+    final fetchFailed = CalendarService.fetchFailures != failuresBefore;
+    if (fetchFailed) {
+      await snapshotShown;
+      if (!mounted || generation != _loadGeneration) return;
+      // Keep the plan on screen (saved or last loaded) rather than
+      // emptying the day.
+      if (_eventsFromSnapshot || _calendarLoadedAt != null) {
+        setState(() {
+          _isLoading = false;
+          _calendarLoadError =
+              'Could not refresh the schedule. Pull down to retry.';
+        });
+        return;
+      }
+    }
+    if (uid != null && !fetchFailed) {
+      unawaited(
+        CalendarSnapshotService.save(
+          uid,
+          dayStart,
+          tomorrowEnd,
+          calendarEvents,
+        ),
+      );
+    }
     // The schedule may have just changed (pull to refresh, an edit).
     if (forceRefresh) unawaited(DayRecordService.sync());
     setState(() {
       _calendarLoadedAt = DateTime.now();
+      _eventsFromSnapshot = false;
       _calendarConnected = calendarConnected;
       _events = events;
       _tomorrowEvents = tomorrowEvents;
@@ -770,10 +1009,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       unawaited(
         WindDownReminders.sync(tomorrowFirstEvent: _tomorrowFirst()?.start),
       );
-      _calendarLoadError = null;
+      _calendarLoadError = fetchFailed
+          ? 'Could not refresh the schedule. Pull down to retry.'
+          : null;
       _isLoading = false;
     });
-    unawaited(_loadHeart());
     unawaited(_loadPatterns());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);
@@ -818,24 +1058,30 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Future<void> _handleEventTap(_CalendarEvent event) async {
     if (!mounted) return;
-    final action = await showModalBottomSheet<_EventSummaryAction>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _EventSummarySheet(
-        event: event,
+    final action = await showCalendarEventSummarySheet(
+      context,
+      event: CalendarEventSummaryData(
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        isAllDay: event.isAllDay,
+        isRecurring: event.isRecurring,
+        color: event.color,
+        calendarName: CalendarService.isOutlook(event.event)
+            ? 'Outlook'
+            : 'Google Calendar',
+        canEdit: true,
+        typeEvent: event.isAllDay ? null : _cognitiveInput(event),
+        seriesKey: seriesKeyFor(event.event.recurringEventId),
         reaction: _reactions[event.sourceEventKey],
-        onReaction: _showReaction,
       ),
     );
     if (!mounted) return;
     switch (action) {
-      case _EventSummaryAction.edit:
+      case CalendarEventSummaryAction.edit:
         await _editGoogleEvent(event.event);
         return;
-      case _EventSummaryAction.delete:
+      case CalendarEventSummaryAction.delete:
         await _deleteGoogleEvent(event.event);
         return;
       case null:
@@ -936,6 +1182,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Calendar, workouts, wrap-up time and the clock arrive by setState.
+    _publishCapacityLeft();
     final colors = context.vivordoColors;
     final timedEvents = _events.where((event) => !event.isAllDay).toList();
     final watchItem = findNextBackToBackEventBlock(
@@ -950,188 +1198,200 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
     return Scaffold(
       backgroundColor: colors.page,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () => _loadTodayEvents(forceRefresh: true),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'My Day',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                          style: TextStyle(color: colors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    key: widget.actionsKey,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const JournalScreen(),
-                          ),
-                        ),
-                        tooltip: 'Journal',
-                        icon: const Icon(
-                          Icons.menu_book_rounded,
-                          color: MyDayScreen.purple,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: _openCalendar,
-                        tooltip: 'Calendar',
-                        icon: const Icon(
-                          Icons.calendar_month_rounded,
-                          color: MyDayScreen.purple,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              if (_calendarLoadError != null) ...[
-                const SizedBox(height: 10),
+      body: CollapsingTitle(
+        title: 'My Day',
+        threshold: 48,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () => _loadTodayEvents(forceRefresh: true),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
+              children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.cloud_off_rounded,
-                      size: 16,
-                      color: colors.textSecondary,
-                    ),
-                    const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
-                        _calendarLoadError!,
-                        style: TextStyle(
-                          color: colors.textSecondary,
-                          fontSize: 12,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'My Day',
+                            // Large titles stop growing at 1.5x, as in iOS.
+                            textScaler: MediaQuery.textScalerOf(
+                              context,
+                            ).clamp(maxScaleFactor: 1.5),
+                            style: TextStyle(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w800,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                            style: TextStyle(color: colors.textSecondary),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 18),
-              KeyedSubtree(
-                key: widget.briefKey,
-                child: _buildDayOutlookCard(timedEvents: timedEvents),
-              ),
-              // What's on now comes straight after the brief: it changes
-              // hour to hour, the alerts below over days.
-              const SizedBox(height: 24),
-              KeyedSubtree(
-                key: widget.nowKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _SectionLabel('NOW'),
-                    const SizedBox(height: 10),
-                    _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
-                  ],
-                ),
-              ),
-              _buildAlerts(),
-              const SizedBox(height: 24),
-              KeyedSubtree(
-                key: widget.prioritiesKey,
-                child: _buildPriorities(),
-              ),
-              const SizedBox(height: 24),
-              KeyedSubtree(
-                key: widget.timelineKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
                     Row(
+                      key: widget.actionsKey,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Expanded(
-                          child: _SectionLabel("TODAY'S TIMELINE"),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const JournalScreen(),
+                            ),
+                          ),
+                          tooltip: 'Journal',
+                          icon: const Icon(
+                            CupertinoIcons.book_fill,
+                            color: MyDayScreen.purple,
+                          ),
                         ),
                         IconButton(
-                          onPressed: _isLoading ? null : _createGoogleEvent,
-                          tooltip: 'Add event',
-                          visualDensity: VisualDensity.compact,
+                          onPressed: _openCalendar,
+                          tooltip: 'Calendar',
                           icon: const Icon(
-                            Icons.add_rounded,
+                            CupertinoIcons.calendar,
                             color: MyDayScreen.purple,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    _buildTimeline(),
-                    // Which of today's events usually raise or lower your
-                    // heart rate, or how far it is from knowing.
-                    MeetingPatternsRow(
-                      patterns: _patterns,
-                      now: DateTime.now(),
-                      today: todaysPatternMeetings(
-                        patterns: _patterns,
-                        now: DateTime.now(),
-                        events: patternEventsFrom(_events.map((e) => e.event)),
-                      ),
-                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-                valueListenable: _tomorrowPrioritySnapshot,
-                builder: (context, snapshot, _) => TomorrowPreview(
-                  key: widget.tomorrowKey,
-                  day: _tomorrow,
-                  loading:
-                      _isLoading ||
-                      snapshot.connectionState == ConnectionState.waiting,
-                  error:
-                      _calendarLoadError ??
-                      (snapshot.hasError
-                          ? 'Could not load tomorrow’s priorities.'
-                          : null),
-                  events: _tomorrowEvents
-                      .map(
-                        (e) => TomorrowPreviewEvent(
-                          title: e.title,
-                          start: e.start,
-                          end: e.end,
-                          allDay: e.isAllDay,
-                          onTap: () => _handleEventTap(e),
-                        ),
-                      )
-                      .toList(),
-                  priorities: snapshot.data ?? const [],
-                  onEdit: _editPriority,
-                  onToggle: _togglePriority,
-                  onViewDay: () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            MonthCalendarScreen(initialDay: _tomorrow),
+                if (_calendarLoadError != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(
+                        CupertinoIcons.cloud,
+                        size: 16,
+                        color: colors.textSecondary,
                       ),
-                    );
-                    if (mounted) await _loadTodayEvents();
-                  },
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _calendarLoadError!,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 18),
+                KeyedSubtree(
+                  key: widget.briefKey,
+                  child: _buildDayOutlookCard(timedEvents: timedEvents),
                 ),
-              ),
-            ],
+                // What's on now comes straight after the brief: it changes
+                // hour to hour, the alerts below over days.
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.nowKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SectionLabel('Now'),
+                      const SizedBox(height: 10),
+                      _SectionCard(
+                        child: _buildNowCard(timedEvents, watchItem),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildAlerts(),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.prioritiesKey,
+                  child: _buildPriorities(),
+                ),
+                const SizedBox(height: 24),
+                KeyedSubtree(
+                  key: widget.timelineKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: _SectionLabel("Today's timeline"),
+                          ),
+                          IconButton(
+                            onPressed: _isLoading ? null : _createGoogleEvent,
+                            tooltip: 'Add event',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              CupertinoIcons.add,
+                              color: MyDayScreen.purple,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      _buildTimeline(),
+                      // Which of today's events usually raise or lower your
+                      // heart rate, or how far it is from knowing.
+                      MeetingPatternsRow(
+                        patterns: _patterns,
+                        now: DateTime.now(),
+                        today: todaysPatternMeetings(
+                          patterns: _patterns,
+                          now: DateTime.now(),
+                          events: patternEventsFrom(
+                            _events.map((e) => e.event),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                  valueListenable: _tomorrowPrioritySnapshot,
+                  builder: (context, snapshot, _) => TomorrowPreview(
+                    key: widget.tomorrowKey,
+                    day: _tomorrow,
+                    loading:
+                        _isLoading ||
+                        snapshot.connectionState == ConnectionState.waiting,
+                    error:
+                        _calendarLoadError ??
+                        (snapshot.hasError
+                            ? 'Could not load tomorrow’s priorities.'
+                            : null),
+                    events: _tomorrowEvents
+                        .map(
+                          (e) => TomorrowPreviewEvent(
+                            title: e.title,
+                            start: e.start,
+                            end: e.end,
+                            allDay: e.isAllDay,
+                            onTap: () => _handleEventTap(e),
+                          ),
+                        )
+                        .toList(),
+                    priorities: snapshot.data ?? const [],
+                    onEdit: _editPriority,
+                    onToggle: _togglePriority,
+                    onViewDay: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              MonthCalendarScreen(initialDay: _tomorrow),
+                        ),
+                      );
+                      if (mounted) await _loadTodayEvents();
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1168,6 +1428,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       }
     }),
   );
+
+  void _loadEffortContext(DateTime day) {
+    unawaited(
+      loadTodayEffortContext(day).then((context) {
+        if (mounted) setState(() => _effortContext = context);
+      }),
+    );
+    // The Capacity and Demand sheets then open with their chart drawn.
+    unawaited(ScoreHistory.warm(ScoreHistoryKind.plannedVsActual));
+  }
 
   /// Today's energy forecast (docs/scores.md §8), once any night is
   /// recorded or your usual sleep times are set. Tomorrow's first timed event
@@ -1245,7 +1515,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.layers_outlined,
+                          CupertinoIcons.square_stack_3d_up,
                           size: 18,
                           color: colors.textSecondary,
                         ),
@@ -1262,7 +1532,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         Icon(
-                          Icons.chevron_right_rounded,
+                          CupertinoIcons.chevron_right,
                           color: colors.textSecondary,
                         ),
                       ],
@@ -1296,7 +1566,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
           child: Row(
             children: [
-              const Icon(Icons.bedtime_outlined, size: 18, color: Colors.white),
+              const Icon(CupertinoIcons.moon, size: 18, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1355,6 +1625,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             // fallback (and calculateDailyCapacity) after the rollout.
             final server = serverSnapshot.data;
             final capacityScore = server?.score ?? capacity?.score;
+            final beforeSleep =
+                capacityScore == null &&
+                beforeTonightsSleep(
+                  now,
+                  sleepRecorded: sleep != null,
+                  schedule: _sleepSchedule,
+                );
+            final capacityEmpty = capacityScore != null
+                ? null
+                : capacityEmptyState(
+                    beforeSleep: beforeSleep,
+                    sleepRecorded: sleep != null,
+                    tracksSleep: (summary?.priorNights ?? 0) > 0,
+                  );
             final capacityStale = server != null ? server.provisional : stale;
             final briefEvents = timedEvents
                 .map(
@@ -1381,28 +1665,54 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   ),
                 )
                 .toList();
-            final ready =
-                calendarReady && priorities.hasData && !priorities.hasError;
+            final prioritiesReady = priorities.hasData && !priorities.hasError;
+            // Live calendar: what gets saved, published or logged.
+            final ready = calendarReady && prioritiesReady;
+            // Also the saved schedule while the live one loads, and
+            // today's while a refresh runs: what's shown.
+            final refreshing =
+                _isLoading &&
+                _calendarLoadedAt != null &&
+                DateUtils.isSameDay(_calendarLoadedAt, now);
+            final shown =
+                (calendarReady || _eventsFromSnapshot || refreshing) &&
+                prioritiesReady;
+            // Not loading any more, just failed: pull to refresh retries.
+            final planFailed =
+                !ready && (_calendarLoadError != null || priorities.hasError);
             // Demand: Effort still ahead today (docs/scores.md §2). In
             // the evening, once nothing is left, tomorrow's expected
             // Demand instead.
             final today = DateUtils.dateOnly(now);
             final tomorrow = today.add(const Duration(days: 1));
             final todayPriorities = priorities.data ?? const [];
-            final todayDemand = buildDayEffort(
-              now: now,
-              from: today,
-              until: tomorrow,
-              wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
-              items: _effortItems(today, timedEvents, todayPriorities),
-              untimedOpen: _untimedOpen(today, todayPriorities),
+            final plan = _todayPlan(
+              now,
+              timedEvents,
+              todayPriorities,
+              capacityScore,
             );
-            // Evening: past the end-of-day time with nothing timed left.
-            // Open untimed priorities carry over, so they count towards
-            // tomorrow rather than holding off the evening view.
-            final evening =
-                todayDemand.aheadMinutes == 0 &&
-                !now.isBefore(today.add(Duration(minutes: _wrapUpMinutes)));
+            final todayDemand = plan.day;
+            // The day's whole plan, saved once for the Demand sheet's
+            // planned-vs-actual history.
+            if (ready && !PlannedDemandService.savedThisSession(today)) {
+              final planned = plannedDemand(
+                day: today,
+                wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+                items: _effortItems(today, timedEvents, todayPriorities),
+                untimed: [
+                  for (final p in todayPriorities)
+                    if (p.isAllDay ||
+                        p.sourceStart == null ||
+                        !DateUtils.isSameDay(p.sourceStart, today))
+                      p.planning['effort'],
+                ],
+              );
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => PlannedDemandService.saveOnce(today, planned),
+              );
+            }
+            final evening = plan.evening;
             final tomorrowPriorities =
                 _tomorrowPrioritySnapshot.value.data ?? const [];
             final demand = evening
@@ -1424,28 +1734,32 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final tomorrowCapacity = usualCapacity ?? capacityScore;
             final tomorrowHeavy =
                 evening &&
-                ready &&
+                shown &&
                 tomorrowCapacity != null &&
                 demandFit(demand, tomorrowCapacity) == DemandFit.over;
             // A big day in the last 3 is lowering Capacity (docs/scores.md
             // §4): say why, unless the body has already bounced back.
             final bigDay = server?.bigDay;
             final recovering = bigDay != null && !bigDay.halved;
-            // Demand against Capacity, ±15 (docs/scores.md §2).
+            final live = shown ? plan.live : null;
+            // Demand against what's left (docs/scores.md §2).
             final headline = evening
                 ? tomorrowHeavy
                       ? 'Tomorrow looks heavy'
                       : 'Today’s plan is done'
                 : recovering
                 ? bigDayHeadline(bigDay, today)
-                : capacityScore == null || !ready
+                : capacityScore == null || !shown
                 ? 'Make space for your day'
-                : switch (demandFit(demand, capacityScore)) {
+                : switch (live?.fit ?? demandFit(demand, capacityScore)) {
                     DemandFit.roomToSpare => 'Room to spare today',
-                    DemandFit.over => 'More than you’ve got: protect a break',
+                    DemandFit.over =>
+                      live == null
+                          ? 'More than you’ve got: protect a break'
+                          : 'More than you’ve got left',
                     DemandFit.full => 'A full day ahead',
                   };
-            final calendarText = ready
+            final calendarText = shown
                 ? remainingToday(
                     timedEvents.where((e) => e.end.isAfter(now)).length,
                     briefPriorities.where((p) => !p.completed).length,
@@ -1458,8 +1772,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               for (final e in _tomorrowEvents)
                 if (!e.isAllDay) e,
             ];
+            // A refresh keeps them: today's live schedule is still there.
+            final fixable = ready || refreshing;
             final fixes = evening
-                ? !tomorrowHeavy || _eveningFixesHiddenDay == localDayKey(today)
+                ? !fixable ||
+                          !tomorrowHeavy ||
+                          _eveningFixesHiddenDay == localDayKey(today)
                       ? const <DayFix>[]
                       : _dayFixes(
                           now,
@@ -1467,9 +1785,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           tomorrowPriorities,
                           day: tomorrow,
                         )
-                : !ready ||
+                : !fixable ||
                       capacityScore == null ||
-                      demandFit(demand, capacityScore) != DemandFit.over ||
+                      (live?.fit ?? demandFit(demand, capacityScore)) !=
+                          DemandFit.over ||
                       _fixesHiddenDay == localDayKey(today)
                 ? const <DayFix>[]
                 : _dayFixes(now, timedEvents, todayPriorities);
@@ -1524,7 +1843,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ],
                   );
             String timeLabel(DateTime? t) =>
-                t == null ? 'unknown' : DateFormat('MMM d, h:mm a').format(t);
+                t == null ? 'Not yet' : DateFormat('MMM d, h:mm a').format(t);
             if (ready) {
               latestDemand = (
                 demand: demand,
@@ -1544,104 +1863,187 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             final brief =
                 Selector<ThemeController, bool>(
                   selector: (_, c) => c.showScoreNumbers,
-                  builder: (context, showNumbers, _) => DailyBriefCard(
-                    headline: headline,
-                    action: action,
-                    // Last night against the need Home and Capacity use;
-                    // nothing about sleep for someone who doesn't track it.
-                    summary:
-                        '${sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
-                            .trim(),
-                    // In the evening it sits beside tomorrow's Demand, so
-                    // it shows what tomorrow is compared with.
-                    capacityScore: evening && usualCapacity != null
-                        ? usualCapacity
-                        : capacityScore,
-                    capacityLabel: evening && usualCapacity != null
-                        ? 'Your usual'
-                        : recovering
-                        ? 'Recovering'
-                        : server != null
-                        ? server.note
-                        : capacity?.score == null
-                        ? 'Needs health data'
-                        : capacityNote,
-                    scheduleScore: ready ? demand.round().clamp(0, 100) : null,
-                    scheduleLabel: !ready
-                        ? 'Plan unavailable'
-                        : evening
-                        ? 'Expected tomorrow'
-                        : 'Remaining today',
-                    footer: capacityStale || !ready
-                        ? 'Limited data'
-                        : 'Available data',
-                    words: showNumbers
+                  builder: (context, showNumbers, _) {
+                    // Words view: the states the brief and its breakdowns
+                    // show instead of numbers.
+                    final energyWords = showNumbers
                         ? null
-                        : (
-                            energy: briefEnergyState(
-                              capacity: capacityScore,
-                              usual: usualCapacity,
-                              recovering: recovering,
+                        : live != null
+                        ? capacityLeftWords(live)
+                        : briefEnergyState(
+                            capacity: capacityScore,
+                            usual: usualCapacity,
+                            recovering: recovering,
+                            emptyWord: capacityEmpty?.word,
+                          );
+                    final loadWords = showNumbers
+                        ? null
+                        : briefLoadState(
+                            demand: shown ? demand : null,
+                            capacity: evening
+                                ? tomorrowCapacity
+                                : live?.left.round() ?? capacityScore,
+                            planFailed: planFailed,
+                          );
+                    return DailyBriefCard(
+                      headline: headline,
+                      action: action,
+                      // Last night against the need Home and Capacity use;
+                      // nothing about sleep for someone who doesn't track it.
+                      summary:
+                          '${beforeSleep ? '' : sleepComparison(sleep, need: _sleepNeedHours, tracksSleep: sleep != null || (summary?.priorNights ?? 0) > 0, inBed: summary?.sleepInBed ?? false)} $calendarText$tonightNote'
+                              .trim(),
+                      // In the evening it sits beside tomorrow's Demand, so
+                      // it shows what tomorrow is compared with.
+                      capacityScore: evening && usualCapacity != null
+                          ? usualCapacity
+                          : capacityScore,
+                      capacityLabel: evening && usualCapacity != null
+                          ? 'Your usual'
+                          : recovering
+                          ? 'Recovering'
+                          : server != null
+                          ? server.note
+                          : capacityEmpty?.label ?? capacityNote,
+                      capacityEmptyIcon: capacityEmpty?.icon,
+                      capacityLeft: live,
+                      evening:
+                          evening &&
+                              shown &&
+                              plan.ended != null &&
+                              tomorrowCapacity != null
+                          ? (
+                              today: plan.ended!,
+                              tomorrowDemand: demand,
+                              tomorrowCapacity: tomorrowCapacity,
+                            )
+                          : null,
+                      onCapacityTap: live != null
+                          ? () => _showCapacityToday(
+                              live,
+                              server,
+                              now,
+                              timedEvents,
+                              todayPriorities,
+                              energyWords,
+                            )
+                          : server != null
+                          ? () => _showCapacityBreakdown(server, energyWords)
+                          // No server Capacity yet (the phone's estimate, or
+                          // none before sleep): no breakdown, but past days'
+                          // history is still worth seeing.
+                          : () => _showCapacityEstimate(
+                              capacityScore,
+                              capacityEmpty?.word,
+                              capacityEmpty?.footer,
                             ),
-                            loadTitle: evening
-                                ? "Tomorrow's load"
-                                : "Today's load",
-                            load: briefLoadState(
-                              demand: ready ? demand : null,
+                      onScheduleTap: !shown
+                          ? null
+                          : () => _showDemandBreakdown(
+                              now: now,
+                              evening: evening,
+                              todayEvents: timedEvents,
+                              todayPriorities: todayPriorities,
+                              tomorrowPriorities: tomorrowPriorities,
                               capacity: evening
                                   ? tomorrowCapacity
-                                  : capacityScore,
+                                  : live?.left.round() ?? capacityScore,
+                              words: loadWords,
                             ),
+                      scheduleScore: shown
+                          ? demand.round().clamp(0, 100)
+                          : null,
+                      scheduleLabel: !shown
+                          ? planFailed
+                                ? "Didn't load · pull to retry"
+                                : 'Loading your plan'
+                          : evening
+                          ? 'Expected tomorrow'
+                          : 'Remaining today',
+                      // What's missing, by name; tapping it opens the data
+                      // sheet.
+                      scheduleEmptyIcon: shown
+                          ? null
+                          : planFailed
+                          ? CupertinoIcons.cloud
+                          : CupertinoIcons.hourglass,
+                      // A failed load still says so over the saved plan.
+                      footer: planFailed
+                          ? _eventsFromSnapshot && _snapshotSavedAt != null
+                                ? "Couldn't refresh · plan from ${formatClock(_snapshotSavedAt!)}"
+                                : "Your plan didn't load"
+                          : !shown
+                          ? 'Your plan is still loading'
+                          : capacityEmpty?.footer ??
+                                (!capacityStale
+                                    ? 'Available data'
+                                    : server != null
+                                    ? "Waiting for last night's sleep"
+                                    : "Health data hasn't synced recently"),
+                      words: energyWords == null || loadWords == null
+                          ? null
+                          : (
+                              energy: energyWords,
+                              loadTitle: evening
+                                  ? "Tomorrow's load"
+                                  : "Today's load",
+                              load: loadWords,
+                            ),
+                      onDetails: () => showInfoSheet(
+                        context,
+                        icon: CupertinoIcons.info_circle,
+                        title: 'Daily Brief data',
+                        summary:
+                            'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
+                        items: [
+                          AppleInfoItem(
+                            'Calendar loaded',
+                            _calendarLoadedAt == null
+                                ? _eventsFromSnapshot &&
+                                          _snapshotSavedAt != null
+                                      ? 'Showing the plan saved at ${formatClock(_snapshotSavedAt!)} until it refreshes.'
+                                      : 'Not yet.'
+                                : '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
+                            icon: CupertinoIcons.calendar,
                           ),
-                    onDetails: () => showInfoSheet(
-                      context,
-                      icon: CupertinoIcons.info_circle,
-                      title: 'Daily Brief data',
-                      summary:
-                          'Where today\'s numbers come from. These are wellness estimates, not clinical assessments.',
-                      items: [
-                        AppleInfoItem(
-                          'Calendar loaded',
-                          '${timeLabel(_calendarLoadedAt)} (may use a short-lived cache).',
-                          icon: CupertinoIcons.calendar,
-                        ),
-                        AppleInfoItem(
-                          'Heart rate measured',
-                          '${timeLabel(healthTime)}.',
-                          icon: CupertinoIcons.heart,
-                        ),
-                        AppleInfoItem(
-                          'Stress calculated',
-                          '${timeLabel(stressTime)}.',
-                          icon: CupertinoIcons.waveform_path,
-                        ),
-                        if (summary?.isFromCache == true)
+                          AppleInfoItem(
+                            'Heart rate measured',
+                            '${timeLabel(healthTime)}.',
+                            icon: CupertinoIcons.heart,
+                          ),
+                          AppleInfoItem(
+                            'Stress calculated',
+                            '${timeLabel(stressTime)}.',
+                            icon: CupertinoIcons.waveform_path,
+                          ),
+                          if (summary?.isFromCache == true)
+                            const AppleInfoItem(
+                              'Health data',
+                              'From the local cache.',
+                              icon: CupertinoIcons.tray,
+                            ),
+                          AppleInfoItem(
+                            'Sleep baseline',
+                            '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
+                            icon: CupertinoIcons.moon,
+                          ),
+                          AppleInfoItem(
+                            'Capacity',
+                            server != null
+                                ? 'This morning\'s Capacity is the day\'s budget; during the day the ring counts down by the Effort so far, and what\'s booked is the Demand still ahead. It compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
+                                : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
+                            icon: CupertinoIcons.battery_75_percent,
+                          ),
                           const AppleInfoItem(
-                            'Health data',
-                            'From the local cache.',
-                            icon: CupertinoIcons.tray,
+                            'Demand',
+                            'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
+                            icon: CupertinoIcons.chart_bar,
                           ),
-                        AppleInfoItem(
-                          'Sleep baseline',
-                          '${summary?.priorNights ?? 0} prior nights in the last 28 days; at least 7 required.',
-                          icon: CupertinoIcons.moon,
-                        ),
-                        AppleInfoItem(
-                          'Capacity',
-                          server != null
-                              ? 'Compares last night\'s sleep with what you usually need, overnight HRV and resting heart rate with your normal, and how heavy yesterday was. A day of at least twice your usual activity lowers it for the next 3 days, less if your body has already recovered. It\'s compared with your usual after 7 days.${server.bodyNote == null ? '' : ' ${server.bodyNote}'}'
-                              : 'Uses sleep and stress, not raw heart rate. Comparisons need 7 days with matching inputs and stress readings at a similar time of day.',
-                          icon: CupertinoIcons.battery_75_percent,
-                        ),
-                        const AppleInfoItem(
-                          'Demand',
-                          'The Effort still ahead today: upcoming events (rated by how demanding they look), open priorities, and workouts planned in your calendar, with back-to-backs and anything after your end-of-day time weighing more. It\'s compared with Capacity: within 15 is a full day. In the evening it shows tomorrow\'s expected Demand. Timeline openings are gaps of 30 minutes or more. Untimed work doesn\'t block a specific opening.',
-                          icon: CupertinoIcons.chart_bar,
-                        ),
-                      ],
-                      buttonLabel: 'Close',
-                    ),
-                  ),
+                        ],
+                        buttonLabel: 'Close',
+                      ),
+                    );
+                  },
                 ).withScreenInsight(
                   ScreenInsight(
                     'my_day',
@@ -1665,6 +2067,256 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       );
     },
   );
+
+  /// Why today's Capacity is what it is: each part against your usual.
+  /// [words]: words view's Energy state, shown instead of numbers.
+  void _showCapacityEstimate(int? score, String? emptyWord, String? why) =>
+      showScoreBreakdown(
+        context,
+        kicker: 'Capacity today',
+        score: score ?? 0,
+        // Nothing to score yet: the empty state's word stands in.
+        words: score == null
+            ? (word: emptyWord ?? 'Not yet', tone: BriefTone.usual)
+            : null,
+        summary: score == null
+            ? why ?? 'Not worked out yet'
+            : 'Estimated on this phone',
+        sections: const [],
+        empty:
+            'Today\'s breakdown appears once last night\'s sleep syncs and '
+            'Vivordo works out your Capacity.',
+        footer: 'History shows the Capacity saved for earlier days.',
+        history: const ScoreHistory(kind: ScoreHistoryKind.capacity),
+      );
+
+  void _showCapacityBreakdown(ServerCapacity server, [BriefState? words]) {
+    final usual = server.usual?.round();
+    final diff = usual == null ? 0 : server.score - usual;
+    showScoreBreakdown(
+      context,
+      kicker: 'Capacity today',
+      score: server.score,
+      words: words,
+      history: ScoreHistory(
+        kind: ScoreHistoryKind.capacity,
+        usual: server.usual,
+      ),
+      summary: usual == null
+          ? 'Still learning your usual'
+          : words != null
+          ? switch (diff) {
+              <= -8 => 'Well below your usual',
+              <= -3 => 'A bit below your usual',
+              >= 8 => 'Well above your usual',
+              >= 3 => 'A bit above your usual',
+              _ => 'About your usual',
+            }
+          : diff == 0
+          ? 'About your usual of $usual'
+          : '${diff.abs()} ${diff < 0 ? 'below' : 'above'} your usual of $usual',
+      sections: [(heading: null, rows: server.breakdown)],
+      signed: true,
+      footer: words != null
+          ? 'Each line is whether that part helped or held back today\'s '
+                'Capacity compared with a usual day for you. Sleep counts '
+                'most, then your overnight body, your recent load and the '
+                'morning check-in.'
+          : 'Each line is how much that part moved today\'s Capacity compared '
+                'with a usual day for you. Sleep counts most (45%), then your '
+                'overnight body (35%), your recent load (20%) and the morning '
+                'check-in (15%).',
+    );
+  }
+
+  /// Today's Capacity as it stands: how much is left of this morning's, what
+  /// went where, what's booked, and Demand against Effort over the last few
+  /// days. Why this morning's number is what it is opens from here.
+  void _showCapacityToday(
+    CapacityLeft live,
+    ServerCapacity? server,
+    DateTime now,
+    List<_CalendarEvent> events,
+    List<DailyPriority> priorities,
+    BriefState? words,
+  ) {
+    final today = DateUtils.dateOnly(now);
+    final until = today.add(const Duration(days: 1));
+    final wrapUp = today.add(Duration(minutes: _wrapUpMinutes));
+    final items = _effortItems(today, events, priorities);
+    final physical = _effortSoFar(now, events, priorities).physical;
+    final spent = effortBreakdown(
+      now: now,
+      from: today,
+      until: until,
+      wrapUp: wrapUp,
+      items: items,
+      untimedDone: _untimedDone(today, priorities),
+      physical: physical,
+    );
+    final ahead = demandBreakdown(
+      now: now,
+      from: today,
+      until: until,
+      wrapUp: wrapUp,
+      items: items,
+      untimedOpen: _untimedOpen(today, priorities),
+    );
+    final left = live.left < 0 ? 0 : live.left.round();
+    final tonight = live.byTonight.round();
+    showScoreBreakdown(
+      context,
+      kicker: 'Capacity today',
+      score: left,
+      words: words,
+      summary: words != null
+          ? 'Of the Capacity you started today with, against the plan still ahead'
+          : '$left left · started today at ${live.morning} · '
+                '${tonight < 0 ? 'short by ${-tonight} tonight' : '$tonight by tonight'}',
+      history: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (server != null)
+            TextButton(
+              onPressed: () => _showCapacityBreakdown(server, words),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 44),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: VivordoTheme.brand,
+              ),
+              child: Text(
+                words != null
+                    ? 'Why you started today where you did ›'
+                    : 'Why you started at ${live.morning} ›',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          const ScoreHistory(kind: ScoreHistoryKind.plannedVsActual),
+        ],
+      ),
+      empty: 'Nothing has taken effort or is booked yet today.',
+      sections: [
+        (
+          heading: words != null
+              ? 'Where it went'
+              : 'Where it went · ${spent.total.round()}',
+          rows: [
+            ...spent.mental,
+            if (physical > 0)
+              BreakdownRow(
+                'Workouts and exercise',
+                'Extra calories count when there\'s no exercise',
+                points: physical,
+              ),
+          ],
+        ),
+        (
+          heading: words != null
+              ? 'Booked for later'
+              : 'Booked for later · ${ahead.total.round()}',
+          rows: ahead.rows,
+        ),
+      ],
+      footer:
+          'This morning\'s Capacity is the day\'s budget: the Effort so far '
+          'comes off it, and what\'s booked is the Demand still ahead. In '
+          'the chart each day has two bars. Grey is the Demand that was '
+          'planned for that day. Next to it is the Effort the day actually '
+          'took: purple when it stayed near the plan, orange when it ran '
+          'more than a quarter over.',
+    );
+  }
+
+  /// Why Demand is what it is: each event and priority still ahead with its
+  /// points, and today's events that don't count, with why.
+  void _showDemandBreakdown({
+    required DateTime now,
+    required bool evening,
+    required List<_CalendarEvent> todayEvents,
+    required List<DailyPriority> todayPriorities,
+    required List<DailyPriority> tomorrowPriorities,
+    required int? capacity,
+    BriefState? words,
+  }) {
+    final today = DateUtils.dateOnly(now);
+    final day = evening ? today.add(const Duration(days: 1)) : today;
+    final result = demandBreakdown(
+      now: evening ? day : now,
+      from: day,
+      until: day.add(const Duration(days: 1)),
+      wrapUp: day.add(Duration(minutes: _wrapUpMinutes)),
+      items: evening
+          ? _effortItems(day, [
+              for (final e in _tomorrowEvents)
+                if (!e.isAllDay) e,
+            ], tomorrowPriorities)
+          : _effortItems(today, todayEvents, todayPriorities),
+      untimedOpen: _untimedOpen(
+        day,
+        evening ? tomorrowPriorities : todayPriorities,
+      ),
+    );
+    final leftOut = [
+      for (final e in evening ? _tomorrowEvents : _events)
+        if (e.end.isAfter(now))
+          if (e.isAllDay ? null : _cognitiveInput(e) case final input
+              when input == null || !input.contributesToSchedule)
+            BreakdownRow(
+              e.title.isEmpty ? 'Untitled' : e.title,
+              input == null
+                  ? 'All-day event'
+                  : input.isDeclined
+                  ? 'You declined it'
+                  : input.showsAsFree
+                  ? 'Marked Free in your calendar · tap to count it'
+                  : 'Not counted',
+              leftOut: true,
+              item: input == null
+                  ? null
+                  : (
+                      event: input,
+                      score: CalendarCognitiveLoadService.scoreLocally(input),
+                      done: false,
+                      open: false,
+                    ),
+            ),
+    ];
+    final fit = capacity == null
+        ? null
+        : switch (demandFit(result.total, capacity)) {
+            DemandFit.roomToSpare => 'room to spare',
+            DemandFit.full => 'a full day',
+            DemandFit.over => 'more than you\'ve got',
+          };
+    showScoreBreakdown(
+      context,
+      kicker: evening ? 'Tomorrow\'s demand' : 'Demand still ahead',
+      history: const ScoreHistory(kind: ScoreHistoryKind.plannedVsActual),
+      empty: evening
+          ? 'Nothing planned for tomorrow yet.'
+          : 'Nothing left on your plan today.',
+      score: result.total.round(),
+      words: words,
+      summary: fit == null
+          ? 'Capacity isn\'t in yet'
+          : words != null
+          ? 'Against ${evening ? 'your usual' : 'your'} Capacity · $fit'
+          : 'Against ${evening ? 'your usual' : 'your'} Capacity of $capacity · $fit',
+      sections: [
+        (heading: null, rows: result.rows),
+        if (leftOut.isNotEmpty) (heading: 'Not counted', rows: leftOut),
+      ],
+      footer:
+          'Each day has two bars. Grey is the Demand that was planned for '
+          'that day. Next to it is the Effort the day actually took: purple '
+          'when it stayed near the plan, orange when it ran more than a '
+          'quarter over.',
+    );
+  }
 
   /// Today's Demand as [buildDayEffort] prices it, for trying fixes.
   double _demandToday(
@@ -1829,6 +2481,37 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Swiped away: "Plan my day" hidden for today, for these [untimed]
+  /// priorities, with Undo.
+  Future<void> _hidePlanMyDay(List<DailyPriority> untimed) async {
+    final day = localDayKey(DateTime.now());
+    final ids = {for (final p in untimed) p.reference.path};
+    setState(() {
+      _planHiddenDay = day;
+      _planHiddenIds = ids;
+    });
+    Future<void> save(Object value) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('day_fixes')
+            .doc(day)
+            .set({'planHidden': value}, SetOptions(merge: true));
+      } catch (_) {
+        // Still hidden (or shown) for this session.
+      }
+    }
+
+    unawaited(save(ids.toList()));
+    if (await _showUndo('Plan my day hidden until tomorrow')) {
+      if (mounted) setState(() => _planHiddenDay = null);
+      await save(FieldValue.delete());
+    }
+  }
+
   /// The X on the evening card: hidden until morning, when tomorrow's own
   /// card takes over.
   Future<void> _hideEveningFixes() async {
@@ -1887,6 +2570,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 (day: date, data: doc.data()),
         ];
         if (todays?['hidden'] == true) _fixesHiddenDay = day;
+        if (todays?['planHidden'] case final List ids) {
+          _planHiddenDay = day;
+          _planHiddenIds = {...ids.whereType<String>()};
+        }
         if (tomorrows?['eveningHidden'] == true) _eveningFixesHiddenDay = day;
         for (final (key, data) in [(day, todays), (tomorrow, tomorrows)]) {
           for (final kind in ((data?['kinds'] as Map?) ?? const {}).keys) {
@@ -2037,6 +2724,89 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Today's plan for [untimed] priorities (plan_my_day.dart).
+  DayPlan _planFor(List<DailyPriority> untimed, DateTime now) {
+    final today = DateUtils.dateOnly(now);
+    return planMyDay(
+      now: now,
+      wrapUp: today.add(Duration(minutes: _wrapUpMinutes)),
+      items: _effortItems(today, [
+        for (final e in _events)
+          if (!e.isAllDay) e,
+      ], _prioritySnapshot.value.data ?? const []),
+      tasks: [
+        for (final p in untimed)
+          (
+            id: p.reference.path,
+            title: p.title,
+            minutes: switch ((p.planning['minutes'] as num?)?.toInt()) {
+              final minutes? when minutes > 0 => minutes,
+              _ => 30,
+            },
+            effort: p.planning['effort'] as String?,
+          ),
+      ],
+      forecast: _energyForecast(today),
+    );
+  }
+
+  /// Plan my day: times for [untimed] priorities around today's events and
+  /// energy (plan_my_day.dart), shown to keep, retime or skip. Times stay in
+  /// Vivordo, like a time set by hand; what doesn't fit can go to tomorrow.
+  Future<void> _planMyDay(List<DailyPriority> untimed, DayPlan plan) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final byId = {for (final p in untimed) p.reference.path: p};
+    final choice = await showPlanMyDaySheet(context, plan: plan);
+    if (choice == null || !mounted) return;
+    final tomorrow = today.add(const Duration(days: 1));
+    Future<void> place(DailyPriority p, DateTime date, DateTime? start) =>
+        DailyPriorityService.editPriority(
+          p,
+          title: p.title,
+          date: date,
+          scheduledAt: start,
+          completed: p.completed,
+          reminderMinutes: p.reminderMinutes,
+          reminderTimeMinutes: p.reminderTimeMinutes,
+        );
+    final moves = [
+      for (final slot in choice.slots)
+        if (byId[slot.task.id] case final p?)
+          (p: p, date: today, start: slot.start),
+      for (final task in choice.tomorrow)
+        if (byId[task.id] case final p?) (p: p, date: tomorrow, start: null),
+    ];
+    if (moves.isEmpty) return;
+    try {
+      for (final m in moves) {
+        await place(m.p, m.date, m.start);
+      }
+    } catch (_) {
+      _showMessage("Couldn't set the times.", error: true);
+      return;
+    }
+    final set = choice.slots.length;
+    final moved = choice.tomorrow.length;
+    final undo = await _showUndo(
+      [
+        if (set > 0) set == 1 ? '1 time set' : '$set times set',
+        if (moved > 0) '$moved moved to tomorrow',
+      ].join(' · '),
+    );
+    if (!undo) return;
+    try {
+      for (final m in moves) {
+        // Back to its own day and time (an overdue one to its old day).
+        final current = await _priorityOn(m.date, m.p.id);
+        if (current != null) {
+          await place(current, m.p.date ?? today, m.p.sourceStart);
+        }
+      }
+    } catch (_) {
+      _showMessage("Couldn't undo the plan.", error: true);
+    }
+  }
+
   /// A priority to another day, keeping its time of day if it has one.
   Future<void> _movePriority(
     DailyPriority p,
@@ -2155,7 +2925,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           Row(
             children: [
               const Icon(
-                Icons.warning_amber_rounded,
+                CupertinoIcons.exclamationmark_triangle,
                 color: MyDayScreen.purple,
                 size: 17,
               ),
@@ -2205,13 +2975,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     List<_CalendarEvent> timedEvents,
     BackToBackEventBlock? watchItem,
   ) {
-    if (_isLoading && _calendarLoadedAt == null) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
+    final colors = context.vivordoColors;
+    if (_isLoading && _calendarLoadedAt == null && !_eventsFromSnapshot) {
+      return Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: colors.border,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Checking your calendar',
+              style: TextStyle(
+                color: colors.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       );
     }
-    final colors = context.vivordoColors;
     final now = DateTime.now();
     final current = timedEvents
         .where((e) => !e.start.isAfter(now) && e.end.isAfter(now))
@@ -2380,11 +3170,37 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final open = priorities.where((p) => !p.completed).toList();
       final done = priorities.where((p) => p.completed).toList();
       final hidden = open.length - _shownPriorities;
+      // Plan my day: open priorities with no time today (overdue ones
+      // included), while there's still day before the wrap-up time.
+      final now = DateTime.now();
+      final untimed = [
+        for (final p in open)
+          if (!p.habit &&
+              !p.isAllDay &&
+              (p.sourceStart == null ||
+                  !DateUtils.isSameDay(p.sourceStart, now)))
+            p,
+      ];
+      // Only when at least one of them fits today.
+      final plan =
+          untimed.isEmpty ||
+              !now.isBefore(
+                DateUtils.dateOnly(now).add(Duration(minutes: _wrapUpMinutes)),
+              )
+          ? null
+          : _planFor(untimed, now);
+      final hiddenToday =
+          _planHiddenDay == localDayKey(now) &&
+          untimed.every((p) => _planHiddenIds.contains(p.reference.path));
+      final canPlan = plan != null && plan.placed.isNotEmpty && !hiddenToday;
       Widget row(DailyPriority priority) => _PriorityRow(
         key: ValueKey(priority.reference.path),
         priority: priority,
         onToggle: () => _togglePriority(priority),
         onDelete: () => _deletePriority(priority),
+        onDeleteAll: priority.templateId == null
+            ? null
+            : () => _deleteRepeats(priority.templateId!),
         onEdit: () => _editPriority(priority),
       );
       const divider = Divider(height: 1, indent: 54, endIndent: 16);
@@ -2394,15 +3210,24 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           !snapshot.hasData) {
         body = const SizedBox(
           height: 72,
-          child: Center(child: CircularProgressIndicator()),
+          child: Center(child: CupertinoActivityIndicator()),
         );
       } else if (snapshot.hasError) {
         body = Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            'Could not load today’s priorities',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: colors.textSecondary),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+          child: Column(
+            children: [
+              Text(
+                'Could not load today’s priorities',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colors.textSecondary),
+              ),
+              // Reconnects the priority listeners.
+              TextButton(
+                onPressed: _connectPriorities,
+                child: const Text('Try again'),
+              ),
+            ],
           ),
         );
       } else {
@@ -2414,15 +3239,33 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ],
             if (hidden > 0) ...[
               _ListAction(
-                icon: Icons.more_horiz_rounded,
+                icon: CupertinoIcons.ellipsis,
                 label: '$hidden more',
                 muted: true,
                 onTap: _openAllPriorities,
               ),
               const Divider(height: 1),
             ],
+            if (canPlan) ...[
+              // Swipe left to hide it for today.
+              SwipeToDelete(
+                actionLabel: 'Hide',
+                actionIcon: CupertinoIcons.eye_slash,
+                actionColor: const Color(0xFF8E8E93),
+                confirmTitle: null,
+                onDelete: () => _hidePlanMyDay(untimed),
+                child: _ListAction(
+                  icon: CupertinoIcons.calendar_badge_plus,
+                  label: 'Plan my day · ${untimed.length} without a time',
+                  // Planned again from the moment it's opened.
+                  onTap: () =>
+                      _planMyDay(untimed, _planFor(untimed, DateTime.now())),
+                ),
+              ),
+              const Divider(height: 1),
+            ],
             _ListAction(
-              icon: Icons.add_rounded,
+              icon: CupertinoIcons.add,
               label: 'Add a priority',
               onTap: _addManualPriority,
             ),
@@ -2430,8 +3273,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               const Divider(height: 1),
               _ListAction(
                 icon: _showCompleted
-                    ? Icons.expand_more_rounded
-                    : Icons.chevron_right_rounded,
+                    ? CupertinoIcons.chevron_down
+                    : CupertinoIcons.chevron_right,
                 label: '${done.length} completed',
                 muted: true,
                 onTap: () => setState(() => _showCompleted = !_showCompleted),
@@ -2448,7 +3291,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         children: [
           Row(
             children: [
-              const Expanded(child: _SectionLabel('TODAY’S PLAN')),
+              const Expanded(child: _SectionLabel('Today’s plan')),
               TextButton(
                 onPressed: _openAllPriorities,
                 child: const Text('View all'),
@@ -2468,7 +3311,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.fromLTRB(18, 12, 16, 2),
                   child: Row(
                     children: [
-                      const Expanded(child: _SubLabel('PRIORITIES')),
+                      const Expanded(child: _SubLabel('Priorities')),
                       if (priorities.isNotEmpty)
                         Text(
                           '${done.length} of ${priorities.length}',
@@ -2506,7 +3349,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const _SubLabel('HABITS'),
+                  const _SubLabel('Habits'),
                   Text(
                     '$done of ${habits.length}',
                     style: TextStyle(
@@ -2572,6 +3415,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Stops a repeating priority, removing its copies from today on.
+  Future<void> _deleteRepeats(String templateId) async {
+    try {
+      await DailyPriorityService.deleteSchedule(templateId);
+    } catch (error) {
+      debugPrint('Delete repeating priority failed: $error');
+      _showMessage("Couldn't delete the priority. Try again.", error: true);
+    }
+  }
+
   Future<void> _editPriority(
     DailyPriority priority, {
     BuildContext? sheetContext,
@@ -2582,11 +3435,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
     if (result == null || !mounted) return;
     try {
+      final templateId = priority.templateId;
       if (result.deleteRequested) {
-        await DailyPriorityService.delete(priority);
+        await (result.deleteAll && templateId != null
+            ? DailyPriorityService.deleteSchedule(templateId)
+            : DailyPriorityService.delete(priority));
         return;
       }
-      final templateId = priority.templateId;
       if (result.habit && templateId != null) {
         // Made a habit: that changes the whole schedule, not this day.
         await DailyPriorityService.updateSchedule(
@@ -2741,11 +3596,17 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ]),
     builder: (context, _) {
       final snapshot = _prioritySnapshot.value;
-      if (_isLoading && _calendarLoadedAt == null) {
-        return const _SectionCard(
+      if (_isLoading && _calendarLoadedAt == null && !_eventsFromSnapshot) {
+        return _SectionCard(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Loading today’s plan',
+              style: TextStyle(
+                color: context.vivordoColors.textSecondary,
+                fontSize: 15,
+              ),
+            ),
           ),
         );
       }
@@ -2891,10 +3752,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   day: DateUtils.dateOnly(DateTime.now()),
                 ),
           footer: reaction != null
-              ? BodyReactionChip(
-                  reaction: reaction,
-                  onTap: () => _showReaction(event!, reaction),
-                )
+              ? BodyReactionChip(reaction: reaction)
               : pattern != null
               ? MeetingPatternTag(
                   pattern: pattern,
@@ -2942,8 +3800,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                   if (earlier.isNotEmpty)
                     _ListAction(
                       icon: _showEarlier
-                          ? Icons.expand_more_rounded
-                          : Icons.chevron_right_rounded,
+                          ? CupertinoIcons.chevron_down
+                          : CupertinoIcons.chevron_right,
                       label:
                           '${earlier.length} earlier ${onlyEvents ? (earlier.length == 1 ? 'event' : 'events') : (earlier.length == 1 ? 'item' : 'items')}',
                       muted: true,
@@ -3062,9 +3920,8 @@ class _SubLabel extends StatelessWidget {
   Widget build(BuildContext context) => Text(
     text,
     style: TextStyle(
-      fontSize: 11,
+      fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.2,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -3079,7 +3936,6 @@ class _SectionLabel extends StatelessWidget {
     style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.3,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -3118,12 +3974,16 @@ class _PriorityRow extends StatelessWidget {
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.onDeleteAll,
     this.onEdit,
   });
 
   final DailyPriority priority;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
+
+  /// Stops a repeating priority; null for one that doesn't repeat.
+  final Future<void> Function()? onDeleteAll;
   final VoidCallback? onEdit;
 
   String? get _timeLabel {
@@ -3144,465 +4004,124 @@ class _PriorityRow extends StatelessWidget {
     final (pill, pillColor) = overdue != null
         ? (overdueLabel(overdue, today), const Color(0xFFE5484D))
         : (_timeLabel, MyDayScreen.purple);
+    final pillBadge = pill == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: pillColor.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              pill,
+              style: TextStyle(
+                color: pillColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+    final stacked = MediaQuery.textScalerOf(context).scale(15) > 20;
     return SwipeToDelete(
       onTap: onEdit,
       onDelete: onDelete,
+      onDeleteAll: onDeleteAll,
       confirmTitle: 'Delete priority?',
       confirmMessage: priorityDeleteMessage(
         priority.title,
         manual: priority.source == 'manual',
       ),
+      // The circle's 44 pt hit area takes 8 pt from the row's padding, and
+      // the title and pill pad back what it took, so nothing moves.
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.fromLTRB(6, 3, 14, 3),
         child: Row(
           children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
+            Semantics(
+              container: true,
+              button: true,
+              checked: priority.completed,
+              label: priority.completed ? 'Mark not complete' : 'Mark complete',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
                 onTap: onToggle,
-                customBorder: const CircleBorder(),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: priority.completed
-                        ? const Color(0xFF54C75B)
-                        : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: priority.completed
-                          ? const Color(0xFF54C75B)
-                          : MyDayScreen.muted,
-                      width: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: onToggle,
+                      customBorder: const CircleBorder(),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: priority.completed
+                              ? const Color(0xFF54C75B)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: priority.completed
+                                ? const Color(0xFF54C75B)
+                                : MyDayScreen.muted,
+                            width: 2,
+                          ),
+                        ),
+                        child: priority.completed
+                            ? const Icon(
+                                CupertinoIcons.checkmark,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
+                      ),
                     ),
                   ),
-                  child: priority.completed
-                      ? const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                priority.title,
-                style: TextStyle(
-                  color: priority.completed
-                      ? colors.textSecondary
-                      : colors.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  decoration: priority.completed
-                      ? TextDecoration.lineThrough
-                      : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      priority.title,
+                      style: TextStyle(
+                        color: priority.completed
+                            ? colors.textSecondary
+                            : colors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        decoration: priority.completed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                    // At large text the pill goes under the title, so the
+                    // title keeps the row's width.
+                    if (pillBadge != null && stacked) ...[
+                      const SizedBox(height: 4),
+                      pillBadge,
+                    ],
+                  ],
                 ),
               ),
             ),
-            if (pill != null) ...[
+            if (pillBadge != null && !stacked) ...[
               const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: pillColor.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text(
-                  pill,
-                  style: TextStyle(
-                    color: pillColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: pillBadge,
               ),
             ],
           ],
         ),
       ),
-    );
-  }
-}
-
-enum _EventSummaryAction { edit, delete }
-
-class _EventSummarySheet extends StatelessWidget {
-  const _EventSummarySheet({
-    required this.event,
-    this.reaction,
-    required this.onReaction,
-  });
-
-  final _CalendarEvent event;
-  final BodyReaction? reaction;
-  final void Function(_CalendarEvent, BodyReaction) onReaction;
-
-  (String, Color) get _status {
-    final now = DateTime.now();
-    if (!now.isBefore(event.end)) {
-      return ('COMPLETED', const Color(0xFF20A968));
-    }
-    if (!now.isBefore(event.start)) {
-      return ('IN PROGRESS', const Color(0xFFFF9F0A));
-    }
-    return ('UPCOMING', MyDayScreen.purple);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    final status = _status;
-    final time = event.isAllDay
-        ? 'All day'
-        : '${DateFormat('h:mm a').format(event.start)} – ${DateFormat('h:mm a').format(event.end)}';
-
-    return FractionallySizedBox(
-      heightFactor: .9,
-      child: Material(
-        color: colors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 48,
-              height: 5,
-              decoration: BoxDecoration(
-                color: colors.border,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-              child: Row(
-                children: [
-                  const SizedBox(width: 40),
-                  Expanded(
-                    child: Text(
-                      'Event Summary',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: colors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: 'Close',
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colors.cardMuted,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: colors.border),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              color: MyDayScreen.purple.withValues(alpha: .14),
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: const Icon(
-                              Icons.calendar_month_rounded,
-                              color: MyDayScreen.purple,
-                              size: 36,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  event.title,
-                                  style: TextStyle(
-                                    color: colors.textPrimary,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: status.$2.withValues(alpha: .16),
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                  child: Text(
-                                    status.$1,
-                                    style: TextStyle(
-                                      color: status.$2,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: .8,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const _SummarySectionLabel('DETAILS'),
-                    const SizedBox(height: 10),
-                    _SummarySurface(
-                      children: [
-                        _SummaryDetailRow(
-                          icon: Icons.calendar_today_rounded,
-                          label: 'Date',
-                          value: DateFormat('MMMM d, y').format(event.start),
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.schedule_rounded,
-                          label: 'Time',
-                          value: time,
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.hourglass_bottom_rounded,
-                          label: 'Duration',
-                          value: event.durationLabel,
-                        ),
-                        _SummaryDetailRow(
-                          icon: Icons.repeat_rounded,
-                          label: 'Repeats',
-                          value: event.isRecurring
-                              ? 'Recurring event'
-                              : 'Does not repeat',
-                          showDivider: false,
-                        ),
-                      ],
-                    ),
-                    if (reaction case final reaction?) ...[
-                      const SizedBox(height: 24),
-                      const _SummarySectionLabel('HOW YOUR BODY REACTED'),
-                      const SizedBox(height: 10),
-                      _SummarySurface(
-                        children: [
-                          _SummaryDetailRow(
-                            icon: Icons.monitor_heart_outlined,
-                            label: 'Heart rate',
-                            value:
-                                '${switch (reaction.level) {
-                                  BodyReactionLevel.calm => 'Calm',
-                                  BodyReactionLevel.steady => 'Steady',
-                                  BodyReactionLevel.up => 'Up',
-                                  BodyReactionLevel.high => 'High',
-                                }} · ${reaction.median.round()} bpm avg',
-                            showDivider: false,
-                            onTap: () => onReaction(event, reaction),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    const _SummarySectionLabel('CALENDAR'),
-                    const SizedBox(height: 10),
-                    _SummarySurface(
-                      children: [
-                        _SummaryDetailRow(
-                          icon: Icons.calendar_month_rounded,
-                          label: 'Calendar',
-                          value: CalendarService.isOutlook(event.event)
-                              ? 'Outlook'
-                              : 'Google Calendar',
-                          valueDotColor: event.color,
-                          showDivider: false,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: FilledButton(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.edit),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: MyDayScreen.purple,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: const Text(
-                          'Edit Event',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () =>
-                            Navigator.pop(context, _EventSummaryAction.delete),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFFF453A),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        icon: const Icon(Icons.delete_outline_rounded),
-                        label: const Text('Delete'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummarySectionLabel extends StatelessWidget {
-  const _SummarySectionLabel(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    label,
-    style: const TextStyle(
-      color: MyDayScreen.purple,
-      fontSize: 12,
-      fontWeight: FontWeight.w900,
-      letterSpacing: 1.2,
-    ),
-  );
-}
-
-class _SummarySurface extends StatelessWidget {
-  const _SummarySurface({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    decoration: BoxDecoration(
-      color: context.vivordoColors.cardMuted,
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: context.vivordoColors.border),
-    ),
-    child: Column(children: children),
-  );
-}
-
-class _SummaryDetailRow extends StatelessWidget {
-  const _SummaryDetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueDotColor,
-    this.showDivider = true,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueDotColor;
-  final bool showDivider;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.vivordoColors;
-    return Column(
-      children: [
-        InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Row(
-              children: [
-                Icon(icon, color: MyDayScreen.purple, size: 23),
-                const SizedBox(width: 14),
-                SizedBox(
-                  width: 92,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: TextStyle(color: colors.textPrimary, fontSize: 15),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (valueDotColor != null) ...[
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: valueDotColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Flexible(
-                        child: Text(
-                          value,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.end,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (onTap != null) ...[
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: colors.textSecondary,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-        if (showDivider) Divider(height: 1, color: colors.border),
-      ],
     );
   }
 }
@@ -3659,7 +4178,7 @@ class _CalendarEvent {
       attendeeCount: event.attendees?.length ?? 0,
       isPriorityLinked:
           event.extendedProperties?.private?['vivordoPriority'] == 'true',
-      icon: Icons.event_rounded,
+      icon: CupertinoIcons.calendar,
       color: CalendarService.isOutlook(event)
           ? MyDayScreen.purple
           : const Color(0xFF3978F6),

@@ -1,13 +1,17 @@
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
 import '../src/utils/day_agenda.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/plan_slot_sheet.dart';
@@ -156,6 +160,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             ? 'Outlook'
             : 'Google Calendar',
         canEdit: true,
+        typeEvent: CalendarCognitiveEvent.fromCalendar(event.event),
+        seriesKey: seriesKeyFor(event.event.recurringEventId),
       ),
     );
     if (!mounted) return;
@@ -309,7 +315,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Back',
                     icon: Icon(
-                      Icons.chevron_left_rounded,
+                      CupertinoIcons.chevron_left,
                       size: 30,
                       color: colors.textPrimary,
                     ),
@@ -324,7 +330,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                     onPressed: _loading ? null : _addForSelectedDay,
                     tooltip: 'Add',
                     icon: const Icon(
-                      Icons.add_rounded,
+                      CupertinoIcons.add,
                       color: VivordoTheme.brand,
                     ),
                   ),
@@ -358,7 +364,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                       tooltip: 'Previous month',
                       onPressed: () => _changeMonth(-1),
                       icon: Icon(
-                        Icons.chevron_left_rounded,
+                        CupertinoIcons.chevron_left,
                         color: colors.textSecondary,
                       ),
                     ),
@@ -366,7 +372,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                       tooltip: 'Next month',
                       onPressed: () => _changeMonth(1),
                       icon: Icon(
-                        Icons.chevron_right_rounded,
+                        CupertinoIcons.chevron_right,
                         color: colors.textSecondary,
                       ),
                     ),
@@ -379,7 +385,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.cloud_off_rounded,
+                        CupertinoIcons.cloud,
                         size: 16,
                         color: colors.textSecondary,
                       ),
@@ -543,7 +549,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     if (_loading && events.isEmpty) {
       body = const Padding(
         padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: CupertinoActivityIndicator()),
       );
     } else if (earlier.isEmpty && agenda.isEmpty) {
       body = Padding(

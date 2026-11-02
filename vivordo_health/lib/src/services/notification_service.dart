@@ -18,6 +18,7 @@ import 'package:vivordo_health/main.dart'
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/fitness_goal_notifications.dart';
+import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/utils/notification_navigation.dart';
 import 'package:vivordo_health/firebase_options.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
@@ -293,7 +294,9 @@ class NotificationService {
             unawaited(_evaluateFitnessGoals(uid, snapshot.docs.first));
           },
           onError: (Object error) {
-            debugPrint('NotificationService: Fitness goal listener failed: $error');
+            debugPrint(
+              'NotificationService: Fitness goal listener failed: $error',
+            );
           },
         );
   }
@@ -373,7 +376,9 @@ class NotificationService {
         await _showFitnessGoalNotification(type, goals);
       }
     } catch (error) {
-      debugPrint('NotificationService: Could not evaluate fitness goals: $error');
+      debugPrint(
+        'NotificationService: Could not evaluate fitness goals: $error',
+      );
     } finally {
       _evaluatingFitnessGoals = false;
       final queued = _queuedFitnessDocument;
@@ -444,6 +449,14 @@ class NotificationService {
         settings.authorizationStatus == AuthorizationStatus.provisional;
   }
 
+  /// Whether notifications are turned off for Vivordo in iOS Settings
+  /// (asked and refused, or switched off later). Never prompts.
+  Future<bool> turnedOffInSettings() async {
+    if (kIsWeb || !Platform.isIOS) return false;
+    final settings = await _firebaseMessaging.getNotificationSettings();
+    return settings.authorizationStatus == AuthorizationStatus.denied;
+  }
+
   /// Initialize the notification service
   /// Should be called once in main() after Firebase.initializeApp()
   Future<void> initialize() async {
@@ -502,7 +515,9 @@ class NotificationService {
         try {
           await _persistFcmToken(newToken);
         } catch (error) {
-          debugPrint('NotificationService: Could not store refreshed token: $error');
+          debugPrint(
+            'NotificationService: Could not store refreshed token: $error',
+          );
         }
       });
 
@@ -540,7 +555,9 @@ class NotificationService {
           await _persistFcmToken(token);
         }
       } catch (e) {
-        debugPrint('NotificationService: Warning - Could not get FCM token: $e');
+        debugPrint(
+          'NotificationService: Warning - Could not get FCM token: $e',
+        );
       }
 
       // Handle foreground messages
@@ -585,7 +602,9 @@ class NotificationService {
 
   /// Handle notification tap
   void _handleNotificationTap(RemoteMessage message) {
-    debugPrint('NotificationService: Notification tapped, data: ${message.data}');
+    debugPrint(
+      'NotificationService: Notification tapped, data: ${message.data}',
+    );
     final screen = message.data['screen'] as String?;
     AnalyticsService().logNotificationTap(
       notificationType: message.data['type'] as String? ?? 'remote',
@@ -652,21 +671,25 @@ class NotificationService {
     }
     if (navigator == null) return;
 
-    final routes = notificationRouteStack(screen, type: type);
-    navigator.pushNamedAndRemoveUntil(routes.first, (_) => false);
-    if (routes.length == 1) return;
-
-    // Keep the main app beneath notification destinations so the AppBar back
-    // button and iOS swipe-back gesture always have somewhere useful to go.
-    await WidgetsBinding.instance.endOfFrame;
-    navigatorKey.currentState?.pushNamed(routes.last);
+    // Switch the running app's tab rather than rebuilding it, which
+    // replayed the launch splash and dropped the account gates.
+    // A screen to push opens inside the tab, under the tab bar, so back
+    // and the iOS swipe-back return to the tab.
+    final destination = notificationDestination(screen, type: type);
+    MainNavigationScreen.openTab(
+      navigator,
+      destination.tab,
+      route: destination.push,
+    );
   }
 
   Future<void> _persistCurrentFcmToken() async {
     try {
       await _persistFcmToken(await _firebaseMessaging.getToken());
     } catch (error) {
-      debugPrint('NotificationService: Could not refresh stored FCM token: $error');
+      debugPrint(
+        'NotificationService: Could not refresh stored FCM token: $error',
+      );
     }
   }
 
@@ -704,7 +727,9 @@ class NotificationService {
           .doc(tokenId)
           .delete();
     } catch (error) {
-      debugPrint('NotificationService: Could not remove signed-out token: $error');
+      debugPrint(
+        'NotificationService: Could not remove signed-out token: $error',
+      );
     }
   }
 
@@ -775,7 +800,9 @@ class NotificationService {
     int notificationId = _dailyScanReminderBaseId,
   }) async {
     if (kIsWeb) {
-      debugPrint('NotificationService: Cannot schedule daily scan reminder on web');
+      debugPrint(
+        'NotificationService: Cannot schedule daily scan reminder on web',
+      );
       return;
     }
     if (!_dailyScanRemindersEnabled) return;

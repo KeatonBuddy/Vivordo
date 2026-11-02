@@ -52,6 +52,33 @@ void main() {
     expect(f.phaseAt(at(10)), EnergyPhase.peak);
   });
 
+  test("tonight's bedtime comes from nights like tonight", () {
+    // Work nights 11 PM–7 AM, weekend nights 3–11 AM, two weeks to Sunday
+    // Oct 11.
+    final mixed = [
+      for (var i = 0; i < 14; i++)
+        () {
+          final day = DateTime(2026, 10, 11 - i);
+          final end = day.add(
+            Duration(hours: day.weekday >= DateTime.saturday ? 11 : 7),
+          );
+          return (
+            start: end.subtract(const Duration(hours: 8)),
+            end: end,
+            asleepHours: null,
+          );
+        }(),
+    ];
+    bedBy(int d) => forecastEnergy(
+      day: DateTime(2026, 10, d),
+      nights: mixed,
+      sleepNeedHours: 8,
+    ).usualBedtime;
+    // Sunday night is a work night; Friday's isn't.
+    expect(bedBy(11), DateTime(2026, 10, 11, 23));
+    expect(bedBy(9), DateTime(2026, 10, 10, 3));
+  });
+
   test('a short night lowers the peak and deepens the dip', () {
     final rested = forecastEnergy(
       day: day,
@@ -148,6 +175,114 @@ void main() {
       sleepNeedHours: 8,
     );
     expect(mild.sleepDebtHours, 3.5);
+  });
+
+  test('a long night pays back half its extra, never below zero', () {
+    // Six nights an hour short, then 10 h asleep last night: 6 h − 1 h.
+    final f = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(21, 0, -1), end: at(7), asleepHours: null),
+        ...nights(hours: 7).skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(f.sleepDebtHours, closeTo(5, 0.01));
+
+    // Rested going in: the extra doesn't bank.
+    final rested = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(21, 0, -1), end: at(7), asleepHours: null),
+        ...nights().skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(rested.sleepDebtHours, 0);
+  });
+
+  test('a catch-up night leaves you groggier; a long rested one does not', () {
+    Duration groggy(EnergyForecast f) =>
+        window(f, EnergyPhase.groggy).end.difference(f.wake);
+    final usual = forecastEnergy(day: day, nights: nights(), sleepNeedHours: 8);
+    final longRested = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(21, 0, -1), end: at(7), asleepHours: null),
+        ...nights().skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(groggy(longRested), groggy(usual));
+    expect(longRested.heavyGrogginess, isNull);
+
+    final catchUp = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(21, 0, -1), end: at(7), asleepHours: null),
+        ...nights(hours: 6).skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(catchUp.heavyGrogginess, HeavyGrogginess.sleepDebt);
+    expect(groggy(catchUp) - groggy(usual), greaterThan(Duration.zero));
+    expect(catchUp.at(at(7, 30))!, lessThan(usual.at(at(7, 30))!));
+
+    // Even a heavy morning rises from waking instead of sitting on zero.
+    final start = catchUp.curve.take(5).map((p) => p.$2).toList();
+    expect(start.first, greaterThan(0));
+    for (var i = 1; i < start.length; i++) {
+      expect(start[i], greaterThan(start[i - 1]));
+    }
+  });
+
+  test('waking well before your usual time is groggier', () {
+    final usual = forecastEnergy(day: day, nights: nights(), sleepNeedHours: 8);
+    final early = forecastEnergy(
+      day: day,
+      nights: [
+        (start: at(21, 0, -1), end: at(5), asleepHours: null),
+        ...nights().skip(1),
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(early.heavyGrogginess, HeavyGrogginess.earlyWake);
+    expect(
+      window(early, EnergyPhase.groggy).end.difference(early.wake),
+      greaterThan(window(usual, EnergyPhase.groggy).end.difference(usual.wake)),
+    );
+  });
+
+  test('a weekend lie-in makes Monday run later than Friday', () {
+    // Work nights 11 PM–7 AM, weekend nights 2–10 AM, two weeks to Monday
+    // Oct 12.
+    final weeks = [
+      for (var i = 0; i < 14; i++)
+        () {
+          final d = DateTime(2026, 10, 12 - i);
+          final free = d.weekday >= DateTime.saturday;
+          final end = d.add(Duration(hours: free ? 10 : 7));
+          return (
+            start: end.subtract(const Duration(hours: 8)),
+            end: end,
+            asleepHours: null,
+          );
+        }(),
+    ];
+    Duration peakAfterMidnight(int d) {
+      final f = forecastEnergy(
+        day: DateTime(2026, 10, d),
+        nights: weeks,
+        sleepNeedHours: 8,
+      );
+      return window(
+        f,
+        EnergyPhase.peak,
+      ).start.difference(DateTime(2026, 10, d));
+    }
+
+    final friday = peakAfterMidnight(9), monday = peakAfterMidnight(12);
+    expect((monday - friday).inMinutes, greaterThanOrEqualTo(15));
   });
 
   test('a night after today is ignored', () {

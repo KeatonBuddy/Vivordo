@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -9,6 +10,14 @@ const _amber = Color(0xFFEF9F27);
 const _coral = Color(0xFFE24B4A);
 const _purple = Color(0xFF7F77DD);
 
+/// [_levelColor] for text, dark enough to read in light mode.
+Color _levelTextColor(VivordoColors colors, String level) => switch (level) {
+  'warning' => colors.danger,
+  'watch' => colors.warning,
+  'steady' => colors.success,
+  _ => _purple,
+};
+
 Color _levelColor(String level) => switch (level) {
   'warning' => _coral,
   'watch' => _amber,
@@ -17,9 +26,9 @@ Color _levelColor(String level) => switch (level) {
 };
 
 String _levelLabel(String level) => switch (level) {
-  'warning' => 'BURNOUT CHECK · WARNING',
-  'watch' => 'BURNOUT CHECK · WORTH WATCHING',
-  _ => 'BURNOUT CHECK',
+  'warning' => 'Burnout check · warning',
+  'watch' => 'Burnout check · worth watching',
+  _ => 'Burnout check',
 };
 
 /// The nightly burnout check on My Day (docs/scores.md §6): a full card at
@@ -73,15 +82,16 @@ class BurnoutCard extends StatelessWidget {
                     child: Text(
                       _levelLabel(view.level),
                       style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: .8,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: alert ? color : colors.textSecondary,
+                        color: alert
+                            ? _levelTextColor(colors, view.level)
+                            : colors.textSecondary,
                       ),
                     ),
                   ),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    CupertinoIcons.chevron_right,
                     color: colors.textSecondary,
                     size: 20,
                   ),
@@ -170,7 +180,7 @@ class BurnoutCard extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
@@ -229,8 +239,7 @@ class _BurnoutDetails extends StatelessWidget {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 11,
-          letterSpacing: .8,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
           color: colors.textSecondary,
         ),
@@ -261,8 +270,7 @@ class _BurnoutDetails extends StatelessWidget {
               Text(
                 _levelLabel(view.level),
                 style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: .8,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: view.level == 'learning'
                       ? colors.textSecondary
@@ -337,8 +345,8 @@ class _BurnoutDetails extends StatelessWidget {
                 if (view.drivers.isNotEmpty) ...[
                   section(
                     view.level == 'warning'
-                        ? 'WHAT\'S DRIVING IT'
-                        : 'BEHIND IT',
+                        ? 'What\'s driving it'
+                        : 'Behind it',
                   ),
                   for (final driver in view.drivers)
                     Padding(
@@ -356,7 +364,7 @@ class _BurnoutDetails extends StatelessWidget {
                     ),
                   ),
                 if (view.suggestions.isNotEmpty) ...[
-                  section('SMALL THINGS THAT HELP'),
+                  section('Small things that help'),
                   for (final suggestion in view.suggestions)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -371,7 +379,7 @@ class _BurnoutDetails extends StatelessWidget {
                     Navigator.pop(context);
                     onTalk!();
                   },
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  icon: const Icon(CupertinoIcons.chat_bubble, size: 18),
                   label: const Text('Talk it through with Vivordo AI'),
                   style: FilledButton.styleFrom(
                     backgroundColor: _purple.withValues(alpha: .14),

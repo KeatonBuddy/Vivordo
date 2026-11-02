@@ -1,7 +1,11 @@
 import 'dart:async';
+import '../src/services/metrics_repository.dart';
+import '../src/utils/sleep_nights.dart' show patternNights, sleepRatings;
 import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:provider/provider.dart';
@@ -21,11 +25,13 @@ import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
 import 'physical_health_screen.dart';
-import '../src/services/daily_tags_service.dart';
+import '../widgets/daily_tags.dart' show tagLastNightSick;
 import '../src/utils/metrics_insights.dart';
 import '../src/utils/physical_health_view.dart';
+import '../widgets/building_ring_centre.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import '../src/utils/chart_text.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DashboardScreen
@@ -67,6 +73,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _scoresStream = scoresDailyStream(35);
   // The latest scores, for a listener that joins the broadcast stream late.
   Map<String, Map<String, dynamic>>? _scores;
+  // Sleep for the insights' sleep pattern: Home's window, so its listeners
+  // are shared rather than repeated.
+  final _sleepWindow = switch (FirebaseAuth.instance.currentUser?.uid) {
+    final uid? => MetricsRepository.instance.watchHomeHistory(
+      uid: uid,
+      now: DateTime.now(),
+    ),
+    null => const Stream<MetricWindow>.empty(),
+  };
   static const Color accentPurple = VivordoTheme.brand;
   static const Color greenColor = Color(0xFF34C759);
   static const Color textGrey = Color(0xFF8E8E93);
@@ -435,88 +450,126 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Weight's label and values follow Settings → Units.
+    context.select<ThemeController, Units>((c) => c.units);
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () => _refreshHealthMetricsFromHealth(showFeedback: true),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 26),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Metrics',
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w900,
-                              color: context.vivordoColors.textPrimary,
-                              letterSpacing: -1,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          VisibleStreamBuilder<
-                            QuerySnapshot<Map<String, dynamic>>
-                          >(
-                            stream: _allMetricsStream,
-                            builder: (context, snapshot) => Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 7,
-                              runSpacing: 4,
-                              children: [
-                                Text(
-                                  '${_lastManualHealthRefresh == null ? 'Synced automatically' : _manualRefreshLabel().replaceFirst('Updated', 'Synced')}${_hasVisibleWhoopData(snapshot.data) ? ' · Data includes' : ''}',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: context.vivordoColors.textSecondary,
-                                  ),
+      body: CollapsingTitle(
+        title: 'Metrics',
+        threshold: 48,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () =>
+                _refreshHealthMetricsFromHealth(showFeedback: true),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 26),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Large titles stop growing at 1.5x, as in iOS,
+                            // and shrink rather than break mid-word.
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Metrics',
+                                maxLines: 1,
+                                textScaler: MediaQuery.textScalerOf(
+                                  context,
+                                ).clamp(maxScaleFactor: 1.5),
+                                style: TextStyle(
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w900,
+                                  color: context.vivordoColors.textPrimary,
+                                  letterSpacing: -1,
                                 ),
-                                if (_hasVisibleWhoopData(snapshot.data))
-                                  const WhoopSourceBadge(compact: true),
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton.icon(
-                      key: widget.customizeKey,
-                      onPressed: _isLoadingMetricOrder
-                          ? null
-                          : _showLayoutEditor,
-                      icon: const Icon(Icons.tune_rounded, size: 18),
-                      label: const Text('Customize'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: accentPurple,
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                            const SizedBox(height: 2),
+                            VisibleStreamBuilder<
+                              QuerySnapshot<Map<String, dynamic>>
+                            >(
+                              stream: _allMetricsStream,
+                              builder: (context, snapshot) {
+                                final style = TextStyle(
+                                  fontSize: 15,
+                                  color: context.vivordoColors.textSecondary,
+                                );
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _lastManualHealthRefresh == null
+                                          ? 'Synced automatically'
+                                          : _manualRefreshLabel().replaceFirst(
+                                              'Updated',
+                                              'Synced',
+                                            ),
+                                      style: style,
+                                    ),
+                                    // Its own line, under the sync time.
+                                    if (_hasVisibleWhoopData(
+                                      snapshot.data,
+                                    )) ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Text('Data includes', style: style),
+                                          const SizedBox(width: 7),
+                                          const WhoopSourceBadge(compact: true),
+                                        ],
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-                VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _allMetricsStream,
-                  builder: (_, metricsSnap) => _buildMetricsOverview(
-                    metricsSnap.data,
-                    loading:
-                        metricsSnap.connectionState == ConnectionState.waiting,
+                      TextButton.icon(
+                        key: widget.customizeKey,
+                        onPressed: _isLoadingMetricOrder
+                            ? null
+                            : _showLayoutEditor,
+                        icon: const Icon(
+                          CupertinoIcons.slider_horizontal_3,
+                          size: 18,
+                        ),
+                        label: const Text('Customize'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: accentPurple,
+                          textStyle: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 28),
+                  VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _allMetricsStream,
+                    builder: (_, metricsSnap) => _buildMetricsOverview(
+                      metricsSnap.data,
+                      loading:
+                          metricsSnap.connectionState ==
+                          ConnectionState.waiting,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -532,7 +585,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(48),
-          child: CircularProgressIndicator(),
+          child: CupertinoActivityIndicator(),
         ),
       );
     }
@@ -564,21 +617,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
               if (_enabledKeyMetrics.isEmpty)
                 _buildNoKeyMetricsCard()
               else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final tileWidth = (constraints.maxWidth - 12) / 2;
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: _keyMetricOrder
-                          .where(_enabledKeyMetrics.contains)
-                          .map(
-                            (metric) => SizedBox(
-                              width: tileWidth,
-                              child: _buildKeyMetricFor(metric, snap),
+                Builder(
+                  builder: (context) {
+                    final tiles = [
+                      for (final metric in _keyMetricOrder.where(
+                        _enabledKeyMetrics.contains,
+                      ))
+                        _buildKeyMetricFor(metric, snap),
+                    ];
+                    // Rows of two; both tiles in a row take the taller one's
+                    // height, so each tile is only as tall as its text.
+                    return Column(
+                      children: [
+                        for (var i = 0; i < tiles.length; i += 2)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i + 2 < tiles.length ? 10 : 0,
                             ),
-                          )
-                          .toList(),
+                            child: IntrinsicHeight(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(child: tiles[i]),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: i + 1 < tiles.length
+                                        ? tiles[i + 1]
+                                        : const SizedBox.shrink(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -600,17 +671,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 stream: _scoresStream,
                 builder: (context, snapshot) {
                   final scores = snapshot.data ?? _scores;
-                  return Selector<ThemeController, bool>(
-                    selector: (_, c) => c.showScoreNumbers,
-                    builder: (context, showNumbers, _) => _buildInsightsCard(
-                      scores == null
-                          ? null
-                          : metricsInsights(
-                              scores,
-                              DateTime.now(),
-                              numbers: showNumbers,
+                  return VisibleStreamBuilder<MetricWindow>(
+                    stream: _sleepWindow,
+                    builder: (context, window) {
+                      final days = window.data?.days;
+                      return Selector<ThemeController, bool>(
+                        selector: (_, c) => c.showScoreNumbers,
+                        builder: (context, showNumbers, _) =>
+                            _buildInsightsCard(
+                              scores == null
+                                  ? null
+                                  : metricsInsights(
+                                      scores,
+                                      DateTime.now(),
+                                      numbers: showNumbers,
+                                      nights: days == null
+                                          ? null
+                                          : patternNights(days),
+                                      ratings: days == null
+                                          ? const {}
+                                          : sleepRatings(days),
+                                    ),
                             ),
-                    ),
+                      );
+                    },
                   );
                 },
               ),
@@ -647,7 +731,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           context,
         ).push(MaterialPageRoute(builder: (_) => const PhysicalHealthScreen())),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           child: Row(
             children: [
               Expanded(
@@ -655,28 +739,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'PHYSICAL HEALTH',
+                      'Physical health',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: .8,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 10,
                       runSpacing: 8,
                       children: [
-                        Text(
-                          score == null ? '--' : score.round().toString(),
-                          style: const TextStyle(
-                            fontSize: 46,
-                            height: 1,
-                            fontWeight: FontWeight.w900,
+                        // While building, the ring shows how far along.
+                        if (view?.building == null)
+                          Text(
+                            score == null ? '--' : score.round().toString(),
+                            style: const TextStyle(
+                              fontSize: 38,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
-                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
@@ -697,7 +782,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     if (view != null && view.score != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Text(
                         view.note,
                         style: TextStyle(
@@ -706,45 +791,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               : view.note.startsWith('↑')
                               ? greenColor
                               : context.vivordoColors.textSecondary,
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Text(
                       explanation,
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
-                        height: 1.35,
+                        fontSize: 13,
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               SizedBox(
-                width: 92,
-                height: 92,
+                width: 76,
+                height: 76,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     CircularProgressIndicator(
-                      value: score == null ? 0 : score / 100,
-                      strokeWidth: 10,
+                      value: score != null
+                          ? score / 100
+                          : view?.building == null
+                          ? 0
+                          : buildingProgress(view!.building!) / 100,
+                      strokeWidth: 8,
                       strokeCap: StrokeCap.round,
                       color: color,
                       backgroundColor: context.vivordoColors.cardMuted,
                     ),
-                    Container(
-                      width: 45,
-                      height: 45,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: color.withValues(alpha: .1),
+                    if (view?.building case final building?)
+                      BuildingRingCentre(building, width: 52)
+                    else
+                      Container(
+                        width: 45,
+                        height: 45,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withValues(alpha: .1),
+                        ),
+                        child: Icon(Icons.directions_run_rounded, color: color),
                       ),
-                      child: Icon(Icons.directions_run_rounded, color: color),
-                    ),
                   ],
                 ),
               ),
@@ -888,7 +981,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.tune_rounded, color: accentPurple),
+          const Icon(CupertinoIcons.slider_horizontal_3, color: accentPurple),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -909,19 +1002,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color color,
     VoidCallback? onTap,
   }) {
-    return Material(
-      color: context.vivordoColors.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: context.vivordoColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 160,
+    // Two columns: past this size the labels break mid-word.
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Material(
+        color: context.vivordoColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: context.vivordoColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          // As tall as its text; the row makes both tiles match.
           child: Padding(
-            padding: const EdgeInsets.all(15),
+            padding: const EdgeInsets.all(12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -945,28 +1040,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 14, height: 1.2),
                       ),
-                      const SizedBox(height: 5),
-                      SizedBox(
-                        height: 31,
-                        width: double.infinity,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              value,
-                              maxLines: 1,
-                              style: TextStyle(
-                                color: color,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          value,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 2),
                       Text(
                         detail,
                         maxLines: 2,
@@ -994,7 +1082,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final rows = insights.isEmpty
         ? [
             _insightRow(
-              icon: Icons.insights_rounded,
+              icon: CupertinoIcons.chart_bar_alt_fill,
               color: accentPurple,
               text:
                   'Insights appear after about a week of sleep and activity '
@@ -1005,10 +1093,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             for (final insight in insights)
               _insightRow(
                 icon: switch (insight.kind) {
-                  MetricsInsightKind.sleep => Icons.bedtime_rounded,
-                  MetricsInsightKind.energy => Icons.bolt_rounded,
-                  MetricsInsightKind.effort => Icons.event_note_rounded,
-                  MetricsInsightKind.afterHours => Icons.nights_stay_rounded,
+                  MetricsInsightKind.sleep => CupertinoIcons.moon_fill,
+                  MetricsInsightKind.energy => CupertinoIcons.bolt_fill,
+                  MetricsInsightKind.effort => CupertinoIcons.calendar,
+                  MetricsInsightKind.afterHours =>
+                    CupertinoIcons.moon_stars_fill,
                   MetricsInsightKind.physical => Icons.directions_run_rounded,
                 },
                 color: switch (insight.tone) {
@@ -1020,7 +1109,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 action: switch (insight.action) {
                   MetricsInsightAction.tagSick => (
                     label: 'Tag sick',
-                    onTap: _tagSick,
+                    onTap: () => tagLastNightSick(context),
                   ),
                   null => null,
                 },
@@ -1046,34 +1135,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
-  }
-
-  /// Tags last night sick (the energy forecast eases today for it).
-  Future<void> _tagSick() async {
-    final today = DateUtils.dateOnly(DateTime.now());
-    final night = DateTime(today.year, today.month, today.day - 1);
-    try {
-      await DailyTagsService.save(night, {
-        ...await DailyTagsService.load(night),
-        'sick',
-      });
-      if (mounted) {
-        showToast(
-          context,
-          'Tagged sick for last night. Go easy today.',
-          kind: ToastKind.success,
-        );
-      }
-    } catch (error) {
-      debugPrint('Tag sick failed: $error');
-      if (mounted) {
-        showToast(
-          context,
-          "Couldn't save the tag. Try again.",
-          kind: ToastKind.error,
-        );
-      }
-    }
   }
 
   Widget _insightRow({
@@ -1179,7 +1240,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'sleep':
         return 'Sleep (hours)';
       case 'weight':
-        return 'Weight (kg)';
+        return 'Weight (${context.read<ThemeController>().units.bodyWeightLabel})';
       case 'body_fat':
         return 'Body Fat (%)';
       case 'vo2max':
@@ -1356,7 +1417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Icon(
-                                        Icons.drag_indicator_rounded,
+                                        CupertinoIcons.line_horizontal_3,
                                         color:
                                             context.vivordoColors.textSecondary,
                                       ),
@@ -1450,7 +1511,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'sleep':
         return '${number(decimals: 1)}h';
       case 'weight':
-        return '${number(decimals: 1)} kg';
+        return context.read<ThemeController>().units.formatBodyWeight(value);
       case 'body_fat':
         return '${number(decimals: 1)}%';
       case 'vo2max':
@@ -1469,36 +1530,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'steps':
         return Icons.directions_walk_rounded;
       case 'active_calories':
-        return Icons.local_fire_department_rounded;
+        return CupertinoIcons.flame_fill;
       case 'exercise_time':
         return Icons.fitness_center_rounded;
       case 'heart_rate':
       case 'heart_rate_scan':
-        return Icons.favorite_rounded;
+        return CupertinoIcons.heart_fill;
       case 'resting_heart_rate':
-        return Icons.favorite_border_rounded;
+        return CupertinoIcons.heart;
       case 'hrv':
-        return Icons.show_chart_rounded;
+        return CupertinoIcons.graph_square;
       case 'blood_oxygen':
-        return Icons.air_rounded;
+        return CupertinoIcons.wind;
       case 'respiratory_rate':
-        return Icons.wind_power_rounded;
+        return CupertinoIcons.wind;
       case 'sleep':
-        return Icons.bedtime_rounded;
+        return CupertinoIcons.moon_fill;
       case 'weight':
         return Icons.monitor_weight_rounded;
       case 'body_fat':
-        return Icons.percent_rounded;
+        return CupertinoIcons.percent;
       case 'vo2max':
-        return Icons.speed_rounded;
+        return CupertinoIcons.speedometer;
       case 'stress':
-        return Icons.psychology_rounded;
+        return CupertinoIcons.lightbulb_fill;
       case 'mood':
-        return Icons.mood_rounded;
+        return CupertinoIcons.smiley;
       case 'wellness':
         return Icons.spa_rounded;
       default:
-        return Icons.monitor_heart_outlined;
+        return CupertinoIcons.waveform_path_ecg;
     }
   }
 
@@ -1514,7 +1575,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Column(
         children: [
           Icon(
-            Icons.bar_chart_rounded,
+            CupertinoIcons.chart_bar_fill,
             size: 48,
             color: context.vivordoColors.textSecondary,
           ),
@@ -1542,7 +1603,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     context,
                     MaterialPageRoute(builder: (_) => const SettingsScreen()),
                   ),
-                  icon: const Icon(Icons.health_and_safety_outlined, size: 16),
+                  icon: const Icon(
+                    CupertinoIcons.shield_lefthalf_fill,
+                    size: 16,
+                  ),
                   label: const Text('Connect Health'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accentPurple,
@@ -1702,9 +1766,10 @@ class _AreaChartPainter extends CustomPainter {
       final y = chartH * i / gridLines;
       canvas.drawLine(Offset(leftPad, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: '${(maxY * (1 - i / gridLines)).round()}',
-          style: TextStyle(fontSize: 9, color: Colors.grey.shade400),
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -1758,10 +1823,11 @@ class _AreaChartPainter extends CustomPainter {
 
     // X-axis labels — skip empty strings (used for month view non-Monday points)
     if (labels.length == n) {
-      final labelStyle = TextStyle(fontSize: 10, color: Colors.grey.shade500);
+      final labelStyle = TextStyle(fontSize: 11, color: Colors.grey.shade500);
       for (int i = 0; i < n; i++) {
         if (labels[i].isEmpty) continue;
         final tp = TextPainter(
+          textScaler: chartTextScaler,
           text: TextSpan(text: labels[i], style: labelStyle),
           textDirection: TextDirection.ltr,
         )..layout();
@@ -1800,6 +1866,7 @@ class _AreaChartPainter extends CustomPainter {
         ? labels[index]
         : 'Day ${index + 1}';
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: '$label: $valueText',
         style: const TextStyle(

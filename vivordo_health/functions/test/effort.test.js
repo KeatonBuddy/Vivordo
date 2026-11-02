@@ -4,7 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const {hourlyLoads, computeEffort, effortInputsChanged, physicalLoad} = require("../effort");
+const {hourlyLoads, computeEffort, effortInputsChanged, physicalLoad, loggedWorkouts} = require("../effort");
 
 const MIN = 60000;
 const dayStart = Date.UTC(2026, 9, 1, 6); // midnight in Edmonton (MDT)
@@ -156,4 +156,19 @@ test("physical load is Effort's physical points without the cap", () => {
   assert.deepEqual(physicalLoad({healthMinutes: 30}), {points: 6, source: "exercise"});
   assert.deepEqual(physicalLoad({activeCalories: 900, usualCalories: 500}), {points: 8, source: "calories"});
   assert.deepEqual(physicalLoad({}), {points: 0, source: null});
+});
+
+test("logged activities count only the minutes Health didn't record", () => {
+  // No watch: the whole 20 minutes count.
+  assert.deepEqual(loggedWorkouts([{name: "CINDY", minutes: 20}], null), [{name: "CINDY", minutes: 20}]);
+  assert.deepEqual(loggedWorkouts([{name: "CINDY", minutes: 20}], 0), [{name: "CINDY", minutes: 20}]);
+  // The watch recorded 89 minutes: a logged 60-minute game adds nothing.
+  assert.deepEqual(loggedWorkouts([{name: "Basketball", minutes: 60}], 89), []);
+  // Health covered 30 of 50 logged minutes: the other 20 count.
+  assert.deepEqual(loggedWorkouts([{name: "Run", minutes: 30}, {name: "Swim", minutes: 20}], 30), [{name: "Swim", minutes: 20}]);
+  assert.deepEqual(loggedWorkouts([{name: "Run", minutes: 50}], 30), [{name: "Run", minutes: 20}]);
+});
+
+test("a logged activity re-runs Effort", () => {
+  assert.equal(effortInputsChanged({exercise_time: {workoutMinutes: 0}}, {exercise_time: {workoutMinutes: 20}}), true);
 });

@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/ai_consent.dart';
@@ -51,18 +51,29 @@ enum OnboardingStep {
   history,
 }
 
-/// The steps for this user: people who finished the old onboarding see a
-/// "what's changed" intro first.
+/// The required steps for this user, kept short so people see what Vivordo
+/// found before the paywall: people who finished the old onboarding see a
+/// "what's changed" intro first. The rest is [setupSteps], afterwards.
 List<OnboardingStep> onboardingSteps(Map<String, dynamic>? userDoc) => [
   if (userDoc?['onboardingCompleted'] == true) OnboardingStep.intro,
-  ...OnboardingStep.values.where((step) => step != OnboardingStep.intro),
+  OnboardingStep.about,
+  OnboardingStep.health,
+  OnboardingStep.history,
+];
+
+/// Optional setup after onboarding, from Home's "Finish setting up" card
+/// (`setupPending` on the user doc) and all of it also in Settings.
+const setupSteps = [
+  OnboardingStep.wrapUp,
+  OnboardingStep.sleep,
+  OnboardingStep.calendar,
+  OnboardingStep.wearables,
+  OnboardingStep.ai,
+  OnboardingStep.scores,
+  OnboardingStep.notifications,
 ];
 
 const _purple = VivordoTheme.brand;
-const _page = Color(0xFFF2F2F7);
-const _ink = Color(0xFF1C1C1E);
-const _grey = Color(0xFF8E8E93);
-const _line = Color(0xFFE5E5EA);
 
 /// Shown by AuthGate after sign-in until [kOnboardingVersion] is saved
 /// (docs: the onboarding-redesign idea). Every answer saves as its step is
@@ -73,10 +84,14 @@ class OnboardingFlowScreen extends StatefulWidget {
     super.key,
     required this.userDoc,
     required this.onFinished,
+    this.setup = false,
   });
 
   final Map<String, dynamic>? userDoc;
   final Future<void> Function() onFinished;
+
+  /// The optional [setupSteps] after onboarding, which can be closed.
+  final bool setup;
 
   @override
   State<OnboardingFlowScreen> createState() => _OnboardingFlowScreenState();
@@ -84,7 +99,9 @@ class OnboardingFlowScreen extends StatefulWidget {
 
 class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   final _pages = PageController();
-  late final List<OnboardingStep> _steps = onboardingSteps(widget.userDoc);
+  late final List<OnboardingStep> _steps = widget.setup
+      ? setupSteps
+      : onboardingSteps(widget.userDoc);
   int _index = 0;
   bool _busy = false;
 
@@ -197,11 +214,24 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       await save?.call();
       if (_index == _steps.length - 1) {
         await _userRef.set({
-          'onboardingVersion': kOnboardingVersion,
-          'onboardingCompleted': true,
-          'onboardingCompletedAt': FieldValue.serverTimestamp(),
+          if (widget.setup)
+            'setupPending': false
+          else ...{
+            'onboardingVersion': kOnboardingVersion,
+            'onboardingCompleted': true,
+            'onboardingCompletedAt': FieldValue.serverTimestamp(),
+            // Home offers the rest of setup until it's done or dismissed.
+            'setupPending': true,
+          },
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        // A calendar connected during setup: read its last 4 weeks now, as
+        // the history step does during onboarding.
+        if (widget.setup) {
+          unawaited(
+            HealthService().syncWithHistory(recent: false, calendar: true),
+          );
+        }
         await widget.onFinished();
         return;
       }
@@ -247,12 +277,10 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
     return DateTime(today.year, today.month, today.day - (today.weekday - 1));
   }
 
-  // Onboarding is always light, so pickers and the status bar follow it even
-  // when the phone is in dark mode.
   @override
-  Widget build(BuildContext context) => onboardingLight(
+  Widget build(BuildContext context) => onboardingTheme(
     Scaffold(
-      backgroundColor: _page,
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: Column(
           children: [
@@ -260,20 +288,36 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
               child: Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Back',
-                    onPressed: _index == 0 || _busy
-                        ? null
-                        : () => _pages.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          ),
-                    icon: Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 18,
-                      color: _index == 0 ? Colors.transparent : _ink,
+                  // Setup is optional: its first step closes instead.
+                  if (widget.setup && _index == 0)
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.maybePop(context),
+                      icon: Icon(
+                        CupertinoIcons.xmark,
+                        size: 18,
+                        color: context.vivordoColors.textPrimary,
+                      ),
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Back',
+                      onPressed: _index == 0 || _busy
+                          ? null
+                          : () => _pages.previousPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            ),
+                      icon: Icon(
+                        CupertinoIcons.back,
+                        size: 18,
+                        color: _index == 0
+                            ? Colors.transparent
+                            : context.vivordoColors.textPrimary,
+                      ),
                     ),
-                  ),
                   Expanded(
                     child: Row(
                       children: [
@@ -284,7 +328,9 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                               height: 4,
                               margin: const EdgeInsets.symmetric(horizontal: 2),
                               decoration: BoxDecoration(
-                                color: i <= _index ? _purple : _line,
+                                color: i <= _index
+                                    ? _purple
+                                    : context.vivordoColors.border,
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
@@ -316,7 +362,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
 
   Widget _stepPage(OnboardingStep step) => switch (step) {
     OnboardingStep.intro => _StepLayout(
-      kicker: 'WELCOME BACK',
+      kicker: 'Welcome back',
       title: 'Vivordo has changed a lot',
       body:
           'The new scores need a few details and permissions. It takes about '
@@ -324,9 +370,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       primary: 'Continue',
       onPrimary: _busy ? null : () => _next(),
       children: const [
-        _Bullet(Icons.bolt_rounded, 'Capacity', 'the energy you have today'),
         _Bullet(
-          Icons.event_note_rounded,
+          CupertinoIcons.bolt_fill,
+          'Capacity',
+          'the energy you have today',
+        ),
+        _Bullet(
+          CupertinoIcons.calendar,
           'Your Day',
           "what's ahead and what it took",
         ),
@@ -336,14 +386,14 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           'your fitness and habits',
         ),
         _Bullet(
-          Icons.warning_amber_rounded,
+          CupertinoIcons.exclamationmark_triangle,
           'Burnout check',
           'an early warning when things pile up',
         ),
       ],
     ),
     OnboardingStep.about => _StepLayout(
-      kicker: 'ABOUT YOU',
+      kicker: 'About you',
       title: 'A bit about you',
       body: 'Physical Health compares your fitness with people your age.',
       primary: 'Continue',
@@ -369,7 +419,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
               ),
             ),
-            const Divider(height: 1, color: _line),
+            Divider(height: 1, color: context.vivordoColors.border),
             _Row(
               label: 'Year of birth',
               value: _birthYear?.toString(),
@@ -381,13 +431,13 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                 if (year != null) setState(() => _birthYear = year);
               },
             ),
-            const Divider(height: 1, color: _line),
+            Divider(height: 1, color: context.vivordoColors.border),
             _Row(
               label: 'Height and weight',
               value: _profile.heightCm == null || _profile.weightKg == null
                   ? null
-                  : '${_feetInches(_profile.heightCm!)} · '
-                        '${(_profile.weightKg! * 2.2046226218).round()} lbs',
+                  : '${context.watch<ThemeController>().units.formatHeight(_profile.heightCm!)} · '
+                        '${context.watch<ThemeController>().units.formatBodyWeight(_profile.weightKg!, decimals: 0)}',
               placeholder: 'Add',
               onTap: _editMeasurements,
             ),
@@ -404,15 +454,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           onChanged: (sex) => setState(() => _sex = sex),
         ),
         const SizedBox(height: 10),
-        const Text(
+        Text(
           'Height and weight are optional, and sharpen the cardio fitness '
           'estimate. You can change any of this later in your profile.',
-          style: TextStyle(fontSize: 12, color: _grey),
+          style: TextStyle(
+            fontSize: 12,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     ),
     OnboardingStep.wrapUp => _StepLayout(
-      kicker: 'YOUR DAY',
+      kicker: 'Your day',
       title: 'When do you usually wrap up work or classes?',
       body: 'Anything after this counts as after hours in Your Day.',
       primary: 'Continue',
@@ -428,7 +481,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               // Same wheel look as showVivordoTimePicker.
               child: CupertinoTheme(
                 data: CupertinoThemeData(
-                  brightness: Brightness.light,
+                  brightness: Theme.of(context).brightness,
                   primaryColor: const Color(0xFF6254F4),
                   textTheme: CupertinoTextThemeData(
                     dateTimePickerTextStyle: TextStyle(
@@ -458,19 +511,25 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'It varies day to day',
-                      style: TextStyle(fontSize: 15, color: _ink),
+              child: MergeSemantics(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'It varies day to day',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: context.vivordoColors.textPrimary,
+                        ),
+                      ),
                     ),
-                  ),
-                  AppSwitch(
-                    value: _wrapUpVaries,
-                    onChanged: (value) => setState(() => _wrapUpVaries = value),
-                  ),
-                ],
+                    AppSwitch(
+                      value: _wrapUpVaries,
+                      onChanged: (value) =>
+                          setState(() => _wrapUpVaries = value),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -478,7 +537,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
     OnboardingStep.sleep => _StepLayout(
-      kicker: 'YOUR SLEEP',
+      kicker: 'Your sleep',
       title: 'When do you usually sleep?',
       body:
           'Vivordo forecasts your energy through the day from this until it '
@@ -495,34 +554,37 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           const SizedBox(height: 10),
           Text(
             'Filled in from your last two weeks in $_healthName.',
-            style: const TextStyle(fontSize: 12, color: _grey),
+            style: TextStyle(
+              fontSize: 12,
+              color: context.vivordoColors.textSecondary,
+            ),
           ),
         ],
       ],
     ),
     OnboardingStep.health => _StepLayout(
-      icon: Icons.favorite_rounded,
+      icon: CupertinoIcons.heart_fill,
       iconColor: const Color(0xFFE24B4A),
-      kicker: 'CONNECT',
+      kicker: 'Connect',
       title: 'Connect $_healthName',
       body:
           'Your scores come from this. Vivordo only reads your data; it never '
           'writes to $_healthName.',
-      primary: _healthConnected ? 'Continue' : 'Connect $_healthName',
+      // One "Continue" that opens the system sheet, where people can also
+      // decline (HIG pre-alert screens).
+      primary: 'Continue',
       onPrimary: _busy
           ? null
           : () => _next(_healthConnected ? null : _connectHealth),
-      secondary: _healthConnected ? null : 'Not now',
-      onSecondary: _busy ? null : () => _next(),
       children: [
         if (_healthConnected) const _Connected('Connected'),
         const _Bullet(
-          Icons.bedtime_rounded,
+          CupertinoIcons.moon_fill,
           'Sleep',
           'Capacity and Physical Health',
         ),
         const _Bullet(
-          Icons.monitor_heart_rounded,
+          CupertinoIcons.waveform_path_ecg,
           'Resting heart rate and HRV',
           'Capacity and the burnout check',
         ),
@@ -531,11 +593,11 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           'Steps and exercise',
           'Effort and Physical Health',
         ),
-        const _Bullet(Icons.air_rounded, 'Cardio fitness', 'Physical Health'),
+        const _Bullet(CupertinoIcons.wind, 'Cardio fitness', 'Physical Health'),
       ],
     ),
     OnboardingStep.wearables => _StepLayout(
-      kicker: 'CONNECT',
+      kicker: 'Connect',
       title: 'Wear a WHOOP or Fitbit?',
       body: "Optional. Adds recovery data $_healthName doesn't have.",
       primary: 'Continue',
@@ -554,7 +616,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                       if (mounted) setState(() => _whoop = true);
                     }),
             ),
-            const Divider(height: 1, color: _line),
+            Divider(height: 1, color: context.vivordoColors.border),
             _Row(
               label: 'Fitbit',
               value: _fitbit ? 'Connected' : null,
@@ -562,22 +624,25 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
               onTap: _fitbit ? null : _connectFitbit,
             ),
             if (defaultTargetPlatform == TargetPlatform.iOS) ...[
-              const Divider(height: 1, color: _line),
+              Divider(height: 1, color: context.vivordoColors.border),
               const _Row(label: 'Apple Watch', value: 'Through Apple Health'),
             ],
           ],
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           'No wearable? Your phone and morning check-ins still work.',
-          style: TextStyle(fontSize: 12, color: _grey),
+          style: TextStyle(
+            fontSize: 12,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     ),
     OnboardingStep.calendar => _StepLayout(
-      icon: Icons.calendar_month_rounded,
+      icon: CupertinoIcons.calendar,
       iconColor: const Color(0xFF185FA5),
-      kicker: 'CONNECT',
+      kicker: 'Connect',
       title: 'Add your calendar',
       body:
           "Your Day uses your events' times and lengths to see what's ahead "
@@ -604,7 +669,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     }),
             ),
             if (OutlookCalendarService.enabled) ...[
-              const Divider(height: 1, color: _line),
+              Divider(height: 1, color: context.vivordoColors.border),
               _Row(
                 label: 'Outlook',
                 value: _outlook ? 'Connected' : null,
@@ -622,9 +687,9 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
     OnboardingStep.ai => _StepLayout(
-      icon: Icons.auto_awesome_rounded,
+      icon: CupertinoIcons.sparkles,
       iconColor: const Color(0xFF534AB7),
-      kicker: 'PRIVACY',
+      kicker: 'Privacy',
       title: 'Vivordo AI',
       body: aiConsentDisclosure,
       primary: _aiOn ? 'Continue' : 'Turn on Vivordo AI',
@@ -654,7 +719,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       ],
     ),
     OnboardingStep.scores => _StepLayout(
-      kicker: 'YOUR SCORES',
+      kicker: 'Your scores',
       title: 'How do you want to see your scores?',
       body: 'You can change this any time in Settings.',
       primary: 'Continue',
@@ -682,47 +747,54 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           onTap: () => setState(() => _showNumbers = false),
         ),
         const SizedBox(height: 10),
-        const Text(
+        Text(
           'Hours slept, heart rate and steps always show.',
-          style: TextStyle(fontSize: 12, color: _grey),
+          style: TextStyle(
+            fontSize: 12,
+            color: context.vivordoColors.textSecondary,
+          ),
         ),
       ],
     ),
     OnboardingStep.history => _historyPage(),
     OnboardingStep.notifications => _StepLayout(
-      kicker: 'ALMOST DONE',
+      kicker: 'Almost done',
       title: 'Stay in the loop',
       body:
           'Morning check-in reminders, burnout warnings and updates from your '
           'Circle. Choose which ones in Settings.',
-      primary: 'Allow notifications',
+      primary: 'Continue',
       onPrimary: _busy ? null : () => _next(_allowNotifications),
-      secondary: 'Not now',
-      onSecondary: _busy ? null : () => _next(),
       // Existing users already have these scores, and with Health connected
       // the next step reads them from the history.
       children: [
-        if (_steps.first != OnboardingStep.intro &&
+        // Only for someone new without Health; setup comes after the
+        // history step, which already said what's next.
+        if (!widget.setup &&
+            _steps.first != OnboardingStep.intro &&
             !_healthConnected) ...const [
           SizedBox(height: 4),
           Text(
-            'WHAT HAPPENS NEXT',
+            'What happens next',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
-              letterSpacing: .8,
               color: _purple,
             ),
           ),
           SizedBox(height: 10),
-          _Bullet(Icons.wb_sunny_rounded, 'Tomorrow', 'your first Capacity'),
+          _Bullet(
+            CupertinoIcons.sun_max_fill,
+            'Tomorrow',
+            'your first Capacity',
+          ),
           _Bullet(
             Icons.directions_run_rounded,
             'In 2 weeks',
             'your Physical Health score',
           ),
           _Bullet(
-            Icons.warning_amber_rounded,
+            CupertinoIcons.exclamationmark_triangle,
             'In about 6 weeks',
             'the burnout check, once it knows your normal',
           ),
@@ -736,18 +808,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   Widget _historyPage() {
     if (!_healthConnected && _historyCalendar == false) {
       return _StepLayout(
-        kicker: 'ALL SET',
+        kicker: 'All set',
         title: "You're ready",
         body:
             'Connect $_healthName or a calendar any time in Settings, and '
             'Vivordo will read your history then.',
-        primary: 'Show me my day',
+        primary: 'Continue',
         onPrimary: _busy ? null : () => _next(),
       );
     }
     if (!_historyDone) {
       return _StepLayout(
-        kicker: 'ALMOST THERE',
+        kicker: 'Almost there',
         title: 'Getting to know you',
         body:
             'Reading your last 3 months so your scores know what\'s normal '
@@ -790,30 +862,46 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
       );
     }
     final found = _findings;
+    // Nothing to show yet (a new phone, or too little history): no "found".
+    if (found == null || (found.insight == null && found.usuals.isEmpty)) {
+      return _StepLayout(
+        kicker: 'All set',
+        title: "You're all set",
+        body: _healthConnected
+            ? 'Vivordo is reading your $_healthName data and will learn your '
+                  'usual over the next couple of weeks. Your first Capacity '
+                  'arrives tomorrow.'
+            : 'Vivordo will learn your usual over the next couple of weeks.',
+        primary: 'Continue',
+        onPrimary: _busy ? null : () => _next(),
+      );
+    }
     return _StepLayout(
-      kicker: 'ALL SET',
+      kicker: 'All set',
       title: "Here's what we found",
       body: 'Your scores compare with these from today.',
-      primary: 'Show me my day',
+      primary: 'Continue',
       onPrimary: _busy ? null : () => _next(),
       children: [
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.vivordoColors.card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFCECBF6), width: 1.5),
+            border: Border.all(
+              color: _purple.withValues(alpha: .35),
+              width: 1.5,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'FROM YOUR LAST 3 MONTHS',
+              Text(
+                'From your last 3 months',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: .8,
-                  color: _grey,
+                  color: context.vivordoColors.textSecondary,
                 ),
               ),
               const SizedBox(height: 6),
@@ -821,18 +909,21 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                 found?.insight ??
                     'Vivordo will point out your patterns as it learns your '
                         'days.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   height: 1.3,
-                  color: _ink,
+                  color: context.vivordoColors.textPrimary,
                 ),
               ),
               if (found?.basis case final basis?) ...[
                 const SizedBox(height: 6),
                 Text(
                   '$basis Vivordo will keep checking this.',
-                  style: const TextStyle(fontSize: 13, color: _grey),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.vivordoColors.textSecondary,
+                  ),
                 ),
               ],
             ],
@@ -840,13 +931,12 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
         ),
         if (found != null && found.usuals.isNotEmpty) ...[
           const SizedBox(height: 20),
-          const Text(
-            'YOUR USUAL',
+          Text(
+            'Your usual',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
-              letterSpacing: .8,
-              color: _grey,
+              color: context.vivordoColors.textSecondary,
             ),
           ),
           const SizedBox(height: 8),
@@ -863,7 +953,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   alignment: Alignment.centerLeft,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: context.vivordoColors.card,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -872,15 +962,18 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     children: [
                       Text(
                         usual.value,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
-                          color: _ink,
+                          color: context.vivordoColors.textPrimary,
                         ),
                       ),
                       Text(
                         usual.label,
-                        style: const TextStyle(fontSize: 12, color: _grey),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.vivordoColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -1041,23 +1134,22 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
   }
 }
 
-/// Light theme, light Cupertino pickers and a dark status bar, whatever the
-/// phone's appearance (onboarding and account screens are light only).
-Widget onboardingLight(Widget child) => AnnotatedRegion<SystemUiOverlayStyle>(
-  value: SystemUiOverlayStyle.dark,
-  child: Theme(
-    data: VivordoTheme.light,
-    child: CupertinoTheme(
-      data: const CupertinoThemeData(brightness: Brightness.light),
+/// Onboarding and account screens follow the phone's appearance, on iOS's
+/// grouped grey page in light mode so their white cards stand out.
+Widget onboardingTheme(Widget child) => Builder(
+  builder: (context) {
+    final theme = Theme.of(context);
+    if (theme.brightness == Brightness.dark) return child;
+    return Theme(
+      data: theme.copyWith(
+        extensions: [
+          context.vivordoColors.copyWith(page: const Color(0xFFF2F2F7)),
+        ],
+      ),
       child: child,
-    ),
-  ),
+    );
+  },
 );
-
-String _feetInches(double cm) {
-  final inches = (cm / 2.54).round();
-  return '${inches ~/ 12}′ ${inches % 12}″';
-}
 
 class _StepLayout extends StatelessWidget {
   const _StepLayout({
@@ -1108,26 +1200,29 @@ class _StepLayout extends StatelessWidget {
             Text(
               kicker,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
-                letterSpacing: .9,
                 color: _purple,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
                 height: 1.2,
-                color: _ink,
+                color: context.vivordoColors.textPrimary,
               ),
             ),
             const SizedBox(height: 10),
             Text(
               body,
-              style: const TextStyle(fontSize: 15, height: 1.45, color: _grey),
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.45,
+                color: context.vivordoColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 22),
             ...children,
@@ -1145,7 +1240,7 @@ class _StepLayout extends StatelessWidget {
                 onPressed: onPrimary,
                 style: FilledButton.styleFrom(
                   backgroundColor: _purple,
-                  disabledBackgroundColor: const Color(0xFFD1CEFF),
+                  disabledBackgroundColor: _purple.withValues(alpha: .35),
                   foregroundColor: Colors.white,
                   disabledForegroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
@@ -1206,10 +1301,12 @@ class _ScoreStyleOption extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF3F1FF) : Colors.white,
+          color: selected
+              ? _purple.withValues(alpha: .12)
+              : context.vivordoColors.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected ? _purple : _line,
+            color: selected ? _purple : context.vivordoColors.border,
             width: selected ? 2 : 1,
           ),
         ),
@@ -1221,19 +1318,19 @@ class _ScoreStyleOption extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: _ink,
+                      color: context.vivordoColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     example,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       height: 1.35,
-                      color: _grey,
+                      color: context.vivordoColors.textSecondary,
                     ),
                   ),
                 ],
@@ -1242,9 +1339,9 @@ class _ScoreStyleOption extends StatelessWidget {
             const SizedBox(width: 10),
             Icon(
               selected
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: selected ? _purple : _line,
+                  ? CupertinoIcons.checkmark_circle_fill
+                  : CupertinoIcons.circle,
+              color: selected ? _purple : context.vivordoColors.border,
             ),
           ],
         ),
@@ -1262,9 +1359,9 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _line),
+      border: Border.all(color: context.vivordoColors.border),
     ),
     child: Column(children: children),
   );
@@ -1293,7 +1390,10 @@ class _Row extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 15, color: _ink),
+              style: TextStyle(
+                fontSize: 15,
+                color: context.vivordoColors.textPrimary,
+              ),
             ),
           ),
           Text(
@@ -1301,11 +1401,16 @@ class _Row extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
-              color: value == null ? _purple : _grey,
+              color: value == null
+                  ? _purple
+                  : context.vivordoColors.textSecondary,
             ),
           ),
           if (onTap != null)
-            const Icon(Icons.chevron_right_rounded, color: _grey),
+            Icon(
+              CupertinoIcons.chevron_right,
+              color: context.vivordoColors.textSecondary,
+            ),
         ],
       ),
     ),
@@ -1337,7 +1442,11 @@ class _Bullet extends StatelessWidget {
                 TextSpan(text: ' · $detail'),
               ],
             ),
-            style: const TextStyle(fontSize: 15, height: 1.35, color: _ink),
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.35,
+              color: context.vivordoColors.textPrimary,
+            ),
           ),
         ),
       ],
@@ -1355,13 +1464,16 @@ class _Connected extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 16),
     child: Row(
       children: [
-        const Icon(Icons.check_circle_rounded, color: Color(0xFF1D9E75)),
+        const Icon(
+          CupertinoIcons.checkmark_circle_fill,
+          color: Color(0xFF1D9E75),
+        ),
         const SizedBox(width: 8),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
-            color: Color(0xFF0F6E56),
+            color: context.vivordoColors.success,
           ),
         ),
       ],
@@ -1384,7 +1496,7 @@ class _HistoryRow extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 8),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: context.vivordoColors.card,
       borderRadius: BorderRadius.circular(14),
     ),
     child: Row(
@@ -1394,30 +1506,39 @@ class _HistoryRow extends StatelessWidget {
           height: 22,
           child: switch (state) {
             _HistoryState.done => const Icon(
-              Icons.check_circle_rounded,
+              CupertinoIcons.checkmark_circle_fill,
               color: Color(0xFF1D9E75),
               size: 22,
             ),
             _HistoryState.running => const Padding(
               padding: EdgeInsets.all(2),
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: _purple,
-              ),
+              child: CupertinoActivityIndicator(color: _purple),
             ),
-            _HistoryState.waiting => const Icon(
-              Icons.circle_outlined,
-              color: _line,
+            _HistoryState.waiting => Icon(
+              CupertinoIcons.circle,
+              color: context.vivordoColors.border,
               size: 22,
             ),
           },
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(title, style: const TextStyle(fontSize: 15, color: _ink)),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              color: context.vivordoColors.textPrimary,
+            ),
+          ),
         ),
         if (detail != null)
-          Text(detail!, style: const TextStyle(fontSize: 13, color: _grey)),
+          Text(
+            detail!,
+            style: TextStyle(
+              fontSize: 13,
+              color: context.vivordoColors.textSecondary,
+            ),
+          ),
       ],
     ),
   );

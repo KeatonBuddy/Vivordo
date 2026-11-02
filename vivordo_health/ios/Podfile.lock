@@ -1509,12 +1509,18 @@ PODS:
   - PromisesSwift (2.4.1):
     - PromisesObjC (= 2.4.1)
   - Protobuf (3.29.6)
+  - purchases_flutter (10.16.0):
+    - Flutter
+    - PurchasesHybridCommon (= 19.12.0)
+  - PurchasesHybridCommon (19.12.0):
+    - RevenueCat (= 5.95.0)
   - reactive_ble_mobile (0.0.1):
     - Flutter
     - FlutterMacOS
     - Protobuf (~> 3.5)
     - SwiftProtobuf (~> 1.0)
   - RecaptchaInterop (101.0.0)
+  - RevenueCat (5.95.0)
   - SwiftProtobuf (1.38.1)
   - url_launcher_ios (0.0.1):
     - Flutter
@@ -1540,6 +1546,7 @@ DEPENDENCIES:
   - local_auth_darwin (from `.symlinks/plugins/local_auth_darwin/darwin`)
   - msal_auth (from `.symlinks/plugins/msal_auth/ios`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - purchases_flutter (from `.symlinks/plugins/purchases_flutter/ios`)
   - reactive_ble_mobile (from `.symlinks/plugins/reactive_ble_mobile/darwin`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
 
@@ -1580,7 +1587,9 @@ SPEC REPOS:
     - PromisesObjC
     - PromisesSwift
     - Protobuf
+    - PurchasesHybridCommon
     - RecaptchaInterop
+    - RevenueCat
     - SwiftProtobuf
 
 EXTERNAL SOURCES:
@@ -1624,6 +1633,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/msal_auth/ios"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
+  purchases_flutter:
+    :path: ".symlinks/plugins/purchases_flutter/ios"
   reactive_ble_mobile:
     :path: ".symlinks/plugins/reactive_ble_mobile/darwin"
   url_launcher_ios:
@@ -1685,8 +1696,11 @@ SPEC CHECKSUMS:
   PromisesObjC: 752c3227f599e3467650e47ea36f433eeb10c273
   PromisesSwift: 217dea0fd5d2ad65222a109c48698add13cc1c5b
   Protobuf: 8d5596f7468be5400861a6bbfb2dfe9d0d1cde34
+  purchases_flutter: ddadeb7e401f8b3804b93dc1879183dfbb3628c9
+  PurchasesHybridCommon: 7ba4a84cdd9738a936b2091f7e982952c1feb6f6
   reactive_ble_mobile: c6a561a56b81d802642823cd3455a6dee24629d7
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
+  RevenueCat: 431637b02e9e5dc1165c2031936947d0468e1ed4
   SwiftProtobuf: 409d3aaec90e51b1705b1dd8065b56893450e77c
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 

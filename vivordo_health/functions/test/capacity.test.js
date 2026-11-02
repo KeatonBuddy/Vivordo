@@ -225,3 +225,23 @@ test("a calories-only day (a long walk on a phone) is never a big day", async ()
   const exercise = await loads({exercise_time: {healthSum: 120}, active_calories: {sum: 900}});
   assert.equal(exercise.bigDay?.day, key(1));
 });
+
+test("a logged activity counts on a day without Health minutes, and not twice with them", async () => {
+  const day = "2026-10-26";
+  const key = (k) => new Date(Date.parse(`${day}T00:00:00Z`) - k * 86400000).toISOString().slice(0, 10);
+  const doc = (id, data) => ({id, get: (field) => data[field], data: () => data});
+  const user = (activities) => ({collection: (name) => {
+    const docs = name === "recent_activities" ? activities : [];
+    const query = {where: () => query, select: () => query, get: async () => ({docs})};
+    return query;
+  }});
+  const usual = Array.from({length: 20}, (_, i) => doc(key(i + 2), {exercise_time: {healthSum: 30}}));
+  const yesterday = (healthSum) => doc(key(1), {exercise_time: {healthSum, workoutMinutes: 20}});
+  const cindy = doc("a", {name: "CINDY", minutes: 20, exerciseGoalDay: key(1)});
+  // Sunday with no watch: CINDY's 20 minutes are 4 points (was 0).
+  const noWatch = await physicalLoads(user([cindy]), [...usual, yesterday(0)], key(90), day);
+  assert.equal(noWatch.loads.minutesOn.get(key(1)), 4);
+  // The watch recorded 25 minutes: Health's 5 points, CINDY adds nothing.
+  const watch = await physicalLoads(user([cindy]), [...usual, yesterday(25)], key(90), day);
+  assert.equal(watch.loads.minutesOn.get(key(1)), 5);
+});

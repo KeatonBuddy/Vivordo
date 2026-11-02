@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../services/calendar_cognitive_load_service.dart';
 import '../services/hourly_calendar_load.dart';
+import 'day_wrap_up.dart';
 import 'home_day_load.dart';
 
 /// Unknown events count as 30, as in the server's Effort (docs/scores.md §1).
@@ -270,6 +271,29 @@ DayEffort buildDayEffort({
 /// How a day's Demand sits against Capacity (docs/scores.md §2).
 enum DemandFit { roomToSpare, full, over }
 
+/// The whole day's plan as Demand, for planned-vs-actual history: every
+/// timed item counts as ahead from the start of [day], ticked off or not,
+/// and every untimed priority's effort ([untimed]) is added.
+double plannedDemand({
+  required DateTime day,
+  required DateTime wrapUp,
+  required List<EffortItem> items,
+  required List<Object?> untimed,
+}) {
+  final start = DateTime(day.year, day.month, day.day);
+  return buildDayEffort(
+    now: start,
+    from: start,
+    until: DateTime(day.year, day.month, day.day + 1),
+    wrapUp: wrapUp,
+    items: [
+      for (final item in items)
+        (event: item.event, score: item.score, done: false, open: true),
+    ],
+    untimedOpen: untimed,
+  ).demand;
+}
+
 /// Over when Demand is above Capacity, the same line the weekly review
 /// uses for a heavy day; full within [_fullBand] below it; else room.
 /// Demand runs lower than Capacity's 0-100, so a margin above Capacity
@@ -281,6 +305,65 @@ DemandFit demandFit(double demand, num capacity) => demand > capacity
     : DemandFit.roomToSpare;
 
 const _fullBand = 25;
+
+/// Today's Capacity as it stands (docs/scores.md §4): this morning's
+/// Capacity is the day's budget, on the same points scale as Effort and
+/// Demand. [left] is what Effort hasn't used yet; [byTonight] is what's
+/// left once the plan still ahead (Demand) happens, below 0 when the plan
+/// asks for more than you've got. The stored Capacity stays the morning's.
+typedef CapacityLeft = ({
+  int morning,
+  double spent,
+  double left,
+  double booked,
+  double byTonight,
+  DemandFit fit,
+});
+
+/// What's left through the rest of today if the timed plan happens as
+/// booked: now's [CapacityLeft.left], then the end of each hour that has
+/// something booked, priced as [buildDayEffort] prices it. Widgets and the
+/// Watch step through it between the app's updates. Untimed priorities
+/// aren't in it: they have no time to land at, and open ones carry over in
+/// the evening, so they only count in [CapacityLeft.byTonight].
+List<({DateTime at, double left})> capacityLeftPath({
+  required DayEffort day,
+  required CapacityLeft live,
+  required DateTime now,
+  required DateTime wrapUp,
+}) {
+  final path = [(at: now, left: live.left)];
+  var booked = 0.0;
+  for (final hour in day.hours) {
+    final end = hour.start.add(const Duration(hours: 1));
+    if (!end.isAfter(now) || hour.ahead <= 0) continue;
+    final afterMinutes = end.isAfter(wrapUp)
+        ? end
+              .difference(wrapUp.isAfter(hour.start) ? wrapUp : hour.start)
+              .inMinutes
+              .clamp(0, 60)
+        : 0;
+    booked += hour.ahead * (1 + 0.25 * afterMinutes / 60) / 10;
+    path.add((at: end, left: live.left - booked));
+  }
+  return path;
+}
+
+CapacityLeft capacityLeft({
+  required int morning,
+  required double effortSoFar,
+  required double demand,
+}) {
+  final left = morning - effortSoFar;
+  return (
+    morning: morning,
+    spent: effortSoFar,
+    left: left,
+    booked: demand,
+    byTonight: left - demand,
+    fit: demandFit(demand, left),
+  );
+}
 
 /// Today's activity Effort so far, by the server's rules (physicalLoad in
 /// functions/effort.js): in-app workouts plus Health exercise minutes × 0.2,
@@ -301,14 +384,12 @@ double physicalSoFar({
   return math.min(25.0, points);
 }
 
-/// "So far" on Home: today's Effort compared with the usual by this time of
-/// day, the median of earlier days' running totals (`effort.byHour` from
-/// the server, keyed by day). Weekdays are compared with weekdays and
-/// weekends with weekends once there are [_sameKindDays] of that kind;
-/// until then all days, once there are 14. A word only, never a number
-/// (docs/scores.md §3).
-String effortSoFarWord({
-  required double soFar,
+/// Your usual Effort by this time of day, the median of earlier days'
+/// running totals (`effort.byHour` from the server, keyed by day), or null
+/// while still learning. Weekdays are compared with weekdays and weekends
+/// with weekends once there are [_sameKindDays] of that kind; until then
+/// all days, once there are 14.
+double? usualEffortByNow({
   required DateTime now,
   required Map<DateTime, List<num>> pastByHour,
 }) {
@@ -328,12 +409,23 @@ String effortSoFarWord({
   final all = byNow(pastByHour.values);
   final usualByNow = sameKind.length >= _sameKindDays ? sameKind : all;
   if (usualByNow.length < (identical(usualByNow, all) ? 14 : _sameKindDays)) {
-    return 'Still learning your usual';
+    return null;
   }
   final mid = usualByNow.length ~/ 2;
-  final usual = usualByNow.length.isOdd
+  return usualByNow.length.isOdd
       ? usualByNow[mid]
       : (usualByNow[mid - 1] + usualByNow[mid]) / 2;
+}
+
+/// "So far" on Home as a word: today's Effort against
+/// [usualEffortByNow] (docs/scores.md §3).
+String effortSoFarWord({
+  required double soFar,
+  required DateTime now,
+  required Map<DateTime, List<num>> pastByHour,
+}) {
+  final usual = usualEffortByNow(now: now, pastByHour: pastByHour);
+  if (usual == null) return 'Still learning your usual';
   // A margin of 20% and at least 2 points, so a quiet morning isn't
   // "heavier" over a point or two.
   if (soFar > usual * 1.2 + 2) return 'Heavier than usual';
@@ -344,3 +436,21 @@ String effortSoFarWord({
 /// Days of the same kind (weekday or weekend) "So far" needs to compare
 /// like with like; Home's 28-day window holds 8 weekend days.
 const _sameKindDays = 8;
+
+/// What one event adds on its own, start to finish: its Demand before it
+/// happens and its Effort after (the same points). Back-to-backs and
+/// overlaps with other events aren't counted here.
+double eventPoints(
+  CalendarCognitiveEvent event,
+  CognitiveLoadScore score, {
+  int wrapUpMinutes = kDefaultDayWrapUpMinutes,
+}) {
+  final day = DateTime(event.start.year, event.start.month, event.start.day);
+  return buildDayEffort(
+    now: day,
+    from: day,
+    until: DateTime(day.year, day.month, day.day + 1),
+    wrapUp: day.add(Duration(minutes: wrapUpMinutes)),
+    items: [(event: event, score: score, done: false, open: false)],
+  ).demand;
+}

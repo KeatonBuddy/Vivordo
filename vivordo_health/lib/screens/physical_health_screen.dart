@@ -1,11 +1,18 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/day_key.dart';
 import '../src/utils/physical_health_view.dart';
+import 'personal_profile_screen.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/building_ring_centre.dart';
+import '../widgets/contextual_insight_bar.dart' show vivordoScreenOpener;
 import '../widgets/visible_stream_builder.dart';
 
 const _green = Color(0xFF1D9E75);
@@ -72,7 +79,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
           if (view == null) {
             return Center(
               child: snapshot.connectionState == ConnectionState.waiting
-                  ? const CircularProgressIndicator()
+                  ? const CupertinoActivityIndicator()
                   : Padding(
                       padding: const EdgeInsets.all(32),
                       child: Text(
@@ -88,19 +95,20 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
             Duration(days: _ranges[_range]!),
           );
           final trend = view.trend.where((p) => p.$1.isAfter(cutoff)).toList();
+          final scores = [for (final p in trend) p.$2];
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 110),
             children: [
               _Card(
                 child: Row(
                   children: [
-                    _Ring(score: view.score, size: 92),
+                    _Ring(score: view.score, size: 92, building: view.building),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _label(context, 'LAST 4 WEEKS'),
+                          _label(context, 'Last 4 weeks'),
                           const SizedBox(height: 6),
                           Text(
                             view.status,
@@ -137,15 +145,24 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                             style: TextStyle(color: colors.textSecondary),
                           ),
                         )
-                      : CustomPaint(
-                          painter: _TrendPainter([
-                            for (final p in trend) p.$2.toDouble(),
-                          ], colors.border),
+                      : Semantics(
+                          label:
+                              'Physical Health over the last $_range: '
+                              'from ${scores.first} to ${scores.last}, '
+                              'low ${scores.reduce(math.min)}, '
+                              'high ${scores.reduce(math.max)}.',
+                          child: ExcludeSemantics(
+                            child: CustomPaint(
+                              painter: _TrendPainter([
+                                for (final p in trend) p.$2.toDouble(),
+                              ], colors.border),
+                            ),
+                          ),
                         ),
                 ),
               ),
               const SizedBox(height: 22),
-              _label(context, 'WHAT MAKES IT UP'),
+              _label(context, 'What makes it up'),
               const SizedBox(height: 8),
               _Card(
                 child: Column(
@@ -159,7 +176,7 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              _label(context, 'INSIGHTS'),
+              _label(context, 'Insights'),
               const SizedBox(height: 8),
               _Card(
                 child: Column(
@@ -196,7 +213,6 @@ class _PhysicalHealthScreenState extends State<PhysicalHealthScreen> {
     style: TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: .8,
       color: context.vivordoColors.textSecondary,
     ),
   );
@@ -206,6 +222,17 @@ class _IngredientRow extends StatelessWidget {
   const _IngredientRow({required this.ingredient});
 
   final PhysicalIngredient ingredient;
+
+  VoidCallback? _fix(BuildContext context) => switch (ingredient.fix) {
+    PhysicalFix.profile => () => Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PersonalProfileScreen()),
+    ),
+    PhysicalFix.fitness => switch (vivordoScreenOpener(context)) {
+      final open? => () => open('fitness'),
+      null => null,
+    },
+    null => null,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -229,10 +256,36 @@ class _IngredientRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 2),
-        Text(
-          ingredient.detail,
-          style: TextStyle(fontSize: 13, color: colors.textSecondary),
-        ),
+        if (_fix(context) case final onFix?)
+          // Missing: the detail says what to add, and opens where to add it.
+          InkWell(
+            onTap: onFix,
+            borderRadius: BorderRadius.circular(6),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    ingredient.detail,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: VivordoTheme.brand,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 18,
+                  color: VivordoTheme.brand,
+                ),
+              ],
+            ),
+          )
+        else
+          Text(
+            ingredient.detail,
+            style: TextStyle(fontSize: 13, color: colors.textSecondary),
+          ),
         const SizedBox(height: 6),
         ClipRRect(
           borderRadius: BorderRadius.circular(3),
@@ -249,10 +302,11 @@ class _IngredientRow extends StatelessWidget {
 }
 
 class _Ring extends StatelessWidget {
-  const _Ring({required this.score, required this.size});
+  const _Ring({required this.score, required this.size, this.building});
 
   final int? score;
   final double size;
+  final (int, int, String)? building;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -263,17 +317,23 @@ class _Ring extends StatelessWidget {
       children: [
         SizedBox.expand(
           child: CircularProgressIndicator(
-            value: (score ?? 0) / 100,
+            value:
+                (score?.toDouble() ??
+                    (building == null ? 0 : buildingProgress(building!))) /
+                100,
             strokeWidth: 10,
             strokeCap: StrokeCap.round,
             color: physicalHealthColor(context, score?.toDouble()),
             backgroundColor: context.vivordoColors.cardMuted,
           ),
         ),
-        Text(
-          score == null ? '--' : '$score',
-          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-        ),
+        if (score == null && building != null)
+          BuildingRingCentre(building!, width: size - 32)
+        else
+          Text(
+            score == null ? '--' : '$score',
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+          ),
       ],
     ),
   );

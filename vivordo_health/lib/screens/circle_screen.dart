@@ -2,10 +2,12 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -89,7 +91,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
           child: Column(
             children: [
               _CircleBenefit(
-                icon: Icons.lock_rounded,
+                icon: CupertinoIcons.lock_fill,
                 color: palette.accent,
                 background: palette.accentTint,
                 title: 'Private by default',
@@ -97,7 +99,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
               ),
               Divider(height: 1, color: context.vivordoColors.border),
               _CircleBenefit(
-                icon: Icons.favorite_rounded,
+                icon: CupertinoIcons.heart_fill,
                 color: palette.success,
                 background: palette.successTint,
                 title: 'Support each other',
@@ -105,7 +107,7 @@ class _CircleOnboardingIntro extends StatelessWidget {
               ),
               Divider(height: 1, color: context.vivordoColors.border),
               _CircleBenefit(
-                icon: Icons.emoji_events_rounded,
+                icon: CupertinoIcons.rosette,
                 color: palette.streak,
                 background: palette.streakTint,
                 title: 'Challenge friends',
@@ -206,7 +208,7 @@ class _CircleOnboardingGraphic extends StatelessWidget {
                 border: Border.all(color: _brand, width: 3),
               ),
               child: Icon(
-                Icons.groups_rounded,
+                CupertinoIcons.person_3_fill,
                 color: context.circle.accent,
                 size: 36,
               ),
@@ -371,7 +373,7 @@ class _CircleProfileHomeState extends State<_CircleProfileHome> {
         stream: _requestCount,
         initialData: 0,
         builder: (context, snapshot) => _IconCircleButton(
-          icon: Icons.person_add_alt_1_rounded,
+          icon: CupertinoIcons.person_badge_plus,
           tooltip: 'People',
           badge: snapshot.data ?? 0,
           onTap: () => _openPeople(context, profile),

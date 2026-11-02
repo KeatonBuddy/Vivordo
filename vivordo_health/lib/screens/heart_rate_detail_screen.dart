@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +19,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import '../src/utils/chart_text.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
   const HeartRateDetailScreen({super.key});
@@ -30,6 +33,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   static const purple = Color(0xFF5B42F3);
   int rangeIndex = 0;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _heartDataStream;
+
+  // Made once: a new stream on each rebuild resubscribed the user document.
+  late final _userStream = () {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null
+        ? null
+        : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+  }();
 
   static const _storage = FlutterSecureStorage();
   static const _wearableCollapsedKey = 'heart_wearable_card_collapsed';
@@ -149,8 +160,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: purple),
+          icon: const Icon(CupertinoIcons.back, color: purple),
         ),
         title: const Text(
           'Heart Rate',
@@ -162,16 +174,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final all = allDays(snapshot.data);
           final uid = FirebaseAuth.instance.currentUser?.uid;
           if (uid == null) return const SizedBox.shrink();
           return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(uid)
-                .snapshots(),
+            stream: _userStream,
             builder: (context, userSnapshot) {
               final user = userSnapshot.data?.data();
               final hasConnectedWearable =
@@ -250,7 +259,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   runSpacing: 4,
                   children: [
                     Text(
-                      'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
+                      storedReadings.isEmpty
+                          ? 'Not synced yet'
+                          : 'Updated ${DateFormat('h:mm a').format(DateTime.now())}',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                       ),
@@ -382,23 +393,23 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     final live = bleState.isPaired && (bleState.isConnected || busy);
     final collapsed = _wearableCollapsed ?? false;
     final statusLabel = switch (bleState.status) {
-      WhoopBleStatus.unpaired => 'NOT PAIRED',
-      WhoopBleStatus.scanning => 'SCANNING',
-      WhoopBleStatus.connecting => 'CONNECTING',
-      WhoopBleStatus.connected when hasReading => 'LIVE',
-      WhoopBleStatus.connected => 'CONNECTED',
-      WhoopBleStatus.disconnected => 'PAUSED',
-      WhoopBleStatus.unavailable => 'UNAVAILABLE',
-      WhoopBleStatus.error => 'CONNECTION ISSUE',
+      WhoopBleStatus.unpaired => 'Not paired',
+      WhoopBleStatus.scanning => 'Scanning',
+      WhoopBleStatus.connecting => 'Connecting',
+      WhoopBleStatus.connected when hasReading => 'Live',
+      WhoopBleStatus.connected => 'Connected',
+      WhoopBleStatus.disconnected => 'Paused',
+      WhoopBleStatus.unavailable => 'Unavailable',
+      WhoopBleStatus.error => 'Connection issue',
     };
     final statusColor = switch (bleState.status) {
       WhoopBleStatus.connected when hasReading => red,
-      WhoopBleStatus.connected => const Color(0xFF20B26B),
+      WhoopBleStatus.connected => context.vivordoColors.success,
       WhoopBleStatus.scanning || WhoopBleStatus.connecting => purple,
       WhoopBleStatus.unpaired ||
       WhoopBleStatus.disconnected => context.vivordoColors.textSecondary,
       WhoopBleStatus.unavailable ||
-      WhoopBleStatus.error => const Color(0xFFFF9F43),
+      WhoopBleStatus.error => context.vivordoColors.warning,
     };
     final String? detailText = switch (bleState.status) {
       WhoopBleStatus.unpaired =>
@@ -436,7 +447,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(
-                        Icons.bluetooth_rounded,
+                        CupertinoIcons.bluetooth,
                         color: purple,
                         size: 22,
                       ),
@@ -447,7 +458,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'LIVE WEARABLE HEART RATE',
+                            'Live wearable heart rate',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -483,9 +494,8 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             statusLabel,
                             style: TextStyle(
                               color: statusColor,
-                              fontSize: 10,
+                              fontSize: 13,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: .5,
                             ),
                           ),
                         ],
@@ -496,7 +506,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                       turns: collapsed ? 0 : .5,
                       duration: const Duration(milliseconds: 200),
                       child: Icon(
-                        Icons.expand_more_rounded,
+                        CupertinoIcons.chevron_down,
                         color: context.vivordoColors.textSecondary,
                       ),
                     ),
@@ -516,7 +526,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                           const Padding(
                             padding: EdgeInsets.only(bottom: 7),
                             child: Icon(
-                              Icons.favorite_rounded,
+                              CupertinoIcons.heart_fill,
                               color: red,
                               size: 28,
                             ),
@@ -552,11 +562,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                             const SizedBox(
                               width: 28,
                               height: 28,
-                              child: CircularProgressIndicator(strokeWidth: 3),
+                              child: CupertinoActivityIndicator(radius: 14),
                             )
                           else
                             Icon(
-                              Icons.monitor_heart_outlined,
+                              CupertinoIcons.waveform_path_ecg,
                               color: statusColor,
                               size: 36,
                             ),
@@ -623,7 +633,9 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         ),
                       ),
                       icon: Icon(
-                        live ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                        live
+                            ? CupertinoIcons.stop_fill
+                            : CupertinoIcons.play_fill,
                         size: 19,
                       ),
                       label: Text(
@@ -921,7 +933,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       padding: const EdgeInsets.all(18),
       child: Row(
         children: [
-          bubble(Icons.show_chart_rounded, const Color(0xFF20B26B)),
+          bubble(CupertinoIcons.graph_square, const Color(0xFF20B26B)),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -1079,26 +1091,55 @@ class _HeartChartState extends State<_HeartChart> {
     }
   }
 
+  /// What the chart shows, for VoiceOver: the average, the low and the high.
+  /// A day has a low and high per bucket; a range has one resting value a day.
+  String get _summary {
+    final v = widget.values;
+    if (v.isEmpty) return 'Heart rate: no readings.';
+    final lows = widget.showTime ? widget.lows : v;
+    final highs = widget.showTime ? widget.highs : v;
+    final average = v.reduce((a, b) => a + b) / v.length;
+    var low = 0, high = 0;
+    for (var i = 1; i < v.length; i++) {
+      if (lows[i] < lows[low]) low = i;
+      if (highs[i] > highs[high]) high = i;
+    }
+    final when = widget.showTime
+        ? DateFormat('h:mm a')
+        : DateFormat(v.length <= 7 ? 'EEEE' : 'MMM d');
+    final at = widget.showTime ? 'at' : 'on';
+    return '${widget.showTime ? 'Heart rate today' : 'Resting heart rate, last ${v.length} days'}: '
+        'average ${average.round()} bpm, '
+        'lowest ${lows[low].round()} $at ${when.format(widget.dates[low])}, '
+        'highest ${highs[high].round()} $at ${when.format(widget.dates[high])}'
+        '${widget.resting == null ? '' : ', resting ${widget.resting!.round()}'}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _HeartChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          lows: widget.lows,
-          highs: widget.highs,
-          resting: widget.resting,
-          showTime: widget.showTime,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _HeartChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              lows: widget.lows,
+              highs: widget.highs,
+              resting: widget.resting,
+              showTime: widget.showTime,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -1279,6 +1320,7 @@ class _HeartChartPainter extends CustomPainter {
           : '${DateFormat('MMM d').format(dates[index])}\n'
                 '${values[index].round()} bpm';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -1373,6 +1415,7 @@ class _HeartChartPainter extends CustomPainter {
 
   void text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -1388,6 +1431,7 @@ class _HeartChartPainter extends CustomPainter {
 
   void centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -1411,6 +1455,7 @@ class _HeartChartPainter extends CustomPainter {
     double maximumX,
   ) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(

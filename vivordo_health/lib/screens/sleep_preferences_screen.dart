@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import '../src/services/wind_down_reminder.dart';
@@ -127,10 +129,7 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: VivordoTheme.brand,
-          ),
+          icon: const Icon(CupertinoIcons.back, color: VivordoTheme.brand),
         ),
         title: const Text(
           'Sleep preferences',
@@ -138,7 +137,7 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CupertinoActivityIndicator())
           : ListView(
               // Clears the floating Vivordo AI button.
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
@@ -169,16 +168,18 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Wind-down reminder',
-                            style: TextStyle(fontSize: 15),
+                    child: MergeSemantics(
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Wind-down reminder',
+                              style: TextStyle(fontSize: 15),
+                            ),
                           ),
-                        ),
-                        AppSwitch(value: _windDown, onChanged: _setWindDown),
-                      ],
+                          AppSwitch(value: _windDown, onChanged: _setWindDown),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -194,10 +195,9 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
   Widget _header(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
     child: Text(
-      text.toUpperCase(),
+      text,
       style: TextStyle(
-        fontSize: 12,
-        letterSpacing: .3,
+        fontSize: 13,
         color: context.vivordoColors.textSecondary,
       ),
     ),

@@ -40,7 +40,7 @@ class WhoopSourceBadge extends StatelessWidget {
                 'WHOOP',
                 style: TextStyle(
                   color: foreground,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
                   letterSpacing: .3,
                 ),

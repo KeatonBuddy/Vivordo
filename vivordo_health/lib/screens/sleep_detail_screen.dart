@@ -19,7 +19,10 @@ import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
+import 'package:vivordo_health/widgets/daily_tags.dart' show tagLastNightSick;
+import 'package:vivordo_health/widgets/sleep_patterns_section.dart';
 import 'sleep_preferences_screen.dart';
+import '../src/utils/chart_text.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
   final sleep = dailyMetrics?['sleep'];
@@ -54,6 +57,22 @@ Future<void> refreshConnectedSleepSources(
   }
 }
 
+/// The minutes after midnight of [day]'s first event in an effort_inputs
+/// document, or null when it has none that day.
+int? firstEventMinutes(String day, Map<String, dynamic> data) {
+  final date = DateTime.tryParse(day);
+  final events = data['events'];
+  if (date == null || events is! List) return null;
+  final starts = [
+    for (final event in events)
+      if (event is Map && event['start'] is Timestamp)
+        (event['start'] as Timestamp).toDate().toLocal(),
+  ].where((start) => DateUtils.isSameDay(start, date));
+  return starts.isEmpty
+      ? null
+      : starts.map((start) => start.hour * 60 + start.minute).reduce(math.min);
+}
+
 bool includesWhoopSleepSource(Iterable<String?> sources) =>
     sources.any((source) => source?.toLowerCase() == 'whoop');
 
@@ -70,16 +89,77 @@ class SleepDetailScreen extends StatefulWidget {
 }
 
 class _SleepDetailScreenState extends State<SleepDetailScreen> {
-  static const _purple = Color(0xFF5420DE);
+  static const _purple = Color(0xFF5B42F3);
   int _rangeIndex = 0;
   DateTime? _lastRefreshAt;
   bool _refreshingSleep = false;
+
+  // Made once: a new stream on each rebuild re-sent all 60 days.
+  late final _sleep = _sleepStream();
+  late final _user = _userStream();
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadSleepNeed());
+    unawaited(_loadPatternInputs());
   }
+
+  /// "Your patterns" also reads night tags (by evening) and each day's
+  /// first calendar event (minutes after midnight; times only, as
+  /// DayRecordService writes them).
+  Map<DateTime, Set<String>> _tags = const {};
+  Map<DateTime, int> _firstEvents = const {};
+
+  Future<void> _loadPatternInputs() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final user = FirebaseFirestore.instance.collection('users').doc(uid);
+    final today = DateUtils.dateOnly(DateTime.now());
+    Future<QuerySnapshot<Map<String, dynamic>>> since(String name, int days) =>
+        user
+            .collection(name)
+            .where(
+              FieldPath.documentId,
+              isGreaterThanOrEqualTo: localDayKey(
+                today.subtract(Duration(days: days)),
+              ),
+            )
+            .where(
+              FieldPath.documentId,
+              isLessThanOrEqualTo: localDayKey(today),
+            )
+            .get();
+    try {
+      final [tags, calendar] = await Future.wait([
+        since('daily_tags', 60),
+        since('effort_inputs', 42),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _tags = {
+          for (final doc in tags.docs)
+            ?DateTime.tryParse(doc.id): {
+              ...(doc.data()['tags'] as List? ?? const []).whereType<String>(),
+            },
+        };
+        _firstEvents = {
+          for (final doc in calendar.docs)
+            ?DateTime.tryParse(doc.id): ?firstEventMinutes(doc.id, doc.data()),
+        };
+      });
+    } catch (error) {
+      debugPrint('Sleep pattern inputs failed to load: $error');
+    }
+  }
+
+  void _patternAction(SleepPatternAction action) => switch (action) {
+    SleepPatternAction.preferences => Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SleepPreferencesScreen()),
+    ),
+    SleepPatternAction.tagSick => tagLastNightSick(context),
+  };
 
   /// Capacity's sleep need, as Home and My Day use it (null while it's the
   /// 8 h placeholder).
@@ -182,6 +262,13 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     }
   }
 
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _userStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null
+        ? null
+        : FirebaseFirestore.instance.collection('users').doc(uid).snapshots();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> _sleepStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -209,8 +296,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
+          icon: const Icon(CupertinoIcons.back, color: _purple),
         ),
         title: const Text(
           'Sleep',
@@ -228,11 +316,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _sleepStream(),
+        stream: _sleep,
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           return _content(snapshot.data);
         },
@@ -303,6 +391,28 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       recorded.map((day) => day.value?.source),
     );
     final averageStages = _averageStages(recorded);
+    final nights = {
+      for (final MapEntry(:key, :value) in byDay.entries)
+        ?DateTime.tryParse(key): SleepNight(
+          value.hours,
+          value.bedtime,
+          value.wakeTime,
+          value.inBed,
+        ),
+    };
+    final patterns = sleepPatterns(
+      nights: nights,
+      today: DateTime.now(),
+      need: need,
+      tags: _tags,
+      ratings: {
+        for (final doc in snapshot?.docs ?? const [])
+          if ((doc.data()['morning_check_in'] as Map?)?['sleep']
+              case final num rating)
+            ?DateTime.tryParse(doc.id): rating.toDouble(),
+      },
+      firstEvents: _firstEvents,
+    );
     final sleepingHeartRate = _rangeIndex == 0 && latest != null
         ? _heartRateDuringSleep(snapshot, latest)
         : const <HeartRateHistoryReading>[];
@@ -318,7 +428,10 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _lastUpdatedStatus(hasWhoopSleepData: hasWhoopSleepData),
+            _lastUpdatedStatus(
+              hasWhoopSleepData: hasWhoopSleepData,
+              synced: recorded.isNotEmpty,
+            ),
             const SizedBox(height: 18),
             _rangeSelector(),
             const SizedBox(height: 18),
@@ -334,6 +447,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
+            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? 'Heart rate during sleep'
@@ -368,7 +483,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 const SizedBox(width: 4),
                 IconButton(
                   onPressed: () => _showInsightInfo(hasWhoopSleepData),
-                  icon: const Icon(Icons.info_outline_rounded),
+                  icon: const Icon(CupertinoIcons.info),
                   tooltip: 'About this insight',
                   color: context.vivordoColors.textSecondary,
                   visualDensity: VisualDensity.compact,
@@ -378,15 +493,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             const SizedBox(height: 10),
             _insightCard(
               sleepInsight(
-                nights: {
-                  for (final MapEntry(:key, :value) in byDay.entries)
-                    ?DateTime.tryParse(key): SleepNight(
-                      value.hours,
-                      value.bedtime,
-                      value.wakeTime,
-                      value.inBed,
-                    ),
-                },
+                nights: nights,
                 today: DateTime.now(),
                 rangeDays: _rangeDays,
                 need: _sleepNeed,
@@ -406,16 +513,16 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _lastUpdatedStatus({required bool hasWhoopSleepData}) {
+  /// "Updated" only once something has synced; never the current time
+  /// for a screen with no sleep.
+  Widget _lastUpdatedStatus({
+    required bool hasWhoopSleepData,
+    required bool synced,
+  }) {
     final user = FirebaseAuth.instance.currentUser;
     return Center(
       child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: user == null
-            ? null
-            : FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .snapshots(),
+        stream: _user,
         builder: (context, snapshot) {
           final whoopConnected = hasConnectedWhoop(snapshot.data?.data());
           return Wrap(
@@ -425,7 +532,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             runSpacing: 2,
             children: [
               Text(
-                'Updated ${DateFormat('h:mm a').format(_lastRefreshAt ?? DateTime.now())}',
+                synced
+                    ? 'Updated ${DateFormat('h:mm a').format(_lastRefreshAt ?? DateTime.now())}'
+                    : 'Not synced yet',
                 style: TextStyle(color: context.vivordoColors.textSecondary),
               ),
               if (whoopConnected && hasWhoopSleepData) ...[
@@ -442,46 +551,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
-  Widget _rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == _rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget _rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    value: _rangeIndex,
+    onChanged: (index) => setState(() => _rangeIndex = index),
+  );
 
   void _showInsightInfo(bool hasWhoopSleepData) {
     showInfoSheet(
@@ -507,7 +581,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.nightlight_round, _purple, size: 62),
+              _iconBubble(CupertinoIcons.moon_fill, _purple, size: 62),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -516,9 +590,9 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     Text(
                       _rangeIndex == 0
                           ? latest?.inBed == true
-                                ? 'LAST NIGHT IN BED'
-                                : "LAST NIGHT'S SLEEP"
-                          : 'AVERAGE SLEEP',
+                                ? 'Last night in bed'
+                                : "Last night's sleep"
+                          : 'Average sleep',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -554,8 +628,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                           color: changeMinutes == 0
                               ? context.vivordoColors.textSecondary
                               : changeMinutes > 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -577,8 +651,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: switch (needBar.tone) {
-                      SleepNeedTone.met => const Color(0xFF20B26B),
-                      SleepNeedTone.short => const Color(0xFFF59E0B),
+                      SleepNeedTone.met => context.vivordoColors.success,
+                      SleepNeedTone.short => context.vivordoColors.warning,
                       SleepNeedTone.learning =>
                         context.vivordoColors.textSecondary,
                     },
@@ -604,7 +678,11 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
           Row(
             children: [
               Expanded(
-                child: _timeStat(Icons.bed_rounded, 'Bedtime', latest?.bedtime),
+                child: _timeStat(
+                  CupertinoIcons.bed_double_fill,
+                  'Bedtime',
+                  latest?.bedtime,
+                ),
               ),
               Container(
                 width: 1,
@@ -613,7 +691,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ),
               Expanded(
                 child: _timeStat(
-                  Icons.wb_sunny_rounded,
+                  CupertinoIcons.sun_max_fill,
                   'Wake time',
                   latest?.wakeTime,
                 ),
@@ -719,7 +797,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     if (readings.isEmpty) {
       return _sleepHeartRateEmptyState(
         'No sleeping heart-rate data',
-        'Your sleep was recorded, but no timestamped heart-rate readings were found between bedtime and wake time.',
+        'This needs a wearable that tracks your heart rate throughout the night. Wear one to bed and it shows here.',
       );
     }
 
@@ -742,7 +820,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AVERAGE SLEEPING HEART RATE',
+                      'Average sleeping heart rate',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 12,
@@ -819,7 +897,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     padding: const EdgeInsets.all(22),
     child: Row(
       children: [
-        _iconBubble(Icons.favorite_outline_rounded, _purple),
+        _iconBubble(CupertinoIcons.heart, _purple),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
@@ -849,7 +927,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         padding: const EdgeInsets.all(22),
         child: Row(
           children: [
-            _iconBubble(Icons.bedtime_outlined, _purple),
+            _iconBubble(CupertinoIcons.moon, _purple),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1120,24 +1198,40 @@ class _SleepingHeartRateChartState extends State<_SleepingHeartRateChart> {
     }
   }
 
+  /// What the line shows, for VoiceOver: the night's low and average.
+  String get _summary {
+    final r = widget.readings;
+    if (r.isEmpty) return 'Heart rate while asleep: no readings.';
+    final low = r.reduce((a, b) => b.bpm < a.bpm ? b : a);
+    final average = r.map((x) => x.bpm).reduce((a, b) => a + b) / r.length;
+    return 'Heart rate while asleep: lowest ${low.bpm.round()} bpm at '
+        '${DateFormat('h:mm a').format(low.timestamp.toLocal())}, '
+        'average ${average.round()} bpm.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragStart: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _SleepingHeartRatePainter(
-          readings: widget.readings,
-          bedtime: widget.bedtime,
-          wakeTime: widget.wakeTime,
-          selectedIndex: _selectedIndex,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragStart: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _SleepingHeartRatePainter(
+              readings: widget.readings,
+              bedtime: widget.bedtime,
+              wakeTime: widget.wakeTime,
+              selectedIndex: _selectedIndex,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -1317,6 +1411,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
       canvas.drawCircle(point, 4, Paint()..color = _lineColor);
 
       final tooltip = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text:
               '${DateFormat('h:mm a').format(reading.timestamp)}\n${reading.bpm.round()} bpm',
@@ -1374,6 +1469,7 @@ class _SleepingHeartRatePainter extends CustomPainter {
 
   TextPainter _textPainter(String text, double size, Color color) =>
       TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: text,
           style: TextStyle(fontSize: size, color: color),
@@ -1443,23 +1539,48 @@ class _SleepBarChartState extends State<_SleepBarChart> {
     }
   }
 
+  /// What the bars show, for VoiceOver: the average, shortest and longest
+  /// of the nights with sleep recorded.
+  String get _summary {
+    final nights = [
+      for (final (i, h) in widget.values.indexed)
+        if (h > 0) (widget.dates[i], h),
+    ];
+    final period = 'Last ${widget.values.length} nights';
+    if (nights.isEmpty) return '$period: no sleep recorded.';
+    final average =
+        nights.map((n) => n.$2).reduce((a, b) => a + b) / nights.length;
+    final shortest = nights.reduce((a, b) => b.$2 < a.$2 ? b : a);
+    final longest = nights.reduce((a, b) => b.$2 > a.$2 ? b : a);
+    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
+    String duration(double h) => _SleepBarPainter._durationLabel(h);
+    return '$period: average ${duration(average)}, '
+        'shortest ${day.format(shortest.$1)} at ${duration(shortest.$2)}, '
+        'longest ${day.format(longest.$1)} at ${duration(longest.$2)}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _SleepBarPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          need: widget.need,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _SleepBarPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              need: widget.need,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -1511,11 +1632,12 @@ class _SleepBarPainter extends CustomPainter {
       if (needY == null) return;
       final minutes = (need! * 60).round();
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text:
               'Need ${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m',
           style: TextStyle(
-            fontSize: 10,
+            fontSize: 11,
             color: dark ? Colors.white70 : Colors.black54,
           ),
         ),
@@ -1583,6 +1705,7 @@ class _SleepBarPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${_durationLabel(values[index])}';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -1609,7 +1732,7 @@ class _SleepBarPainter extends CustomPainter {
     }
   }
 
-  String _durationLabel(double hours) {
+  static String _durationLabel(double hours) {
     final totalMinutes = (hours * 60).round();
     if (totalMinutes <= 0) return 'No sleep recorded';
     final wholeHours = totalMinutes ~/ 60;
@@ -1621,6 +1744,7 @@ class _SleepBarPainter extends CustomPainter {
 
   void _center(Canvas canvas, String text, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: text,
         style: TextStyle(

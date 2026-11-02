@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,12 +8,26 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/personal_best.dart';
 
 class WorkoutSetRecord {
-  const WorkoutSetRecord({required this.weightLbs, required this.reps});
+  const WorkoutSetRecord({
+    required this.weightLbs,
+    required this.reps,
+    this.loggedAt,
+  });
 
   final double weightLbs;
   final int reps;
 
-  Map<String, dynamic> toMap() => {'weightLbs': weightLbs, 'reps': reps};
+  /// When its reps were entered, which places each exercise on the heart
+  /// rate graph. Null on workouts saved before it was recorded.
+  final DateTime? loggedAt;
+
+  Map<String, dynamic> toMap() => {
+    'weightLbs': weightLbs,
+    'reps': reps,
+    // A string, not a Timestamp: this map is also JSON (Vivordo AI's
+    // context, the in-progress draft).
+    if (loggedAt != null) 'loggedAt': loggedAt!.toUtc().toIso8601String(),
+  };
 }
 
 class WorkoutExerciseRecord {
@@ -170,18 +185,27 @@ class SavedWorkout {
     required this.exercises,
     required this.exerciseCount,
     required this.setCount,
+    this.startedAt,
     this.activityName,
     this.activityCategory,
+    this.customName,
   });
 
   final String id;
   final DateTime completedAt;
+
+  /// Null on workouts written without it; [completedAt] minus the duration
+  /// stands in.
+  final DateTime? startedAt;
   final int durationSeconds;
   final List<WorkoutExerciseRecord> exercises;
   final int exerciseCount;
   final int setCount;
   final String? activityName;
   final String? activityCategory;
+
+  /// The name the user gave it (Rename in the summary), over any other.
+  final String? customName;
 
   WorkoutExerciseRecord? get primaryCardioOrSportExercise {
     for (final exercise in exercises) {
@@ -193,15 +217,32 @@ class SavedWorkout {
   }
 
   String get displayName {
+    final custom = customName?.trim();
+    if (custom?.isNotEmpty == true) return custom!;
     final savedName = activityName?.trim();
     if (savedName?.isNotEmpty == true && savedName != 'Workout') {
       return savedName!;
     }
-    return primaryCardioOrSportExercise?.name ?? 'Workout';
+    return primaryCardioOrSportExercise?.name ??
+        strengthWorkoutName(exercises) ??
+        'Workout';
   }
 
   String? get displayCategory =>
       activityCategory ?? primaryCardioOrSportExercise?.category;
+
+  SavedWorkout withCustomName(String? name) => SavedWorkout(
+    id: id,
+    completedAt: completedAt,
+    durationSeconds: durationSeconds,
+    exercises: exercises,
+    exerciseCount: exerciseCount,
+    setCount: setCount,
+    startedAt: startedAt,
+    activityName: activityName,
+    activityCategory: activityCategory,
+    customName: name,
+  );
 
   List<String> get exerciseNames =>
       exercises.map((exercise) => exercise.name).toList(growable: false);
@@ -224,7 +265,15 @@ class SavedWorkout {
       for (final rawSet in rawSets.whereType<Map>()) {
         final weight = (rawSet['weightLbs'] as num?)?.toDouble() ?? 0;
         final reps = (rawSet['reps'] as num?)?.toInt() ?? 0;
-        sets.add(WorkoutSetRecord(weightLbs: weight, reps: reps));
+        sets.add(
+          WorkoutSetRecord(
+            weightLbs: weight,
+            reps: reps,
+            loggedAt: DateTime.tryParse(
+              rawSet['loggedAt'] as String? ?? '',
+            )?.toLocal(),
+          ),
+        );
       }
       if (name != null && name.trim().isNotEmpty) {
         exercises.add(
@@ -271,6 +320,7 @@ class SavedWorkout {
       id: document.id,
       completedAt:
           (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
       durationSeconds: (data['durationSeconds'] as num?)?.round() ?? 0,
       exercises: exercises,
       exerciseCount:
@@ -278,8 +328,78 @@ class SavedWorkout {
       setCount: (data['setCount'] as num?)?.round() ?? calculatedSets,
       activityName: data['activityName'] as String?,
       activityCategory: data['activityCategory'] as String?,
+      customName: data['customName'] as String?,
     );
   }
+}
+
+/// A strength workout's name from what was trained, each exercise's muscle
+/// group weighted by its sets: one group ("Chest", "Biceps"), Push, Pull,
+/// Arms, Upper Body, Legs or Lower Body, or two joined ("Chest and Legs").
+/// Worked out when shown, so older workouts are named too. Null without
+/// strength exercises, so cardio and sports keep their activity names.
+String? strengthWorkoutName(List<WorkoutExerciseRecord> exercises) {
+  final sets = <String, int>{};
+  for (final exercise in exercises) {
+    final group = muscleGroupOf(exercise);
+    if (group == null) continue;
+    sets[group] = (sets[group] ?? 0) + math.max(exercise.sets.length, 1);
+  }
+  int count(List<String> groups) =>
+      groups.fold(0, (total, group) => total + (sets[group] ?? 0));
+  // A group "makes" the workout at 70% of its sets.
+  bool most(int part, int whole) => part >= whole * .7;
+  final legs = count(['Legs']);
+  final core = count(['Core']);
+  final upper = count([
+    'Chest',
+    'Back',
+    'Shoulders',
+    'Biceps',
+    'Triceps',
+    'Arms',
+  ]);
+  if (upper + legs == 0) return core > 0 ? 'Core' : null;
+
+  String upperName() {
+    for (final group in ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps']) {
+      if (most(sets[group] ?? 0, upper)) return group;
+    }
+    if (most(count(['Biceps', 'Triceps', 'Arms']), upper)) return 'Arms';
+    if (most(count(['Chest', 'Shoulders', 'Triceps']), upper)) return 'Push';
+    if (most(count(['Back', 'Biceps']), upper)) return 'Pull';
+    return 'Upper Body';
+  }
+
+  // Core work alongside legs (a third of those sets or more) makes it a
+  // lower-body day; with upper-body work it doesn't change the name.
+  final lowerName = core * 3 >= legs + core ? 'Lower Body' : 'Legs';
+  if (upper == 0 || most(legs, upper + legs)) return lowerName;
+  if (legs == 0 || most(upper, upper + legs)) return upperName();
+  return '${upperName()} and Legs';
+}
+
+/// An exercise's muscle group: Chest, Back, Shoulders, Biceps, Triceps,
+/// Arms, Legs or Core; null for cardio and sports. The library files curls
+/// and triceps work alike under "Arms", so the name tells them apart;
+/// forearm and grip work stays "Arms".
+String? muscleGroupOf(WorkoutExerciseRecord exercise) {
+  switch (exercise.category) {
+    case 'Chest' || 'Back' || 'Shoulders' || 'Legs' || 'Core':
+      return exercise.category;
+    case 'Arms':
+      final name = exercise.name.toLowerCase();
+      if (RegExp('wrist|forearm|finger|gripper|pinch|roller').hasMatch(name)) {
+        return 'Arms';
+      }
+      if (RegExp(
+        r'tricep|pushdown|skull|kickback|dip\b|close[ -]?grip|jm press|diamond',
+      ).hasMatch(name)) {
+        return 'Triceps';
+      }
+      return RegExp('curl|chin').hasMatch(name) ? 'Biceps' : 'Arms';
+  }
+  return null;
 }
 
 /// A day's `exercise_time` with [deltaMinutes] of app-recorded time (workouts
@@ -351,11 +471,32 @@ Future<DocumentSnapshot<Map<String, dynamic>>?> _readOrNull(
   }
 }
 
+/// Whether an account's personal bests and "vs last time" comparisons must
+/// be rebuilt from its workout history: on a new rebuild version, or after
+/// a save that couldn't look up the previous lifts (offline), stamped
+/// `personalBestsStaleAt`, newer than the last rebuild.
+///
+/// ponytail: a stale workout that syncs while a rebuild is between reading
+/// and committing gets a stamp just before `personalBestBackfilledAt` and is
+/// missed until the next stale save; record the rebuild's read time if
+/// that ever shows up.
+@visibleForTesting
+bool personalBestsNeedRebuild(Map<String, dynamic>? user, int version) {
+  final done = (user?['personalBestBackfillVersion'] as num?)?.toInt() ?? 0;
+  if (done < version) return true;
+  final stale = user?['personalBestsStaleAt'];
+  if (stale is! Timestamp) return false;
+  final rebuilt = user?['personalBestBackfilledAt'];
+  return rebuilt is! Timestamp || stale.compareTo(rebuilt) > 0;
+}
+
 class WorkoutService {
   const WorkoutService._();
 
   static const int _legacyExerciseMinutesMigrationVersion = 1;
-  static const int _personalBestBackfillVersion = 3;
+  // 4: rebuild once for workouts saved offline before stale saves were
+  // stamped, which have no comparisons or personal bests.
+  static const int _personalBestBackfillVersion = 4;
 
   static Future<int>? _legacyExerciseMinutesMigration;
   static String? _legacyExerciseMinutesMigrationUserId;
@@ -386,18 +527,22 @@ class WorkoutService {
   static Future<int> _backfillPersonalBests(String userId) async {
     final db = FirebaseFirestore.instance;
     final userReference = db.collection('users').doc(userId);
-    final userSnapshot = await userReference.get();
-    if (((userSnapshot.data()?['personalBestBackfillVersion'] as num?)
-                ?.toInt() ??
-            0) >=
-        _personalBestBackfillVersion) {
+    // Server only: offline, the phone's cache can hold part of the history,
+    // and rebuilding from that would erase real bests. It throws instead and
+    // is retried next time.
+    const server = GetOptions(source: Source.server);
+    final userSnapshot = await userReference.get(server);
+    if (!personalBestsNeedRebuild(
+      userSnapshot.data(),
+      _personalBestBackfillVersion,
+    )) {
       return 0;
     }
 
     final workouts = await userReference
         .collection('workouts')
         .orderBy('completedAt')
-        .get();
+        .get(server);
     final currentRecords = <String, _StoredPersonalBest>{};
     final latestAttempts = <String, _StoredExerciseAttempt>{};
     final workoutUpdates = <_PersonalBestWorkoutUpdate>[];
@@ -876,7 +1021,51 @@ class WorkoutService {
     return latest;
   }
 
+  /// Whether this account already has the workout [id].
+  static Future<bool> exists(String id) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final snapshot = await _readOrNull(
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('workouts')
+          .doc(id),
+    );
+    return snapshot?.exists ?? false;
+  }
+
   /// False when deleted on the phone but still waiting to sync.
+  /// Saves the name the user typed for a workout; an empty one goes back to
+  /// the generated name. A workout shared to Circle shows it there too.
+  /// Returns whether it reached the server (false: queued offline).
+  static Future<bool> rename(String workoutId, String name) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('Sign in before renaming a workout.');
+    final db = FirebaseFirestore.instance;
+    final userReference = db.collection('users').doc(user.uid);
+    final workoutReference = userReference
+        .collection('workouts')
+        .doc(workoutId);
+    final snapshot = await _readOrNull(workoutReference);
+    final clean = name.trim();
+    final batch = db.batch()
+      ..update(workoutReference, {
+        'customName': clean.isEmpty ? FieldValue.delete() : clean,
+      });
+    if (snapshot?.data()?['shareToCircle'] == true) {
+      final shown = clean.isNotEmpty
+          ? clean
+          : SavedWorkout.fromDocument(
+              snapshot!,
+            ).withCustomName(null).displayName;
+      batch.update(userReference.collection('circle_activity').doc(workoutId), {
+        'name': shown,
+      });
+    }
+    return syncedOrQueued(batch.commit());
+  }
+
   static Future<bool> delete(String workoutId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before deleting a workout.');
@@ -929,6 +1118,11 @@ class WorkoutService {
     required int durationSeconds,
     required List<WorkoutExerciseRecord> exercises,
     bool shareToCircle = false,
+    // A workout recorded elsewhere (the Apple Watch): its own document id,
+    // so saving it twice writes one workout, its real end and its name.
+    String? id,
+    DateTime? completedAt,
+    String? customName,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in before saving a workout.');
@@ -939,7 +1133,7 @@ class WorkoutService {
       debugPrint('Personal best backfill skipped: $error');
     }
 
-    final completedAt = DateTime.now();
+    completedAt ??= DateTime.now();
     final goalMinutes = durationSeconds <= 0
         ? 0
         : (durationSeconds / 60).ceil();
@@ -949,7 +1143,7 @@ class WorkoutService {
         .collection('users')
         .doc(user.uid)
         .collection('workouts')
-        .doc();
+        .doc(id);
     final setCount = exercises.fold<int>(
       0,
       (total, exercise) => total + exercise.sets.length,
@@ -968,7 +1162,11 @@ class WorkoutService {
       activityFields['activityCategory'] = activityCategory;
     }
     final circleActivityFields = <String, dynamic>{
-      'name': activityName,
+      // Friends see what was trained ("Push"), not just "Workout".
+      'name':
+          selectedActivity?.name ??
+          strengthWorkoutName(exercises) ??
+          activityName,
       ...activityFields,
     };
     if (selectedActivity?.distanceKm != null) {
@@ -1015,6 +1213,20 @@ class WorkoutService {
         .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
         .toList(growable: false);
     var personalBestCount = 0;
+    // Offline without the phone having a copy, the previous lift and best
+    // can't be read, so this workout gets no comparison or personal best.
+    // Stamp the account so the next online start rebuilds them from history.
+    final lookupsMissing = personalBestCandidates.keys.any(
+      (name) =>
+          personalBestSnapshots[name] == null ||
+          latestAttemptSnapshots[name] == null,
+    );
+    if (lookupsMissing) {
+      batch.set(db.collection('users').doc(user.uid), {
+        'personalBestsStaleAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      _personalBestBackfill = null;
+    }
 
     for (final entry in personalBestCandidates.entries) {
       final candidate = entry.value;
@@ -1091,6 +1303,8 @@ class WorkoutService {
       'personalBestCount': personalBestCount,
       'personalBestVersion': 3,
       'exerciseComparisonVersion': 2,
+      if (customName != null && customName.trim().isNotEmpty)
+        'customName': customName.trim(),
       'createdAt': FieldValue.serverTimestamp(),
     });
     if (shareToCircle) {

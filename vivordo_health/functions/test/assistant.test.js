@@ -17,7 +17,9 @@ function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversatio
   const lists = {workouts, memory, conversations, messages};
   const snap = (path) => ({id: path.split("/").pop(), exists: path in docs, data: () => docs[path]});
   const docRef = (path) => ({path, id: path.split("/").pop(), collection: (name) => collectionRef(`${path}/${name}`),
-    get: async () => snap(path)});
+    get: async () => snap(path), delete: async () => {
+      delete docs[path];
+    }});
   const query = (path, filters) => ({
     where: (field, op, value) => query(path, [...filters, (d) => d[field] === value]),
     get: async () => {
@@ -38,6 +40,7 @@ function fakeDb({days = {}, scores = {}, workouts = [], memory = [], conversatio
   });
   return {
     writes,
+    docsForTest: docs,
     collection: (name) => collectionRef(name),
     getAll: async (...refs) => refs.map((ref) => {
       const [collection, day] = ref.path.split("/").slice(-2);
@@ -189,6 +192,23 @@ test("workouts are dated in the user's timezone", async () => {
   assert.equal(client.requests[1].messages.at(-1).content[0].content, "2026-09-30 | 45 min | Bench=135lb×8/145.5lb×6; Run=3.2km");
 });
 
+test("workouts and metrics come back in the user's units", async () => {
+  const completed = new Date("2026-10-01T03:00:00Z");
+  const db = fakeDb({workouts: [{completedAt: {toDate: () => completed}, durationSeconds: 2700, exercises: [
+    {name: "Squat", sets: [{weightLbs: 185, reps: 8}]},
+    {name: "Run", distanceKm: 6.1, sets: []},
+  ]}]});
+  const client = fakeClient([
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("w", "get_workouts", {limit: 3})]},
+    {stop_reason: "tool_use", usage: {}, content: [toolUse("r", "reply", {message: "Nice.", intent: "chitchat", crisis: false})]},
+  ]);
+  const request = validateAssistantRequest({...base, units: {liftWeight: "kg", distance: "mi"}});
+  await runAssistant({client, db, uid: "u", request});
+  assert.equal(client.requests[1].messages.at(-1).content[0].content, "2026-09-30 | 45 min | Squat=83.9kg×8; Run=3.8mi");
+  assert.match(client.requests[0].system.at(-1).text, /lifting weights in kg/);
+  assert.equal(metricValue("distance", {sum: 6.1}, (km) => km / 1.609344), "3.8");
+});
+
 test("the prompt carries the safety and reminder rules", () => {
   assert.match(SYSTEM_PROMPT, /set crisis: true/);
   assert.match(SYSTEM_PROMPT, /"remind me to pay internet bill on Oct 1"/);
@@ -202,7 +222,7 @@ test("score lines read the stored Capacity, Effort, Physical Health and burnout 
     effort: {total: 26.6, mental: 20, physical: 6.6, busyMinutes: 240, afterHoursMinutes: 30, backToBack: 3, prioritiesDone: 2, unfinishedPriorities: 1},
     physical: {score: 72, label: "good", daysOfData: 30},
     burnout: {level: "watch", areas: {capacity: {elevated: true}, effort: {elevated: false}, mood: {elevated: true}}},
-  }), "capacity=81 (high, sleep 7.1h vs need 7.5h, HRV 44.6, resting HR 58) | effort=26.6 (mental 20, physical 6.6, busy 240 min, after hours 30 min, 3 back-to-back, 2 priorities done, 1 unfinished) | physical_health=72 (good) | burnout_check=watch (strained: capacity, mood)");
+  }), "capacity=81 (high, sleep 7.1h vs need 7.5h, HRV 44.6, resting HR 58) | effort=26.6 (schedule 20, activity 6.6, busy 240 min, after hours 30 min, 3 back-to-back, 2 priorities done, 1 unfinished) | physical_health=72 (good) | burnout_check=watch (strained: capacity, mood)");
   assert.equal(scoreLine({capacity: {score: 55, label: "moderate", provisional: true, sleepHours: null}}), "capacity=55 (moderate, provisional)");
   assert.equal(scoreLine({physical: {score: null, label: "building", daysOfData: 5}, burnout: {level: "learning", learningDays: 12}}), "physical_health=building (5 days of data) | burnout_check=learning (12 days of history)");
   assert.equal(scoreLine({capacity: null, effort: null}), null);
@@ -215,7 +235,7 @@ test("get_scores reads scores_daily, not metrics_daily", async () => {
     scores: {"2026-09-30": {effort: {total: 12, mental: 12, physical: 0, busyMinutes: 60}}, "2026-10-01": {capacity: {score: 81, label: "high"}}},
   });
   assert.equal(await getScores(db, "u", {start_date: "2026-09-29", end_date: "2026-10-01"}),
-      "2026-09-30: effort=12 (mental 12, physical 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
+      "2026-09-30: effort=12 (schedule 12, activity 0, busy 60 min)\n2026-10-01: capacity=81 (high)");
   assert.match(await getScores(db, "u", {start_date: "2026-01-01", end_date: "2026-01-02"}), /^No scores/);
   await assert.rejects(getScores(db, "u", {start_date: "2026-01-02", end_date: "2026-01-01"}), /^Error: Invalid range/);
 });
@@ -660,4 +680,26 @@ test("routines are only offered to builds that can save them", async () => {
   const old = await run(undefined);
   assert.ok(!old.client.requests[0].tools.some((t) => t.name === "propose_workout"));
   assert.ok(!old.client.requests[0].system.some((block) => /WORKOUT ROUTINES/.test(block.text)));
+});
+
+test("a turn stopped in the app saves nothing and returns stopped", async () => {
+  const stop = "users/u1/assistant_stops/turn1";
+  const db = fakeDb({docs: {[stop]: {at: 1}}});
+  const client = fakeClient([]);
+  const {reply} = await runAssistant({client, db, uid: "u1", now: () => 0,
+    request: validateAssistantRequest({...base, turnId: "turn1"})});
+  assert.equal(reply.stopped, true);
+  assert.equal(client.requests.length, 0);
+  assert.equal(db.writes.length, 0);
+
+  // Stopped while the model was working: the reply isn't kept either.
+  const later = fakeDb();
+  const slow = {requests: [], beta: {messages: {create: async () => {
+    later.docsForTest["users/u1/assistant_stops/turn2"] = {at: 1};
+    return {stop_reason: "end_turn", usage: {}, content: [{type: "text", text: "Hi"}]};
+  }}}};
+  const second = await runAssistant({client: slow, db: later, uid: "u1", now: () => 0,
+    request: validateAssistantRequest({...base, turnId: "turn2"})});
+  assert.equal(second.reply.stopped, true);
+  assert.equal(later.writes.length, 0);
 });

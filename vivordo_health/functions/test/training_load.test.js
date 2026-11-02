@@ -62,8 +62,29 @@ test("a measured day uses heart rate, a watch-off day minutes", () => {
 
 test("too little history, or almost no usual activity, is learning", () => {
   const sparse = {minutesOn: new Map([[key(9), 10], [key(1), 30]]), minutesBase: 10};
-  assert.deepEqual(trainingLoadFor({day: DAY, loads: sparse}), {version: 1, state: "learning", coveredDays: 1});
-  assert.equal(run([0, 0, 0, 0, 0, 0, 0], {usual: 1}).state, "learning");
+  // Data from 9 days ago: the week before is covered in about 5 more days.
+  assert.deepEqual(trainingLoadFor({day: DAY, loads: sparse}), {version: 1, state: "learning", coveredDays: 1, daysToGo: 5});
+  assert.deepEqual(trainingLoadFor({day: DAY, loads: {minutesOn: new Map(), minutesBase: 10}}), {version: 1, state: "learning", coveredDays: 0, daysToGo: null});
+  const idle = run([0, 0, 0, 0, 0, 0, 0], {usual: 1});
+  assert.equal(idle.state, "learning");
+  assert.equal(idle.daysToGo, null); // not a matter of time
+});
+
+test("the usual week grows from the week before to the 4 before", () => {
+  // Only 2 weeks back on record (days 8–21), at 1.0 a day; this week 1.5 a day.
+  const minutesOn = new Map();
+  for (let k = 8; k <= 21; k++) minutesOn.set(key(k), 10);
+  for (let k = 1; k <= 7; k++) minutesOn.set(key(k), 15);
+  const two = trainingLoadFor({day: DAY, loads: {minutesOn, minutesBase: 10}});
+  assert.equal(two.usualWeeks, 2);
+  assert.equal(two.usualWeek, 7);
+  assert.equal(two.ratio, 1.5);
+  // Just the week before (6 of its 7 days).
+  const oneOn = new Map([...minutesOn].filter(([day]) => day >= key(14)));
+  oneOn.delete(key(10));
+  assert.equal(trainingLoadFor({day: DAY, loads: {minutesOn: oneOn, minutesBase: 10}}).usualWeeks, 1);
+  // A full 4 weeks.
+  assert.equal(run([10, 10, 10, 10, 10, 10, 10]).usualWeeks, 4);
 });
 
 test("the Strained push sends when it starts, at most once a week", () => {
@@ -74,6 +95,9 @@ test("the Strained push sends when it starts, at most once a week", () => {
   assert.equal(shouldNotify(strained, "strained", null, DAY), false); // already on
   assert.equal(shouldNotify({state: "high"}, "steady", null, DAY), false);
   assert.equal(shouldNotify(null, null, null, DAY), false);
+  // Not against a single week's usual.
+  assert.equal(shouldNotify({state: "strained", usualWeeks: 1}, "high", null, DAY), false);
+  assert.equal(shouldNotify({state: "strained", usualWeeks: 2}, "high", null, DAY), true);
 });
 
 test("the Strained push names the week and the body", () => {

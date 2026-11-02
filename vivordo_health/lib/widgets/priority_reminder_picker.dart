@@ -12,26 +12,40 @@ String priorityReminderLabel(int minutes) => switch (minutes) {
   _ => '$minutes min before',
 };
 
-Future<int?> showPriorityReminderPicker(
+/// The chosen reminder ([minutes] null for None), or null if dismissed.
+Future<({int? minutes})?> showPriorityReminderPicker(
   BuildContext context,
-  int current,
+  int? current,
 ) async {
   const presets = [0, 30, 60, 360];
+  const none = -2;
   final selected = await showAppleActionSheet<int>(
     context,
     title: 'Reminder',
     actions: [
+      AppleSheetAction('None', none, selected: current == null),
       for (final minutes in presets)
         AppleSheetAction(
           minutes == 0 ? 'At start time' : priorityReminderLabel(minutes),
           minutes,
           selected: current == minutes,
         ),
-      AppleSheetAction('Custom', -1, selected: !presets.contains(current)),
+      AppleSheetAction(
+        'Custom',
+        -1,
+        selected: current != null && !presets.contains(current),
+      ),
     ],
   );
-  if (selected != -1 || !context.mounted) return selected;
-  return showAppleSheet<int>(context, builder: (_) => _CustomReminder(current));
+  if (selected == null) return null;
+  if (selected == none) return (minutes: null);
+  if (selected != -1) return (minutes: selected);
+  if (!context.mounted) return null;
+  final custom = await showAppleSheet<int>(
+    context,
+    builder: (_) => _CustomReminder(current ?? 60),
+  );
+  return custom == null ? null : (minutes: custom);
 }
 
 class _CustomReminder extends StatefulWidget {

@@ -3,44 +3,122 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/widgets/contextual_insight_bar.dart';
 
 void main() {
-  testWidgets('dismissal lasts only for the current screen visit', (
-    tester,
-  ) async {
-    Future<void> show(String? screen, {bool suppressed = false}) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ContextualInsightBar(
-              insight: screen == null
-                  ? null
-                  : ScreenInsight(screen, 'Title', 'Advice'),
-              suppressed: suppressed,
-              collapsed: const Text('Robot'),
-              onAsk: (_) {},
-            ),
-          ),
+  Widget bar({
+    required String? screen,
+    required InsightMemory memory,
+    String message = 'Advice',
+    bool suppressed = false,
+    ValueNotifier<double>? lift,
+    List<int>? waves,
+    List<int>? cheers,
+    VoidCallback? onTap,
+    ValueChanged<String>? onAsk,
+  }) => MaterialApp(
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: ContextualInsightBar(
+          insight: screen == null
+              ? null
+              : ScreenInsight(screen, 'Title', message),
+          suppressed: suppressed,
+          memory: memory,
+          lift: lift,
+          button: (_, waveCount, cheerCount) {
+            waves?.add(waveCount);
+            cheers?.add(cheerCount);
+            return const Text('Robot');
+          },
+          onButtonTap: (_) => onTap?.call(),
+          onAsk: onAsk ?? (_) {},
         ),
-      );
-      await tester.pump(const Duration(seconds: 3));
-      await tester.pumpAndSettle();
-    }
+      ),
+    ),
+  );
 
-    await show('my_day');
+  Future<void> settle(WidgetTester tester) async {
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a new insight opens once with a cheer; later visits show a '
+      'dot and wave', (tester) async {
+    final memory = InsightMemory();
+    final lift = ValueNotifier<double>(0);
+    final waves = <int>[];
+    final cheers = <int>[];
+    await tester.pumpWidget(
+      bar(
+        screen: 'my_day',
+        memory: memory,
+        lift: lift,
+        waves: waves,
+        cheers: cheers,
+      ),
+    );
+    await settle(tester);
+    expect(find.text('Advice'), findsOneWidget);
+    expect(cheers.last, 1, reason: 'arms up as it rises, then a wave');
+    expect(waves.last, 0);
+    expect(lift.value, 1, reason: 'the button rises so the bar can widen');
     await tester.tap(find.byTooltip('Dismiss insights for this screen'));
     await tester.pumpAndSettle();
-    await show('my_day');
     expect(find.text('Advice'), findsNothing);
-    await show('my_day', suppressed: true);
-    await show('my_day');
-    expect(find.text('Advice'), findsNothing);
-    await show('fitness');
-    await show('my_day');
-    expect(find.text('Advice'), findsOneWidget);
+    expect(lift.value, 0);
+    expect(find.bySemanticsLabel(RegExp('insight available')), findsOne);
+
+    // Another screen, then back: the same insight doesn't open by itself,
+    // and the robot waves once about it.
+    await tester.pumpWidget(bar(screen: 'fitness', memory: memory));
+    await settle(tester);
     await tester.tap(find.byTooltip('Dismiss insights for this screen'));
     await tester.pumpAndSettle();
-    await show(null);
-    await show('my_day');
+    await tester.pumpWidget(
+      bar(screen: 'my_day', memory: memory, waves: waves..clear()),
+    );
+    await settle(tester);
+    expect(find.text('Advice'), findsNothing);
+    expect(waves.last, 1);
+    await tester.pumpWidget(
+      bar(screen: 'fitness', memory: memory, waves: waves..clear()),
+    );
+    await settle(tester);
+    final before = waves.last;
+    await tester.pumpWidget(
+      bar(
+        screen: 'my_day',
+        memory: memory,
+        waves: waves..clear(),
+        cheers: cheers,
+      ),
+    );
+    await settle(tester);
+    expect(waves.last, before, reason: 'only one wave per insight');
+
+    // Tapping the button opens it, rising with a cheer; new text opens by
+    // itself again.
+    final cheered = cheers.last;
+    await tester.tap(find.text('Robot'));
+    await tester.pumpAndSettle();
     expect(find.text('Advice'), findsOneWidget);
+    expect(cheers.last, cheered + 1);
+    await tester.pumpWidget(bar(screen: 'fitness', memory: memory));
+    await settle(tester);
+    await tester.pumpWidget(
+      bar(screen: 'my_day', memory: memory, message: 'New advice'),
+    );
+    await settle(tester);
+    expect(find.text('New advice'), findsOneWidget);
+  });
+
+  testWidgets('without an insight the button opens Vivordo AI', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      bar(screen: null, memory: InsightMemory(), onTap: () => taps++),
+    );
+    await settle(tester);
+    await tester.tap(find.text('Robot'));
+    expect(taps, 1);
   });
 
   testWidgets('a quick tab switch morphs one robot button, never a copy', (
@@ -50,24 +128,14 @@ void main() {
     // pill grows out of the button, so there is only ever one robot, and it
     // must never carry a GlobalKey (main_navigation.dart once did, which
     // crashed the old crossfade with "Duplicate GlobalKey").
-    Future<void> show(String screen) => tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ContextualInsightBar(
-            insight: ScreenInsight(screen, 'Title', 'Advice'),
-            collapsed: const Text('Robot'),
-            onAsk: (_) {},
-          ),
-        ),
-      ),
-    );
-    await show('home');
+    final memory = InsightMemory();
+    await tester.pumpWidget(bar(screen: 'home', memory: memory));
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
-    await show('my_day');
+    await tester.pumpWidget(bar(screen: 'my_day', memory: memory));
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(milliseconds: 50));
-    await show('fitness');
+    await tester.pumpWidget(bar(screen: 'fitness', memory: memory));
     await tester.pump(const Duration(milliseconds: 16));
     expect(find.text('Robot'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -116,26 +184,15 @@ void main() {
   ) async {
     String? prompt;
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.bottomCenter,
-            child: ContextualInsightBar(
-              insight: const ScreenInsight(
-                'my_day',
-                'Your day',
-                'Your afternoon is busy.',
-              ),
-              collapsed: const Text('Robot'),
-              onAsk: (value) => prompt = value,
-            ),
-          ),
-        ),
+      bar(
+        screen: 'my_day',
+        memory: InsightMemory(),
+        message: 'Your afternoon is busy.',
+        onAsk: (value) => prompt = value,
       ),
     );
     expect(find.text('Robot'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text('Your afternoon is busy.'), findsOneWidget);
     expect(prompt, isNull);
     await tester.tap(find.byTooltip('Expand insight'));
@@ -151,16 +208,7 @@ void main() {
 
   testWidgets('suppressed advice stays collapsed', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ContextualInsightBar(
-            insight: const ScreenInsight('fitness', 'Fitness', 'Advice'),
-            suppressed: true,
-            collapsed: const Text('Robot'),
-            onAsk: (_) {},
-          ),
-        ),
-      ),
+      bar(screen: 'fitness', memory: InsightMemory(), suppressed: true),
     );
     await tester.pump(const Duration(seconds: 3));
     expect(find.text('Advice'), findsNothing);

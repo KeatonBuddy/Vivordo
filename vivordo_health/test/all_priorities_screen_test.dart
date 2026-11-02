@@ -80,10 +80,10 @@ void main() {
         await tester.pumpAndSettle();
         // Overdue counts toward today's work.
         expect(find.text('3 left today'), findsOneWidget);
-        expect(find.text('OVERDUE'), findsOneWidget);
+        expect(find.text('Overdue'), findsOneWidget);
         expect(find.textContaining('From '), findsOneWidget);
-        expect(find.text('TODAY · 1 OF 3'), findsOneWidget);
-        expect(find.text('TOMORROW'), findsOneWidget);
+        expect(find.text('Today · 1 of 3'), findsOneWidget);
+        expect(find.text('Tomorrow'), findsOneWidget);
         // Repeating ones appear once, on their first day.
         expect(find.text('Morning planning'), findsOneWidget);
         expect(find.text('Next planning'), findsNothing);
@@ -171,7 +171,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Repeating · 2'), findsOneWidget);
-    expect(find.text('HABITS'), findsOneWidget);
+    expect(find.text('Habits'), findsOneWidget);
     expect(find.text('Every day · 8 a day'), findsOneWidget);
     expect(find.text('Stopped'), findsNothing);
     await tester.tap(find.text('Water'));
@@ -193,5 +193,53 @@ void main() {
     await tester.tap(find.text('Delete').last);
     await tester.pumpAndSettle();
     expect(deletedSchedule, 'a');
+  });
+
+  testWidgets('a repeating priority asks: just this one or all repeats', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final deleted = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.dark,
+        home: AllPrioritiesScreen(
+          priorities: Stream.value([
+            priority('Stretch', 0, template: 'daily'),
+            priority('Water plants', 0, template: 'weekly'),
+          ]),
+          onAdd: (_) async {},
+          onEdit: (_, _) async {},
+          onDelete: (p) async => deleted.add('one ${p.id}'),
+          onDeleteSchedule: (id) async => deleted.add('all $id'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> swipeAndPick(String title, String choice) async {
+      await tester.drag(find.text(title), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(title),
+            matching: find.byType(SwipeToDelete),
+          ),
+          matching: find.text('Delete'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Delete repeating priority?'), findsOneWidget);
+      await tester.tap(find.text(choice));
+      await tester.pumpAndSettle();
+    }
+
+    await swipeAndPick('Stretch', 'Just this one');
+    await swipeAndPick('Water plants', 'All repeats');
+    expect(deleted, ['one Stretch', 'all weekly']);
   });
 }

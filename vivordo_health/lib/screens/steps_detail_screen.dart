@@ -3,13 +3,18 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import '../src/utils/chart_text.dart';
 
 class StepsDetailScreen extends StatefulWidget {
   const StepsDetailScreen({super.key});
@@ -21,7 +26,8 @@ class StepsDetailScreen extends StatefulWidget {
 class _StepsDetailScreenState extends State<StepsDetailScreen> {
   static const _blue = Color(0xFF2878E8);
   static const _purple = Color(0xFF5B42F3);
-  int _rangeIndex = 0;
+  // Opens on Week; Day is a tap away.
+  int _rangeIndex = 1;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
@@ -33,6 +39,9 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     1 => 'Weekly',
     _ => 'Monthly',
   };
+
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _steps = _stepsStream();
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _stepsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -110,8 +119,9 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(CupertinoIcons.back),
           color: _purple,
         ),
         title: const Text(
@@ -120,11 +130,11 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _stepsStream(),
+        stream: _steps,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final data = _rangeData(snapshot.data);
           final usualValues = _usualValues(snapshot.data);
@@ -189,7 +199,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
         children: [
           Center(
             child: Text(
-              'Updated $updated',
+              total == 0 ? 'No steps synced yet' : 'Updated $updated',
               style: TextStyle(color: context.vivordoColors.textSecondary),
             ),
           ),
@@ -239,46 +249,11 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     );
   }
 
-  Widget _rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == _rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget _rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    value: _rangeIndex,
+    onChanged: (index) => setState(() => _rangeIndex = index),
+  );
 
   Widget _summaryCard(
     int total,
@@ -301,7 +276,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${_rangeName.toUpperCase()} STEPS',
+                      '$_rangeName steps',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -335,8 +310,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
                           color: _rangeIndex == 0 && change < 10
                               ? context.vivordoColors.textSecondary
                               : change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -406,24 +381,26 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Row(
         children: [
-          _iconBubble(Icons.route_rounded, const Color(0xFF20B26B)),
+          _iconBubble(CupertinoIcons.map, const Color(0xFF20B26B)),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'TOTAL DISTANCE',
+                  'Total distance',
                   style: TextStyle(
                     color: context.vivordoColors.textSecondary,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: .7,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${distanceKm.toStringAsFixed(decimals)} km',
+                  context.watch<ThemeController>().units.formatDistance(
+                    distanceKm,
+                    decimals: decimals,
+                  ),
                   style: const TextStyle(
                     fontSize: 25,
                     fontWeight: FontWeight.w900,
@@ -538,8 +515,8 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF20B26B),
+      style: TextStyle(
+        color: context.vivordoColors.success,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -592,24 +569,46 @@ class _StepsChartState extends State<_StepsChart> {
     if (!listEquals(oldWidget.values, widget.values)) selected = null;
   }
 
+  /// What the line shows, for VoiceOver: the period's average and best day.
+  String get _summary {
+    final days = widget.values.where((v) => v > 0).toList();
+    final period = 'Last ${widget.values.length} days';
+    if (days.isEmpty) return '$period: no steps recorded.';
+    final steps = NumberFormat.decimalPattern();
+    final average = days.reduce((a, b) => a + b) / days.length;
+    var best = 0;
+    for (var i = 1; i < widget.values.length; i++) {
+      if (widget.values[i] > widget.values[best]) best = i;
+    }
+    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
+    return '$period: average ${steps.format(average.round())} steps, '
+        'most on ${day.format(widget.dates[best])} with '
+        '${steps.format(widget.values[best].round())}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _StepsChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          maxY: widget.maxY,
-          usual: widget.usual,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _StepsChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              maxY: widget.maxY,
+              usual: widget.usual,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -706,6 +705,7 @@ class _StepsChartPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${NumberFormat.decimalPattern().format(values[index].round())} steps';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -737,6 +737,7 @@ class _StepsChartPainter extends CustomPainter {
 
   void _text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -751,6 +752,7 @@ class _StepsChartPainter extends CustomPainter {
 
   void _centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(

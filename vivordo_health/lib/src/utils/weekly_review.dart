@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:intl/intl.dart';
 
 import 'day_key.dart';
+import 'detail_insights.dart';
 import 'meeting_patterns.dart';
+import 'server_capacity.dart' show latestSleepNeed;
 
 /// The Sunday weekly review (docs/scores.md §9): last Sunday to Saturday
 /// from the small daily documents Vivordo already saves, and the week ahead
@@ -22,6 +24,8 @@ class WeeklyReviewInput {
     this.openPriorities = const [],
     this.nextWeek = const [],
     this.lastWeekNote,
+    this.nights,
+    this.ratings = const {},
   });
 
   /// The Sunday the reviewed week starts on.
@@ -46,11 +50,38 @@ class WeeklyReviewInput {
 
   /// Last week's "anything else going on" answer, if any.
   final String? lastWeekNote;
+
+  /// Sleep for the patterns, by morning (patternNights); null uses the
+  /// hours in [scores], without bed or wake times.
+  final Map<DateTime, SleepNight>? nights;
+
+  /// "How did you sleep?" answers by morning.
+  final Map<DateTime, double> ratings;
 }
+
+/// Sleep patterns a review names under "What drained you", and the icon.
+const _drainingPatterns = {
+  'running_short': 'sleep',
+  'long_sudden': 'sleep',
+  'weekend_shift': 'lieIn',
+  'irregular': 'lieIn',
+  'bedtime_drift': 'lateNight',
+  'weekday_short': 'sleep',
+};
+
+/// An event behind a review line: its reaction key, its series' key if it
+/// repeats, and its day key. Named from the calendar when shown.
+typedef ReviewEvent = ({String key, String? series, String day});
 
 /// One line under "What drained you" or "What helped".
 class ReviewLine {
-  const ReviewLine(this.kind, this.title, this.detail, {this.seriesKey});
+  const ReviewLine(
+    this.kind,
+    this.title,
+    this.detail, {
+    this.seriesKey,
+    this.events = const [],
+  });
 
   /// For the icon: sick, travel, heavyDay, bigDay, meeting, lateNight,
   /// lieIn, afterHours, training, priority, sleep, fixes, calm.
@@ -62,11 +93,24 @@ class ReviewLine {
   final String detail;
   final String? seriesKey;
 
+  /// The calm events "What helped" counts ([reviewLineDetail] names them;
+  /// [detail] is the unnamed fallback), so no event title is stored.
+  final List<ReviewEvent> events;
+
   Map<String, Object?> toMap() => {
     'kind': kind,
     'title': title,
     'detail': detail,
     if (seriesKey != null) 'series': seriesKey,
+    if (events.isNotEmpty)
+      'events': [
+        for (final e in events)
+          {
+            'key': e.key,
+            'day': e.day,
+            if (e.series != null) 'series': e.series,
+          },
+      ],
   };
 
   static ReviewLine fromMap(Map m) => ReviewLine(
@@ -74,7 +118,64 @@ class ReviewLine {
     m['title'] as String? ?? '',
     m['detail'] as String? ?? '',
     seriesKey: m['series'] as String?,
+    events: [
+      for (final e in (m['events'] as List? ?? const []).whereType<Map>())
+        if (e['key'] case final String key)
+          if (e['day'] case final String day)
+            (key: key, series: e['series'] as String?, day: day),
+    ],
   );
+}
+
+/// [line]'s detail with its events named by [nameOf] (null when the
+/// calendar no longer has one): "Team standup (2×) and Design review kept
+/// your heart rate under your usual." Lines without events keep [detail].
+String reviewLineDetail(
+  ReviewLine line,
+  String? Function(ReviewEvent event) nameOf,
+) {
+  if (line.events.isEmpty) return line.detail;
+  final list = namedEventList([
+    for (final e in line.events) (name: nameOf(e), day: DateTime.parse(e.day)),
+  ]);
+  final sentence = line.title == 'Focus blocks'
+      ? 'kept your heart rate lower than your other events did.'
+      : 'kept your heart rate under your usual.';
+  return '${list[0].toUpperCase()}${list.substring(1)} $sentence';
+}
+
+/// "Team standup (2×), 1:1 with Sam and Design review": [events] grouped
+/// by name, most frequent first, at most three, then "and 2 more". An event
+/// without a name is "an event on Tuesday".
+String namedEventList(List<({String? name, DateTime day})> events) {
+  final counts = <String, int>{};
+  final unnamed = <String>{};
+  for (final e in events) {
+    final label = e.name ?? _weekday(e.day);
+    if (e.name == null) unnamed.add(label);
+    counts[label] = (counts[label] ?? 0) + 1;
+  }
+  final order = counts.keys.toList();
+  final first = {for (final (i, l) in order.indexed) l: i};
+  order.sort(
+    (a, b) => counts[b]!.compareTo(counts[a]!) != 0
+        ? counts[b]!.compareTo(counts[a]!)
+        : first[a]!.compareTo(first[b]!),
+  );
+  String shown(String label) {
+    final n = counts[label]!;
+    if (unnamed.contains(label)) {
+      return n == 1 ? 'an event on $label' : '$n events on $label';
+    }
+    return n == 1 ? label : '$label ($n×)';
+  }
+
+  final parts = [for (final l in order.take(3)) shown(l)];
+  final rest = order.skip(3).fold(0, (n, l) => n + counts[l]!);
+  if (rest > 0) parts.add('$rest more');
+  return parts.length == 1
+      ? parts.single
+      : '${parts.take(parts.length - 1).join(', ')} and ${parts.last}';
 }
 
 class ReviewDay {
@@ -268,13 +369,16 @@ class WeeklyReview {
   }
 
   /// What Vivordo AI is told for "Plan next week".
-  String chatContext(String Function(ReviewLine) name) => [
+  String chatContext(
+    String Function(ReviewLine) name, {
+    String Function(ReviewLine)? detail,
+  }) => [
     'Weekly review for $range: $headline. $why',
     for (final r in rows) '${r.label}: ${r.value}.',
     if (drained.isNotEmpty)
       'What drained them: ${drained.map((l) => '${name(l)} (${l.detail})').join('; ')}.',
     if (helped.isNotEmpty)
-      'What helped: ${helped.map((l) => '${name(l)} (${l.detail})').join('; ')}.',
+      'What helped: ${helped.map((l) => '${name(l)} (${detail?.call(l) ?? l.detail})').join('; ')}.',
     if (nextWeek.isNotEmpty)
       'Next week: ${nextWeek.map((d) => '${d.day} ${d.label}').join(', ')}.',
     if (suggestion != null) 'Suggested: $suggestion',
@@ -566,18 +670,30 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       ),
     );
   }
-  // Sleeping in 90+ minutes past the usual wake time (social jet lag).
-  final lieIns = [
-    for (final d in dates)
-      if ((_num(capacityOf(d)?['wakeOffsetMin']) ?? 0) >= 90) d,
-  ];
-  if (lieIns.length >= 2) {
+  // The Sleep screen's patterns up to the week's last morning, so the
+  // review says what Sleep says. The first that drains is named.
+  final sleepPatternsOfWeek = sleepPatterns(
+    nights:
+        input.nights ??
+        {
+          for (final MapEntry(:key, :value) in input.scores.entries)
+            if (_num((value['capacity'] as Map?)?['sleepHours'])
+                case final hours? when hours > 0)
+              DateTime.parse(key): SleepNight(hours),
+        },
+    today: dates.last,
+    need: latestSleepNeed(input.scores),
+    ratings: input.ratings,
+  );
+  final sleepDrain = sleepPatternsOfWeek
+      .where((p) => _drainingPatterns.containsKey(p.id))
+      .firstOrNull;
+  if (sleepDrain != null) {
     drained.add(
       ReviewLine(
-        'lieIn',
-        'Lie-ins',
-        'You slept in 90 minutes or more on ${lieIns.length} mornings. A '
-            'steadier wake time keeps your body clock on track.',
+        _drainingPatterns[sleepDrain.id]!,
+        sleepDrain.title,
+        sleepDrain.body,
       ),
     );
   }
@@ -688,6 +804,13 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       );
     }
   }
+  // Good sleep news, unless sleeping the need already made the list.
+  final steady = sleepPatternsOfWeek
+      .where((p) => p.tone == InsightTone.good)
+      .firstOrNull;
+  if (helped.isEmpty && steady != null) {
+    helped.add(ReviewLine('sleep', steady.title, steady.body));
+  }
   var fixesUsed = 0;
   for (final d in dates) {
     final kinds = input.dayFixes[localDayKey(d)]?['kinds'];
@@ -722,6 +845,10 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
         focus * 2 >= calm.length
             ? 'They kept your heart rate lower than your other events did.'
             : '${calm.length} events kept your heart rate under your usual.',
+        events: [
+          for (final r in calm)
+            (key: r.key, series: r.series, day: localDayKey(r.day)),
+        ],
       ),
     );
   }
@@ -773,7 +900,8 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
               'mornings started lower as the week went on.'
         : 'Effort was above your Capacity on ${heavy.length} days, but your '
               'mornings bounced back each time.';
-  } else if (nightsOnTarget >= 5 && lieIns.length < 2) {
+  } else if (nightsOnTarget >= 5 &&
+      !sleepPatternsOfWeek.any((p) => p.tone == InsightTone.concern)) {
     headline = 'A good week for sleep';
     why = 'You slept your need on $nightsOnTarget of 7 nights.';
   } else if (heavy.isEmpty && (capAvg - usual).abs() < 5) {
@@ -832,7 +960,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       '${heavy.length} heavy ${heavy.length == 1 ? 'day' : 'days'}'
     else
       'no heavy days',
-    if (done + left > 0) '$done of ${done + left} done',
+    if (done + left > 0) '$done of ${done + left} priorities done',
     if (nightsOnTarget >= 5) 'sleep on target',
     if (sickNights.isNotEmpty) 'unwell',
   ].take(3).toList();

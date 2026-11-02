@@ -1,9 +1,12 @@
+import 'dart:math' as math;
 import 'dart:async';
 import 'package:provider/provider.dart';
 import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
+import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/meeting_patterns_view.dart';
+import '../widgets/finish_setup_card.dart';
 import '../src/services/meeting_patterns_service.dart';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -46,11 +49,16 @@ import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/home_metrics_summary.dart';
 import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/energy_forecast_view.dart';
+import 'sleep_preferences_screen.dart';
 import 'package:vivordo_health/widgets/hourly_heart_insight_card.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
-import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
+import 'package:vivordo_health/src/utils/activity_source.dart';
+import 'package:vivordo_health/src/utils/score_breakdown.dart';
+import 'package:vivordo_health/widgets/daily_brief_card.dart' show BriefTone;
+import 'package:vivordo_health/widgets/score_breakdown_sheet.dart';
+import 'package:vivordo_health/widgets/score_history.dart';
 import 'circle_screen.dart';
 import 'heart_rate_detail_screen.dart';
 import 'sleep_detail_screen.dart';
@@ -97,7 +105,7 @@ class _AvatarStack extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           )
-        : Icon(Icons.person_add_alt_1_rounded, color: foreground, size: 15);
+        : Icon(CupertinoIcons.person_badge_plus, color: foreground, size: 15);
     final photoUrl = person.photoUrl;
     return Container(
       width: _size,
@@ -138,6 +146,8 @@ class _HomeCircleProfileButton extends StatelessWidget {
     final fallback = username.isNotEmpty
         ? Text(
             username[0].toUpperCase(),
+            // A fixed 46pt avatar, like Circle's: the letter doesn't grow.
+            textScaler: TextScaler.noScaling,
             style: const TextStyle(
               color: _HomeScreenState.accentPurple,
               fontSize: 18,
@@ -145,7 +155,7 @@ class _HomeCircleProfileButton extends StatelessWidget {
             ),
           )
         : const Icon(
-            Icons.person_rounded,
+            CupertinoIcons.person_fill,
             color: _HomeScreenState.accentPurple,
             size: 22,
           );
@@ -201,7 +211,6 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback? onMyDayTap;
   final bool revealStress;
   final bool isActive;
-  final bool openMoodCheckIn;
 
   /// Spotlight targets for the Home tour.
   final Key? rightNowKey;
@@ -216,7 +225,6 @@ class HomeScreen extends StatefulWidget {
     this.onMyDayTap,
     this.revealStress = true,
     this.isActive = true,
-    this.openMoodCheckIn = false,
     this.rightNowKey,
     this.vitalsKey,
     this.circleKey,
@@ -226,6 +234,10 @@ class HomeScreen extends StatefulWidget {
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+
+  /// Set by the Mood widget: Home opens the mood check-in when it next
+  /// shows, or now if it's open.
+  static final moodCheckInRequested = ValueNotifier<bool>(false);
 }
 
 class _HomeWidgetSnapshot {
@@ -284,6 +296,19 @@ class _HomeWidgetSnapshot {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _hourlyHeartKey = GlobalKey<HourlyHeartInsightCardState>();
+
+  /// Opened for the Mood widget: the morning check-in pop-up stays away.
+  bool _openedForMoodCheckIn = false;
+
+  void _openRequestedMoodCheckIn() {
+    if (!HomeScreen.moodCheckInRequested.value) return;
+    HomeScreen.moodCheckInRequested.value = false;
+    _openedForMoodCheckIn = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_showMoodCheck());
+    });
+  }
+
   String _currentMood = 'Good';
   double _currentMoodScore = 75;
   String? _pendingMoodSync;
@@ -304,6 +329,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _streamsDayKey;
   String? _streamsUid;
   Timer? _dayRolloverTimer;
+
+  /// Ticks once a minute while Home is on screen and the app is open, so the
+  /// Effort card counts events as they happen; only that card listens.
+  final _clock = ValueNotifier(DateTime.now());
+  Timer? _clockTimer;
+  bool _onScreen = false;
+  bool _appOpen = true;
   HomeMetricsSummaryCache _metricsSummaryCache = HomeMetricsSummaryCache();
   Future<List<gcal.Event>>? _reachableWindowEventsFuture;
   DateTime? _reachableWindowEventsDate;
@@ -348,11 +380,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _connectMetricStreams();
     // Events added or moved anywhere (My Day, Vivordo AI) reload Your Day.
     CalendarService.eventsChanged.addListener(_refreshHomeCalendarCards);
-    if (widget.openMoodCheckIn) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_showMoodCheck());
-      });
-    }
+    _openRequestedMoodCheckIn();
+    HomeScreen.moodCheckInRequested.addListener(_openRequestedMoodCheckIn);
     _circleProfileStream = CircleProfileService.watchCurrentProfile();
     _friendsSnapshot.connectFactory(CircleProfileService.watchFriends);
     _activityGoalsSubscription = ActivityGoalsService.watch().listen(
@@ -401,11 +430,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _prioritySnapshot.setActive(active);
     _friendsSnapshot.setActive(active);
     _engagementSnapshot.setActive(active);
+    if (active != _onScreen) {
+      _onScreen = active;
+      _updateClock();
+    }
+  }
+
+  void _updateClock() {
+    _clockTimer?.cancel();
+    _clockTimer = null;
+    if (!_onScreen || !_appOpen) return;
+    _clock.value = DateTime.now();
+    _clockTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _clock.value = DateTime.now(),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    HomeScreen.moodCheckInRequested.removeListener(_openRequestedMoodCheckIn);
     _sleepHoursLive.dispose();
     CalendarService.eventsChanged.removeListener(_refreshHomeCalendarCards);
     _sleepRefreshTimer?.cancel();
@@ -413,6 +458,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _friendsSnapshot.dispose();
     _engagementSnapshot.dispose();
     _dayRolloverTimer?.cancel();
+    _clockTimer?.cancel();
+    _clock.dispose();
     _activityGoalsSubscription?.cancel();
     super.dispose();
   }
@@ -423,6 +470,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // day and account they were built for, so a day that turned over — or an
     // account that changed — while the app was away needs fresh queries.
     if (state == AppLifecycleState.resumed) _reconnectMetricStreamsIfStale();
+    final open = state == AppLifecycleState.resumed;
+    if (open != _appOpen) {
+      _appOpen = open;
+      _updateClock();
+    }
   }
 
   /// Fires at the next local midnight so a session left open across the date
@@ -477,26 +529,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : const Stream.empty();
     final now = DateTime.now();
     _latestScanStream = uid != null
-        ? combineMetricWindows(
-            MetricsRepository.instance.watch(
-              uid: uid,
-              startDay: homeMetricsWindowStartKey(
-                now,
-                days: kHomeRecentWindowDays,
-              ),
-              endDay: today,
-              projection: MetricsProjection.homeHistory,
-            ),
-            MetricsRepository.instance.watch(
-              uid: uid,
-              startDay: homeMetricsWindowStartKey(now),
-              endDay: homeMetricsWindowStartKey(
-                now,
-                days: kHomeRecentWindowDays + 1,
-              ),
-              projection: MetricsProjection.homeHistory,
-            ),
-          )
+        ? MetricsRepository.instance.watchHomeHistory(uid: uid, now: now)
         : const Stream.empty();
   }
 
@@ -602,7 +635,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final now = DateTime.now();
     final day = localDayKey(now);
     if (_checkInPopupDay == day ||
-        widget.openMoodCheckIn ||
+        _openedForMoodCheckIn ||
         !widget.isActive ||
         !checkInPopupDue(checkIn, now, 0)) {
       return;
@@ -751,10 +784,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  String _getFirstName() {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName ?? 'Alex';
-    return displayName.split(' ').first;
+  /// The first name from sign-in or onboarding; null when none was given
+  /// (email sign-up without a name, Apple's hidden name).
+  String? _firstName() {
+    final name = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+    return name.isEmpty ? null : name.split(RegExp(r'\s+')).first;
   }
 
   String _todayPeriod() {
@@ -822,6 +856,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         steps: 0,
         activeCalories: 0,
         exerciseMinutes: 0,
+        noActivitySource: false,
         healthExerciseMinutes: null,
         metricsLoading: false,
         latestHeartRate: null,
@@ -914,6 +949,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 metricsSummary.stressAnchor ??
                 50;
             final stressDrivers = homeStressDrivers(stressMap?['top_drivers']);
+            // Nothing supplying activity this past week: show a way to
+            // connect instead of zeros that look like a still day.
+            final noActivitySource =
+                scanSnap.hasData &&
+                !hasActivityData([data, ...scanSnap.data!.days.values]);
             final stressStillLoading =
                 loading ||
                 (stressScore == null &&
@@ -963,6 +1003,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 steps: steps ?? 0,
                 activeCalories: activeCalories,
                 exerciseMinutes: exerciseMinutes,
+                noActivitySource: noActivitySource,
                 healthExerciseMinutes: (exerciseTimeMap?['healthSum'] as num?)
                     ?.toDouble(),
                 metricsLoading: loading,
@@ -1088,9 +1129,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DateTime todayStart,
   ) async {
     final events = await _getReachableWindowEventsFuture(todayStart);
+    await CalendarCognitiveLoadService.loadChosenTypes();
     final timedEvents = events.where((event) {
       return event.status != 'cancelled' &&
-          event.transparency != 'transparent' &&
+          (event.transparency != 'transparent' ||
+              CalendarCognitiveLoadService.hasChosenType(event.summary)) &&
           !(event.attendees?.any(
                 (a) => a.self == true && a.responseStatus == 'declined',
               ) ??
@@ -1157,6 +1200,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required int steps,
     required int activeCalories,
     required int exerciseMinutes,
+    required bool noActivitySource,
     required double? healthExerciseMinutes,
     required bool metricsLoading,
     required LatestHeartRateReading? latestHeartRate,
@@ -1167,118 +1211,129 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            _refreshHomeCalendarCards();
-            await _hourlyHeartKey.currentState?.refresh(force: true);
-          },
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const SizedBox(height: 20),
-                GestureDetector(
-                  key: widget.rightNowKey,
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _push(const StressDetailScreen()),
-                  child: Selector<ThemeController, bool>(
-                    selector: (_, c) => c.showScoreNumbers,
-                    builder: (context, showNumbers, _) => HomeStressCard(
-                      score: stressScore,
-                      updatedAt: stressUpdatedAt,
-                      usual: stressUsual,
-                      drivers: stressDrivers,
-                      steps: steps,
-                      loading: stressLoading,
-                      updating: stressUpdating,
-                      revealScore: widget.revealStress,
-                      onInfoTap: _showStressScoreExplanation,
-                      showWhoopBadge:
-                          sleepIsWhoop ||
-                          latestHeartRate?.source == 'whoop_ble',
-                      showNumbers: showNumbers,
+      body: CollapsingTitle(
+        title: 'Home',
+        threshold: 60,
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              _refreshHomeCalendarCards();
+              await _hourlyHeartKey.currentState?.refresh(force: true);
+            },
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 20),
+                  const FinishSetupCard(),
+                  GestureDetector(
+                    key: widget.rightNowKey,
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _push(const StressDetailScreen()),
+                    child: Selector<ThemeController, bool>(
+                      selector: (_, c) => c.showScoreNumbers,
+                      builder: (context, showNumbers, _) => HomeStressCard(
+                        score: stressScore,
+                        updatedAt: stressUpdatedAt,
+                        usual: stressUsual,
+                        drivers: stressDrivers,
+                        steps: steps,
+                        loading: stressLoading,
+                        updating: stressUpdating,
+                        revealScore: widget.revealStress,
+                        onInfoTap: _showStressScoreExplanation,
+                        showWhoopBadge:
+                            sleepIsWhoop ||
+                            latestHeartRate?.source == 'whoop_ble',
+                        showNumbers: showNumbers,
+                        onScanTap: widget.onScanTap,
+                      ),
                     ),
                   ),
-                ),
-                _buildCheckIn(checkIn),
-                const SizedBox(height: 12),
-                KeyedSubtree(
-                  key: widget.vitalsKey,
-                  child: _buildVitals(
-                    sleepHours: sleepHours,
-                    heartRate: latestHeartRate?.bpm,
-                    moodScore: moodScore,
-                    loading: metricsLoading,
-                    hrLoading: hrLoading,
+                  _buildCheckIn(checkIn),
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: widget.vitalsKey,
+                    child: _buildVitals(
+                      sleepHours: sleepHours,
+                      heartRate: latestHeartRate?.bpm,
+                      moodScore: moodScore,
+                      loading: metricsLoading,
+                      hrLoading: hrLoading,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                _buildActivityCard(
-                  steps: steps,
-                  activeCalories: activeCalories,
-                  exerciseMinutes: exerciseMinutes,
-                ),
-                const SizedBox(height: 12),
-                KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
-                KeyedSubtree(
-                  key: widget.yourDayKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle(
-                        "YOUR DAY",
-                        trailing: [
-                          _infoButton(
-                            label: 'How Your Day works',
-                            onTap: _showReachableWindowsInfo,
-                          ),
-                          TextButton(
-                            onPressed: widget.onMyDayTap,
-                            style: TextButton.styleFrom(
-                              foregroundColor: accentPurple,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              minimumSize: const Size(0, 36),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              textStyle: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
+                  const SizedBox(height: 12),
+                  noActivitySource
+                      ? _connectActivityCard()
+                      : _buildActivityCard(
+                          steps: steps,
+                          activeCalories: activeCalories,
+                          exerciseMinutes: exerciseMinutes,
+                        ),
+                  const SizedBox(height: 12),
+                  KeyedSubtree(
+                    key: widget.circleKey,
+                    child: _buildCircleCard(),
+                  ),
+                  KeyedSubtree(
+                    key: widget.yourDayKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle(
+                          "Your day",
+                          trailing: [
+                            _infoButton(
+                              label: 'How Your Day works',
+                              onTap: _showReachableWindowsInfo,
                             ),
-                            child: const Text('Open My Day ›'),
-                          ),
-                        ],
-                      ),
-                      _buildDayLoad(
-                        sleepNights,
-                        healthMinutes: healthExerciseMinutes,
-                        calories: activeCalories.toDouble(),
-                      ),
-                      _publishPatternEvents(),
-                    ],
+                            TextButton(
+                              onPressed: widget.onMyDayTap,
+                              style: TextButton.styleFrom(
+                                foregroundColor: accentPurple,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
+                                minimumSize: const Size(0, 36),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                textStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              child: const Text('Open My Day ›'),
+                            ),
+                          ],
+                        ),
+                        _buildDayLoad(
+                          sleepNights,
+                          healthMinutes: healthExerciseMinutes,
+                          calories: activeCalories.toDouble(),
+                        ),
+                        _publishPatternEvents(),
+                      ],
+                    ),
                   ),
-                ),
-                KeyedSubtree(
-                  key: widget.insightsKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle('INSIGHTS'),
-                      _buildInsights(
-                        sleepHours: sleepHours,
-                        hasHeartRate: latestHeartRate != null,
-                      ),
-                    ],
+                  KeyedSubtree(
+                    key: widget.insightsKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionTitle('Insights'),
+                        _buildInsights(
+                          sleepHours: sleepHours,
+                          hasHeartRate: latestHeartRate != null,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1360,6 +1415,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Widget _buildHeader() {
     final colors = context.vivordoColors;
+    final now = DateTime.now();
+    final name = _firstName();
+    final date = DateFormat('EEE, MMM d').format(now);
+    final greeting = timeOfDayGreeting(now);
     return Row(
       children: [
         Expanded(
@@ -1367,8 +1426,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${DateFormat('EEE, MMM d').format(DateTime.now())} · '
-                '${timeOfDayGreeting(DateTime.now())}',
+                name == null ? '$date · $greeting' : '$date · $greeting, $name',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 13,
@@ -1376,13 +1434,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(height: 2),
+              // The tab's name, like the other tabs, so the small title
+              // that replaces it on scroll (CollapsingTitle) matches.
               Text(
-                _getFirstName(),
+                'Home',
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                textScaler: MediaQuery.textScalerOf(
+                  context,
+                ).clamp(maxScaleFactor: 1.5),
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 30,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
                 ),
@@ -1437,7 +1499,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   child: const Icon(
-                    Icons.settings_rounded,
+                    CupertinoIcons.gear,
                     color: accentPurple,
                     size: 22,
                   ),
@@ -1450,6 +1512,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// The most the three-column tiles grow with the system text size.
+  static const _tileTextScale = 1.25;
+
   Widget _buildVitals({
     required double? sleepHours,
     required int? heartRate,
@@ -1457,52 +1522,56 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required bool loading,
     required bool hrLoading,
   }) => _card(
-    child: IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: _vital(
-              icon: Icons.bedtime_rounded,
-              color: accentPurple,
-              value: sleepHours == null ? null : _sleepLabel(sleepHours),
-              label: 'Sleep',
-              loading: loading,
-              onTap: () => _push(const SleepDetailScreen()),
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: _vital(
-              icon: Icons.favorite_rounded,
-              color: _heartRed,
-              value: heartRate?.toString(),
-              label: heartRate == null ? 'Heart rate' : 'bpm',
-              loading: hrLoading,
-              onTap: () => _push(const HeartRateDetailScreen()),
-            ),
-          ),
-          _divider(),
-          Expanded(
-            child: Selector<ThemeController, bool>(
-              selector: (_, c) => c.showScoreNumbers,
-              builder: (context, showNumbers, _) => _vital(
-                icon: Icons.mood_rounded,
-                color: _moodOrange,
-                // Words mode shows the check-in's word, not its score.
-                value: moodScore == null
-                    ? null
-                    : showNumbers
-                    ? moodScore.round().toString()
-                    : MetricsService.moodLabelForScore(moodScore),
-                label: 'Mood',
+    // Three columns: past this size the labels would only truncate.
+    child: MediaQuery.withClampedTextScaling(
+      maxScaleFactor: _tileTextScale,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _vital(
+                icon: CupertinoIcons.moon_fill,
+                color: accentPurple,
+                value: sleepHours == null ? null : _sleepLabel(sleepHours),
+                label: 'Sleep',
                 loading: loading,
-                emptyAction: 'Check in',
-                onTap: _showMoodCheck,
+                onTap: () => _push(const SleepDetailScreen()),
               ),
             ),
-          ),
-        ],
+            _divider(),
+            Expanded(
+              child: _vital(
+                icon: CupertinoIcons.heart_fill,
+                color: _heartRed,
+                value: heartRate?.toString(),
+                label: heartRate == null ? 'Heart rate' : 'bpm',
+                loading: hrLoading,
+                onTap: () => _push(const HeartRateDetailScreen()),
+              ),
+            ),
+            _divider(),
+            Expanded(
+              child: Selector<ThemeController, bool>(
+                selector: (_, c) => c.showScoreNumbers,
+                builder: (context, showNumbers, _) => _vital(
+                  icon: CupertinoIcons.smiley,
+                  color: _moodOrange,
+                  // Words mode shows the check-in's word, not its score.
+                  value: moodScore == null
+                      ? null
+                      : showNumbers
+                      ? moodScore.round().toString()
+                      : MetricsService.moodLabelForScore(moodScore),
+                  label: 'Mood',
+                  loading: loading,
+                  emptyAction: 'Check in',
+                  onTap: _showMoodCheck,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -1554,18 +1623,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       )
                     else
-                      Text(
-                        shown,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: value == null ? 13 : 15.5,
-                          fontWeight: FontWeight.w800,
-                          color: value != null
-                              ? colors.textPrimary
-                              : emptyAction != null
-                              ? accentPurple
-                              : colors.textSecondary,
+                      // Shrinks to fit the narrow column at large text.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          shown,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: value == null ? 13 : 15.5,
+                            fontWeight: FontWeight.w800,
+                            color: value != null
+                                ? colors.textPrimary
+                                : emptyAction != null
+                                ? accentPurple
+                                : colors.textSecondary,
+                          ),
                         ),
                       ),
                     Text(
@@ -1594,6 +1667,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : '${minutes ~/ 60}h ${minutes % 60}m';
   }
 
+  /// A small text button for an empty state's one-tap fix.
+  Widget _insightAction(String label, VoidCallback onTap) => TextButton(
+    onPressed: onTap,
+    style: TextButton.styleFrom(
+      foregroundColor: accentPurple,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      minimumSize: const Size(0, 34),
+      backgroundColor: accentPurple.withValues(alpha: .08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  /// In place of the activity card when nothing supplies activity.
+  Widget _connectActivityCard() {
+    final colors = context.vivordoColors;
+    return _card(
+      onTap: () => _push(const SettingsScreen()),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.cardMuted, width: 6),
+              ),
+              child: Icon(
+                Icons.directions_walk_rounded,
+                color: colors.textSecondary,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Connect Apple Health',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'To see your steps, calories and exercise',
+                    style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildActivityCard({
     required int steps,
     required int activeCalories,
@@ -1616,66 +1755,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
     return _card(
       onTap: widget.onFitnessTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-        child: Row(
-          children: [
-            Semantics(
-              label:
-                  'Activity: steps $steps of ${goals.steps}, '
-                  '$activeCalories of ${goals.activeCalories} calories, '
-                  '$exerciseMinutes of ${goals.exerciseMinutes} exercise minutes',
-              child: SizedBox(
-                width: 52,
-                height: 52,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ring(52, progress(steps, goals.steps), accentPurple, 6),
-                    ring(
-                      36,
-                      progress(activeCalories, goals.activeCalories),
-                      _calorieOrange,
-                      6,
-                    ),
-                    ring(
-                      20,
-                      progress(exerciseMinutes, goals.exerciseMinutes),
-                      _exerciseGreen,
-                      5,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _activityNumber(
-                        NumberFormat.decimalPattern().format(steps),
-                        'steps',
-                        first: true,
-                        onTap: () => _push(const StepsDetailScreen()),
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: _tileTextScale,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+          child: Row(
+            children: [
+              Semantics(
+                label:
+                    'Activity: steps $steps of ${goals.steps}, '
+                    '$activeCalories of ${goals.activeCalories} calories, '
+                    '$exerciseMinutes of ${goals.exerciseMinutes} exercise minutes',
+                child: SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ring(52, progress(steps, goals.steps), accentPurple, 6),
+                      ring(
+                        36,
+                        progress(activeCalories, goals.activeCalories),
+                        _calorieOrange,
+                        6,
                       ),
-                    ),
-                    _divider(),
-                    Expanded(child: _activityNumber('$activeCalories', 'cal')),
-                    _divider(),
-                    Expanded(
-                      child: _activityNumber('${exerciseMinutes}m', 'exercise'),
-                    ),
-                  ],
+                      ring(
+                        20,
+                        progress(exerciseMinutes, goals.exerciseMinutes),
+                        _exerciseGreen,
+                        5,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            const _HomeWorkoutStreakBadge(),
-            Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
-          ],
+              const SizedBox(width: 14),
+              Expanded(
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _activityNumber(
+                          NumberFormat.decimalPattern().format(steps),
+                          'steps',
+                          first: true,
+                          onTap: () => _push(const StepsDetailScreen()),
+                        ),
+                      ),
+                      _divider(),
+                      Expanded(
+                        child: _activityNumber('$activeCalories', 'cal'),
+                      ),
+                      _divider(),
+                      Expanded(
+                        child: _activityNumber(
+                          '${exerciseMinutes}m',
+                          'exercise',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const _HomeWorkoutStreakBadge(),
+              Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
+            ],
+          ),
         ),
       ),
     );
@@ -1731,8 +1878,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildSectionTitle(String title, {List<Widget> trailing = const []}) =>
       Padding(
         padding: const EdgeInsets.fromLTRB(4, 24, 0, 8),
-        child: SizedBox(
-          height: 36,
+        // At least 36pt, taller when large text wraps the title.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 36),
           child: Row(
             children: [
               Expanded(
@@ -1741,7 +1889,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1.3,
                     color: context.vivordoColors.textSecondary,
                   ),
                 ),
@@ -1758,77 +1905,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onPressed: onTap,
         visualDensity: VisualDensity.compact,
         icon: Icon(
-          Icons.info_outline_rounded,
+          CupertinoIcons.info,
           size: 19,
           color: context.vivordoColors.textSecondary,
         ),
       );
 
-  Future<void> _showReachableWindowsInfo() => showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: dialogContext.vivordoColors.card,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
-      contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: accentPurple.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.psychology_alt_rounded,
-              color: accentPurple,
-              size: 23,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'How Your Day works',
-              style: TextStyle(
-                color: dialogContext.vivordoColors.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
+  Future<void> _showReachableWindowsInfo() => showInfoSheet(
+    context,
+    icon: CupertinoIcons.chart_bar_alt_fill,
+    title: 'How Your Day works',
+    summary:
+        'Each bar is one hour, 7 AM to 10 PM. Taller, warmer bars are busier '
+        'hours. Effort and ratings are estimates.',
+    items: const [
+      AppleInfoItem(
+        'Solid and outlined bars',
+        'Solid is what the day has taken so far (Effort); outlined is what\'s '
+            'still planned (Demand). Workouts are teal.',
+        icon: CupertinoIcons.chart_bar,
       ),
-      content: SingleChildScrollView(
-        child: Text(
-          'Each bar is one hour of your day, 7 AM to 10 PM, stretched to fit anything earlier or later. Solid bars are what the day has taken so far (Effort); outlined bars are what\'s still planned (Demand). Taller, warmer bars are busier hours.\n\n'
-          '• Calendar events are rated by how demanding they look. Ones that can\'t be rated count as moderate.\n'
-          '• Priorities count once you tick them off, in their time slot, or as a small mark at the hour you finished them.\n'
-          '• Workouts are shown in teal.\n\n'
-          'Longer items, overlaps and back-to-back runs make an hour busier, and so does anything after your end-of-day time.\n\n'
-          'So far compares today with your usual by this time of day, once there are 14 days to compare with.\n\n'
-          'The line is your energy forecast from your sleep and body clock, with last night above it. Tap either to see what shaped today.\n\n'
-          'Below the bars is your next free stretch of 30+ minutes. Tap Plan it to fill it, or tap a bar to see its busiest event.\n\n'
-          'Effort and ratings are estimates.',
-          style: TextStyle(
-            color: dialogContext.vivordoColors.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
+      AppleInfoItem(
+        'What counts',
+        'Calendar events are rated by how demanding they look; ones that '
+            'can\'t be rated count as moderate. Priorities count once ticked '
+            'off. Long items, overlaps, back-to-back runs and anything after '
+            'your end-of-day time make an hour busier.',
+        icon: CupertinoIcons.calendar,
       ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          style: FilledButton.styleFrom(
-            backgroundColor: accentPurple,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Got it'),
-        ),
-      ],
-    ),
+      AppleInfoItem(
+        'So far',
+        'Compares today with your usual by this time of day, once there are '
+            '14 days to compare with.',
+        icon: CupertinoIcons.clock,
+      ),
+      AppleInfoItem(
+        'Energy line',
+        'Your energy forecast from your sleep and body clock, with last '
+            'night above it. Tap either to see what shaped today.',
+        icon: CupertinoIcons.waveform_path,
+      ),
+      AppleInfoItem(
+        'Next free stretch',
+        'Your next 30+ minutes free. Tap Plan it to fill it, or tap a bar '
+            'to see its busiest event.',
+        icon: CupertinoIcons.sparkles,
+      ),
+    ],
   );
 
   Widget _buildCircleCard() {
@@ -1914,7 +2037,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.favorite_border_rounded,
+                          CupertinoIcons.heart,
                           color: accentPurple,
                           size: 15,
                         ),
@@ -1930,7 +2053,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
-                Icon(Icons.chevron_right_rounded, color: colors.textSecondary),
+                Icon(CupertinoIcons.chevron_right, color: colors.textSecondary),
               ],
             );
           },
@@ -1991,9 +2114,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.4,
+              child: CupertinoActivityIndicator(
                 color: accentPurple,
+                radius: 10,
               ),
             ),
             const SizedBox(width: 14),
@@ -2013,42 +2136,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     return FutureBuilder<List<_ScoredReachableEvent>>(
       future: _getReachableWindowScoresFuture(todayStart),
-      builder: (context, scoresSnapshot) =>
-          FutureBuilder<List<_ScheduleEvent>?>(
-            future: _getScheduleEventsFuture(todayStart),
-            builder: (context, eventsSnapshot) {
-              if (scoresSnapshot.connectionState == ConnectionState.waiting ||
-                  eventsSnapshot.connectionState == ConnectionState.waiting) {
-                return loading;
-              }
-              return FutureBuilder<_EffortContext>(
-                future: _getEffortContextFuture(todayStart),
-                builder: (context, contextSnapshot) =>
-                    ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-                      valueListenable: _prioritySnapshot,
-                      builder: (context, prioritySnapshot, _) =>
-                          FutureBuilder<List<EnergyFactor>>(
-                            future: DailyTagsService.energyFactorsFor(
-                              todayStart,
+      builder: (context, scoresSnapshot) => FutureBuilder<List<_ScheduleEvent>?>(
+        future: _getScheduleEventsFuture(todayStart),
+        builder: (context, eventsSnapshot) {
+          if (scoresSnapshot.connectionState == ConnectionState.waiting ||
+              eventsSnapshot.connectionState == ConnectionState.waiting) {
+            return loading;
+          }
+          return FutureBuilder<_EffortContext>(
+            future: _getEffortContextFuture(todayStart),
+            builder: (context, contextSnapshot) =>
+                ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                  valueListenable: _prioritySnapshot,
+                  builder: (context, prioritySnapshot, _) =>
+                      FutureBuilder<List<EnergyFactor>>(
+                        future: DailyTagsService.energyFactorsFor(todayStart),
+                        builder: (context, factors) =>
+                            ValueListenableBuilder<DateTime>(
+                              valueListenable: _clock,
+                              // The later of the tick and the build's time,
+                              // but not past midnight: the loaded events are
+                              // today's until the day rollover reloads them.
+                              builder: (context, clock, _) => _dayLoadCard(
+                                now:
+                                    clock.isAfter(now) &&
+                                        DateUtils.isSameDay(clock, now)
+                                    ? clock
+                                    : now,
+                                sleepNights: sleepNights,
+                                energyFactors: factors.data ?? const [],
+                                scored: scoresSnapshot.data ?? const [],
+                                events: eventsSnapshot.data,
+                                priorities: prioritySnapshot.data ?? const [],
+                                effortContext:
+                                    contextSnapshot.data ??
+                                    const _EffortContext(),
+                                healthMinutes: healthMinutes,
+                                calories: calories,
+                              ),
                             ),
-                            builder: (context, factors) => _dayLoadCard(
-                              now: now,
-                              sleepNights: sleepNights,
-                              energyFactors: factors.data ?? const [],
-                              scored: scoresSnapshot.data ?? const [],
-                              events: eventsSnapshot.data,
-                              priorities: prioritySnapshot.data ?? const [],
-                              effortContext:
-                                  contextSnapshot.data ??
-                                  const _EffortContext(),
-                              healthMinutes: healthMinutes,
-                              calories: calories,
-                            ),
-                          ),
-                    ),
-              );
-            },
-          ),
+                      ),
+                ),
+          );
+        },
+      ),
     );
   }
 
@@ -2200,19 +2331,112 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         now.difference(from).inMinutes / until.difference(from).inMinutes;
     // Activity by the server's rules, so today matches the usual it's
     // compared with (effort.byHour places activity when it happened).
+    final physical = physicalSoFar(
+      workoutPoints: effort.workoutSoFar,
+      healthMinutes: healthMinutes,
+      calories: calories,
+      usualCalories: effortContext.usualCalories,
+    );
+    final effortSoFar = effort.soFar - effort.workoutSoFar + physical;
     final soFar = effortSoFarWord(
-      soFar:
-          effort.soFar -
-          effort.workoutSoFar +
-          physicalSoFar(
-            workoutPoints: effort.workoutSoFar,
-            healthMinutes: healthMinutes,
-            calories: calories,
-            usualCalories: effortContext.usualCalories,
-          ),
+      soFar: effortSoFar,
       now: now,
       pastByHour: effortContext.pastByHour,
     );
+    final usualByNow = usualEffortByNow(
+      now: now,
+      pastByHour: effortContext.pastByHour,
+    );
+    // Why Effort is what it is: what each item took, and activity.
+    // [words]: words view, with states instead of numbers.
+    void showEffort({bool words = false}) {
+      final result = effortBreakdown(
+        now: now,
+        from: from,
+        until: until,
+        wrapUp: today.add(Duration(minutes: effortContext.wrapUpMinutes)),
+        items: items,
+        untimedDone: untimedDone,
+        physical: physical,
+      );
+      final mental = result.total - physical;
+      showScoreBreakdown(
+        context,
+        kicker: 'Effort so far',
+        history: const ScoreHistory(kind: ScoreHistoryKind.effort),
+        empty: 'Nothing has taken effort yet today.',
+        score: result.total.round(),
+        summary: words ? 'For this time of day' : soFar,
+        words: words
+            ? (
+                word: soFar,
+                tone: soFar.startsWith('Heavier')
+                    ? BriefTone.low
+                    : soFar.startsWith('Lighter')
+                    ? BriefTone.good
+                    : BriefTone.usual,
+              )
+            : null,
+        sections: [
+          (
+            heading: words ? 'Your schedule' : 'Schedule · ${mental.round()}',
+            rows: result.mental,
+          ),
+          (
+            heading: words ? 'Your activity' : 'Activity · ${physical.round()}',
+            rows: [
+              if (physical > 0)
+                BreakdownRow(
+                  'Workouts and exercise',
+                  words
+                      ? 'Extra calories count when there\'s no exercise'
+                      : 'Extra calories count when there\'s no exercise · '
+                            'up to 25 a day',
+                  points: physical,
+                ),
+            ],
+          ),
+        ],
+        footer:
+            'Schedule is what your events and priorities took, each on its '
+            'own, with back-to-backs and long runs on their own line. Tap an '
+            'event to change its type.',
+      );
+    }
+
+    final ahead = effort.aheadMinutes > 0
+        ? _effortStat(
+            'Still ahead',
+            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
+            [
+              switch (effort.aheadLevel) {
+                DayLoadLevel.heavy => 'Mostly heavy',
+                DayLoadLevel.focused => 'Mostly focused',
+                _ => 'Mostly light',
+              },
+              if (effort.nextStart case final next?)
+                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
+            ].join(' · '),
+          )
+        : FutureBuilder<({int minutes, DateTime? first})?>(
+            future: _getTomorrowPlanFuture(today),
+            builder: (context, snapshot) {
+              final plan = snapshot.data;
+              return _effortStat(
+                'Tomorrow',
+                plan == null
+                    ? snapshot.connectionState == ConnectionState.done
+                          ? 'Couldn\'t load'
+                          : '…'
+                    : plan.minutes == 0
+                    ? 'Nothing planned yet'
+                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
+                plan?.first == null
+                    ? null
+                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
+              );
+            },
+          );
 
     return _card(
       child: Padding(
@@ -2220,56 +2444,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _effortStat('SO FAR', soFar, null)),
-                  VerticalDivider(width: 24, color: colors.border),
-                  Expanded(
-                    child: effort.aheadMinutes > 0
-                        ? _effortStat(
-                            'STILL AHEAD',
-                            '${_durationLabel(Duration(minutes: effort.aheadMinutes))} planned',
-                            [
-                              switch (effort.aheadLevel) {
-                                DayLoadLevel.heavy => 'Mostly heavy',
-                                DayLoadLevel.focused => 'Mostly focused',
-                                _ => 'Mostly light',
-                              },
-                              if (effort.nextStart case final next?)
-                                'next ${DateFormat.jm().format(next).replaceAll(':00', '')}',
-                            ].join(' · '),
-                          )
-                        : FutureBuilder<({int minutes, DateTime? first})?>(
-                            future: _getTomorrowPlanFuture(today),
-                            builder: (context, snapshot) {
-                              final plan = snapshot.data;
-                              return _effortStat(
-                                'TOMORROW',
-                                plan == null
-                                    ? snapshot.connectionState ==
-                                              ConnectionState.done
-                                          ? 'Couldn\'t load'
-                                          : '…'
-                                    : plan.minutes == 0
-                                    ? 'Nothing planned yet'
-                                    : '${_durationLabel(Duration(minutes: plan.minutes))} planned',
-                                plan?.first == null
-                                    ? null
-                                    : 'First at ${DateFormat.jm().format(plan!.first!)}',
-                              );
-                            },
+            Selector<ThemeController, bool>(
+              selector: (_, c) => c.showScoreNumbers,
+              // Numbers: Effort so far on a bar against your usual by now.
+              // Words: the word beside what's still ahead.
+              builder: (context, showNumbers, _) => showNumbers
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        InkWell(
+                          onTap: showEffort,
+                          borderRadius: BorderRadius.circular(10),
+                          child: _effortSoFarBar(
+                            total: effortSoFar,
+                            physical: physical,
+                            usual: usualByNow,
+                            word: soFar,
                           ),
-                  ),
-                ],
-              ),
+                        ),
+                        Divider(height: 24, color: colors.border),
+                        ahead,
+                      ],
+                    )
+                  : IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => showEffort(words: true),
+                              borderRadius: BorderRadius.circular(10),
+                              child: _effortStat(
+                                'So far',
+                                soFar,
+                                'See what it took ›',
+                              ),
+                            ),
+                          ),
+                          VerticalDivider(width: 24, color: colors.border),
+                          Expanded(child: ahead),
+                        ],
+                      ),
+                    ),
             ),
             if (energy != null) ...[
               const SizedBox(height: 12),
               EnergySleepLine(
                 forecast: energy,
                 onTap: () => showEnergyForecastSheet(context, energy),
+              ),
+            ] else ...[
+              // No sleep tracked and no usual times: say what draws the
+              // energy line instead of leaving it out unexplained.
+              const SizedBox(height: 12),
+              EnergyLineInvite(
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SleepPreferencesScreen(),
+                    ),
+                  );
+                  if (mounted) _refreshHomeCalendarCards();
+                },
               ),
             ],
             const SizedBox(height: 16),
@@ -2399,10 +2635,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ],
             if (events == null) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Connect a calendar in My Day to include your events.',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
+              const SizedBox(height: 6),
+              // No calendar: open Connections in Settings from here.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _insightAction(
+                  'Connect a calendar to include your events',
+                  () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                    if (mounted) _refreshHomeCalendarCards();
+                  },
+                ),
               ),
             ],
             Divider(height: 28, color: colors.border),
@@ -2422,11 +2669,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       children: [
         Text(
           label,
-          style: TextStyle(
-            fontSize: 11,
-            letterSpacing: .6,
-            color: colors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 13, color: colors.textSecondary),
         ),
         const SizedBox(height: 3),
         Text(
@@ -2444,6 +2687,150 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Effort so far as a number and a bar, schedule then activity, with a
+  /// tick at your usual by now (none while still learning it).
+  Widget _effortSoFarBar({
+    required double total,
+    required double physical,
+    required double? usual,
+    required String word,
+  }) {
+    final colors = context.vivordoColors;
+    // Room past whichever is bigger, so neither the bar nor the tick sits
+    // at the very end.
+    final scale = math.max(20.0, math.max(total, usual ?? 0) * 1.25);
+    final mental = math.max(0.0, total - physical);
+    final caption = TextStyle(fontSize: 12, color: colors.textSecondary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(
+              child: Text(
+                'Effort so far',
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
+              ),
+            ),
+            Text(
+              '${total.round()}',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 10,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: colors.cardMuted,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: width * mental / scale,
+                          color: accentPurple,
+                        ),
+                        Container(
+                          width: width * physical / scale,
+                          color: _exerciseGreen,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (usual != null)
+                    Positioned(
+                      left: width * usual / scale - 1,
+                      top: -4,
+                      bottom: -4,
+                      child: Container(
+                        width: 2,
+                        decoration: BoxDecoration(
+                          color: colors.textPrimary,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Expanded(
+              // A square in each part's bar colour, like the legend below,
+              // says which is which.
+              child: Wrap(
+                spacing: 12,
+                children: [
+                  for (final (label, value, color) in [
+                    ('Schedule', mental, accentPurple),
+                    if (physical > 0) ('Activity', physical, _exerciseGreen),
+                  ])
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            '$label: ${value.round()}',
+                            style: caption,
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            if (usual != null)
+              Flexible(
+                child: Text(
+                  'usual by now: ${usual.round()}',
+                  textAlign: TextAlign.right,
+                  style: caption,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '$word ›',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: colors.textPrimary,
+          ),
+        ),
       ],
     );
   }
@@ -2551,7 +2938,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.only(top: 3),
                 child: Icon(
-                  Icons.check_circle_rounded,
+                  CupertinoIcons.checkmark_circle_fill,
                   size: 9,
                   color: colors.textSecondary,
                 ),
@@ -2706,19 +3093,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final end = DateTime(today.year, today.month, today.day + 2);
     // Calendars and priorities are read at once, not one after another;
     // any failure (or 15 s without an answer) shows as unavailable.
-    Future<List<(DateTime, DateTime)>> calendar() async => [
-      if (await CalendarService.isAnyConnected())
-        for (final event in await CalendarService.getEventsBetween(start, end))
+    Future<List<(DateTime, DateTime)>> calendar() async {
+      if (!await CalendarService.isAnyConnected()) return [];
+      final events = await CalendarService.getEventsBetween(start, end);
+      // Free events count once a type is picked for them.
+      await CalendarCognitiveLoadService.loadChosenTypes();
+      return [
+        for (final event in events)
           if (event.start?.dateTime?.toLocal() case final s?)
             if (event.end?.dateTime?.toLocal() case final e?)
               if (event.status != 'cancelled' &&
-                  event.transparency != 'transparent' &&
+                  (event.transparency != 'transparent' ||
+                      CalendarCognitiveLoadService.hasChosenType(
+                        event.summary,
+                      )) &&
                   !(event.attendees?.any(
                         (a) => a.self == true && a.responseStatus == 'declined',
                       ) ??
                       false))
                 (s, e),
-    ];
+      ];
+    }
+
     Future<List<(DateTime, DateTime)>> priorities() async => [
       for (final priority in await DailyPriorityService.forDay(
         start,
@@ -2881,7 +3277,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return Column(
             children: [
               const HomeInsightRow(
-                icon: Icons.calendar_today_rounded,
+                icon: CupertinoIcons.calendar,
                 color: Color(0xFF007AFF),
                 title: 'Reviewing your schedule',
                 subtitle: 'Checking today’s calendar load for useful timing.',
@@ -2909,7 +3305,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final rows = <Widget>[
       if (sleepHours != null)
         HomeInsightRow(
-          icon: Icons.nightlight_round,
+          icon: CupertinoIcons.moon_fill,
           color: accentPurple,
           title: _getSleepInsightTitle(sleepHours),
           subtitle: '${_sleepLabel(sleepHours)} of sleep recorded',
@@ -2918,13 +3314,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (hasHeartRate)
         HourlyHeartInsightCard(key: _hourlyHeartKey, isActive: widget.isActive),
       if (sleepHours == null && !hasHeartRate)
-        const HomeInsightRow(
-          icon: Icons.info_outline_rounded,
+        HomeInsightRow(
+          icon: CupertinoIcons.info,
           color: textGrey,
           title: 'No sleep or heart data yet',
           subtitle:
               'A watch or ring synced to Apple Health, or a heart scan, adds '
               'these.',
+          actions: [
+            _insightAction(
+              'Connect Health',
+              () => _push(const SettingsScreen()),
+            ),
+            if (widget.onScanTap case final onScan?)
+              _insightAction('Take a heart scan', onScan),
+          ],
         ),
     ];
     return _card(
@@ -3004,7 +3408,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     if (events.isEmpty) {
       return const _ScheduleInsight(
-        icon: Icons.event_available_rounded,
+        icon: CupertinoIcons.calendar_badge_plus,
         color: greenColor,
         title: 'Light schedule today',
         subtitle:
@@ -3057,7 +3461,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (tightTransitions >= 2) {
       return _ScheduleInsight(
-        icon: Icons.event_busy_rounded,
+        icon: CupertinoIcons.calendar_badge_minus,
         color: orangeColor,
         title: 'Back-to-back schedule block',
         subtitle:
@@ -3067,7 +3471,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (scheduledMinutes >= 240 || events.length >= 5) {
       return _ScheduleInsight(
-        icon: Icons.calendar_month_rounded,
+        icon: CupertinoIcons.calendar,
         color: orangeColor,
         title: 'Heavy day ahead',
         subtitle:
@@ -3077,7 +3481,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (afternoonEvents >= 3) {
       return _ScheduleInsight(
-        icon: Icons.wb_sunny_rounded,
+        icon: CupertinoIcons.sun_max_fill,
         color: const Color(0xFFFF9500),
         title: 'Busy afternoon ahead',
         subtitle:
@@ -3088,7 +3492,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final longest = longestEvent;
     if (longest != null && longest.duration.inMinutes >= 90) {
       return _ScheduleInsight(
-        icon: Icons.timelapse_rounded,
+        icon: CupertinoIcons.timer,
         color: const Color(0xFF007AFF),
         title: 'Long calendar block today',
         subtitle:
@@ -3097,7 +3501,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     return _ScheduleInsight(
-      icon: Icons.event_note_rounded,
+      icon: CupertinoIcons.calendar,
       color: const Color(0xFF007AFF),
       title: 'Balanced schedule today',
       subtitle:
@@ -3136,6 +3540,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ? 'Outlook'
             : 'Google Calendar',
         canEdit: true,
+        typeEvent: CalendarCognitiveEvent.fromCalendar(event),
+        seriesKey: seriesKeyFor(event.recurringEventId),
       ),
     );
     if (!mounted || action == null) return;
@@ -3166,123 +3572,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _editReachableEvent(gcal.Event event) async {
-    final originalStart = event.start?.dateTime?.toLocal();
-    final originalEnd = event.end?.dateTime?.toLocal();
-    if (originalStart == null || originalEnd == null) {
-      _showHomeCalendarMessage("All-day events can't be edited here yet.");
-      return;
-    }
-
-    final titleController = TextEditingController(text: event.summary ?? '');
-    var date = DateUtils.dateOnly(originalStart);
-    var startTime = TimeOfDay.fromDateTime(originalStart);
-    var endTime = TimeOfDay.fromDateTime(originalEnd);
-    final shouldSave = await showAppleSheet<bool>(
-      context,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => AppleFormSheet(
-          title: 'Edit event',
-          doneLabel: 'Save',
-          onDone: titleController.text.trim().isEmpty
-              ? null
-              : () => Navigator.pop(sheetContext, true),
-          children: [
-            AppleFormGroup(
-              children: [
-                AppleFormTextRow(
-                  controller: titleController,
-                  placeholder: 'Event title',
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  onChanged: (_) => setSheetState(() {}),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            AppleFormGroup(
-              children: [
-                AppleFormRow(
-                  label: 'Date',
-                  trailing: AppleValuePill(_formatCalendarDate(date)),
-                  onTap: () async {
-                    final picked = await showVivordoDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) setSheetState(() => date = picked);
-                  },
-                ),
-                AppleFormRow(
-                  label: 'Starts',
-                  trailing: AppleValuePill(startTime.format(context)),
-                  onTap: () async {
-                    final picked = await showVivordoTimePicker(
-                      context: context,
-                      initialTime: startTime,
-                      title: 'Start Time',
-                    );
-                    if (picked != null) {
-                      setSheetState(() => startTime = picked);
-                    }
-                  },
-                ),
-                AppleFormRow(
-                  label: 'Ends',
-                  trailing: AppleValuePill(endTime.format(context)),
-                  onTap: () async {
-                    final picked = await showVivordoTimePicker(
-                      context: context,
-                      initialTime: endTime,
-                      title: 'End Time',
-                    );
-                    if (picked != null) setSheetState(() => endTime = picked);
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-    // Not disposed: the sheet's field still uses it while closing.
-    final title = titleController.text.trim();
-    if (shouldSave != true || !mounted) return;
-    if (title.isEmpty) {
-      _showHomeCalendarMessage('Enter an event title.');
-      return;
-    }
-
-    final start = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      startTime.hour,
-      startTime.minute,
-    );
-    var end = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      endTime.hour,
-      endTime.minute,
-    );
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-
+    final result = await showEditCalendarEventSheet(context, event: event);
+    if (result == null || !mounted) return;
     try {
-      await CalendarService.updateEvent(
-        event,
-        title: title,
-        start: start,
-        end: end,
-      );
+      if (result.action == CalendarEventEditAction.delete) {
+        await CalendarService.deleteEvent(event, scope: result.scope);
+      } else {
+        final draft = result.draft!;
+        await CalendarService.updateEvent(
+          event,
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          recurrence: result.recurrenceChanged ? draft.recurrence : null,
+          calendarId: draft.calendarId,
+          isAllDay: draft.isAllDay,
+          allEvents: result.scope == EventScope.allEvents,
+        );
+      }
       _refreshHomeCalendarCards();
-      _showHomeCalendarMessage('Event updated.');
+      _showHomeCalendarMessage(
+        result.action == CalendarEventEditAction.delete
+            ? 'Event deleted.'
+            : 'Event updated.',
+      );
     } catch (error) {
       debugPrint('Update calendar event failed: $error');
       _showHomeCalendarMessage(
-        "Couldn't update the event. Try again.",
+        "Couldn't save the event. Try again.",
         error: true,
       );
     }
@@ -3314,33 +3631,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (hours >= 7) return 'Good sleep last night';
     if (hours >= 6) return 'Moderate sleep last night';
     return 'Low sleep last night';
-  }
-
-  String _formatCalendarDate(DateTime dt) {
-    const days = [
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-      'Sunday',
-    ];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${days[dt.weekday - 1]}, ${months[dt.month - 1]} ${dt.day}';
   }
 
   Future<void> _showMoodCheck() async {
@@ -3637,7 +3927,7 @@ class _HomeWorkoutStreakBadgeState extends State<_HomeWorkoutStreakBadge> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.local_fire_department_rounded,
+                    CupertinoIcons.flame_fill,
                     size: 15,
                     color: Colors.orange,
                   ),

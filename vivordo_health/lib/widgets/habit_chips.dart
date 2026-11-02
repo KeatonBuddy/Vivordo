@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 import '../src/services/daily_priority_service.dart';
@@ -99,6 +101,11 @@ class _HabitChip extends StatelessWidget {
           '${habit.count} of ${habit.target}',
         if (streak >= 2) '$streak day streak',
       ].join(', '),
+      onTap: onTap,
+      // A long press takes one away; VoiceOver gets it as an action.
+      customSemanticsActions: {
+        const CustomSemanticsAction(label: 'Remove one'): ?onLongPress,
+      },
       excludeSemantics: true,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 200),
@@ -136,7 +143,7 @@ class _HabitChip extends StatelessWidget {
                     ),
                     child: done
                         ? const Icon(
-                            Icons.check_rounded,
+                            CupertinoIcons.checkmark,
                             color: Colors.white,
                             size: 18,
                           )
@@ -171,7 +178,7 @@ class _HabitChip extends StatelessWidget {
                   if (streak >= 2) ...[
                     const SizedBox(width: 6),
                     const Icon(
-                      Icons.local_fire_department_rounded,
+                      CupertinoIcons.flame_fill,
                       color: _streakOrange,
                       size: 15,
                     ),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vivordo_health/src/utils/sleep_schedule.dart';
 import 'package:vivordo_health/src/utils/daily_brief_analysis.dart';
 
 void main() {
@@ -27,5 +28,21 @@ void main() {
     expect(remainingToday(0, 2), 'No events and 2 priorities left.');
     expect(remainingToday(1, 0), '1 event and no priorities left.');
     expect(remainingToday(0, 0), 'Nothing else planned today.');
+  });
+
+  test('before your usual wake, no sleep yet is nothing missing', () {
+    const schedule = SleepSchedule(bed: 23 * 60, wake: 7 * 60);
+    bool before(DateTime now, {bool slept = false}) =>
+        beforeTonightsSleep(now, sleepRecorded: slept, schedule: schedule);
+    // Up at 1:47 AM: tonight's sleep is still ahead.
+    expect(before(DateTime(2026, 10, 15, 1, 47)), isTrue);
+    expect(before(DateTime(2026, 10, 15, 1, 47), slept: true), isFalse);
+    // Past the usual wake with nothing synced: that is missing.
+    expect(before(DateTime(2026, 10, 15, 9)), isFalse);
+    // Without a saved schedule, 7 AM is the usual wake.
+    expect(
+      beforeTonightsSleep(DateTime(2026, 10, 15, 3), sleepRecorded: false),
+      isTrue,
+    );
   });
 }

@@ -1,13 +1,27 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vivordo_health/src/utils/home_stress_card_logic.dart';
 import 'package:vivordo_health/widgets/home_stress_card.dart';
 
 void main() {
+  test('50% fills exactly the two right-hand segments', () {
+    const sweep = (math.pi * 2 - 4 * 0.20) / 4;
+    expect(stressRingSweeps(0.5, sweep, 4), [sweep, sweep]);
+    expect(stressRingSweeps(0, sweep, 4), isEmpty);
+    expect(stressRingSweeps(1, sweep, 4), [sweep, sweep, sweep, sweep]);
+    final past = stressRingSweeps(0.51, sweep, 4);
+    expect(past.length, 3);
+    expect(past.last, closeTo(sweep * 0.04, 1e-9));
+  });
+
   Widget card({
     required double score,
     bool updating = false,
     int steps = 1200,
     Brightness brightness = Brightness.light,
+    List<HomeStressDriver> drivers = const [],
   }) => MaterialApp(
     theme: ThemeData(brightness: brightness),
     home: Scaffold(
@@ -15,7 +29,7 @@ void main() {
         score: score,
         updatedAt: DateTime(2026, 8, 28, 9),
         usual: 52,
-        drivers: const [],
+        drivers: drivers,
         steps: steps,
         loading: false,
         updating: updating,
@@ -24,6 +38,38 @@ void main() {
       ),
     ),
   );
+
+  testWidgets('drivers sit in a labelled column that fits a small phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      card(
+        score: 50,
+        drivers: const [
+          HomeStressDriver(
+            label: 'Daily activity',
+            type: HomeStressDriverType.activity,
+          ),
+          HomeStressDriver(
+            label: 'Perceived Stress',
+            type: HomeStressDriverType.other,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final label = tester.getTopLeft(find.text('Drivers'));
+    final first = tester.getTopLeft(find.text('Daily activity'));
+    final second = tester.getTopLeft(find.text('Perceived Stress'));
+    expect(first.dy, greaterThan(label.dy));
+    expect(second.dy, greaterThan(first.dy));
+    expect(first.dx, greaterThan(tester.getTopRight(find.text('Moderate')).dx));
+  });
 
   testWidgets('isolates the animated ring behind a repaint boundary', (
     tester,

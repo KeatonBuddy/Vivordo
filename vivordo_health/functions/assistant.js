@@ -5,6 +5,8 @@
 // and the model fetches health data itself through tools instead of the app
 // guessing which metrics a message needs from keywords.
 
+const {cleanUnits, unitsInstruction, unitConverter} = require("./units");
+
 const MODEL = "claude-sonnet-5-5";
 const MAX_ROUNDS = 5; // model calls per turn; data lookups rarely need > 2
 const MAX_METRIC_DAYS = 92;
@@ -90,7 +92,7 @@ VIVORDO SCORES (use these names; never call them anything else)
 - Capacity (0-100, daily): the energy the user has today, mostly from last night's sleep against their own sleep need, overnight HRV and resting heart rate against their normal, and recovery from yesterday's Effort, plus the morning check-in when answered. High 80+, moderate 50-79, low under 50. Provisional until last night's sleep syncs.
 - Demand (points, live): what is still ahead today (calendar events, open priorities, planned workouts), on the same scale as Capacity, so "Demand above Capacity by more than 15" means more planned than the user has energy for. It falls through the day; in the evening it shows tomorrow's. Only the app can calculate it, so it arrives as DEMAND in CONTEXT when available. Without it, judge the day from SCHEDULE and PRIORITIES and say the exact number is on My Day.
 - Energy forecast (not a score): today's predicted energy windows from sleep and body clock (groggy start, peak, afternoon dip, second wind, wind-down, bed-by), sleep debt, and any hard work still ahead that lands in a low window (a clash, with a suggested time when it can move); in the evening, tomorrow's windows too. Only the app can calculate it, so it arrives as ENERGY in CONTEXT when available. It's a forecast, not a measurement. For "when should I…" questions, suggest times in the peak or second wind and keep demanding work out of the dip and wind-down; to move something, propose the change for the user to confirm. Without ENERGY, don't invent windows; say the forecast is on Home and My Day.
-- Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (mental), plus workouts and activity (physical). It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
+- Effort (points, daily): what the day actually took: events that happened, priorities done, back-to-back and after-hours time (shown as Schedule), plus workouts and activity (shown as Activity). Use those two names, never "mental" or "physical". It grows through the day and is final at midnight. There is no fixed "good" Effort; compare it with the user's recent days.
 - Stress (0-100): the live stress level from heart data (get_metrics stress).
 - Physical Health (0-100): active minutes, steps, strength sessions, cardio fitness (VO2 max) and sleep habits over recent weeks. Excellent 90+, good 70-89, fair 50-69, low under 50. It says "building" until there's enough data.
 - Burnout check: compares recent Capacity, Effort and mood with the user's long-term normal. Levels: learning (needs about 6 weeks of data), steady, watch, warning. It runs each night and is saved on the day that just ended, so for the current result fetch at least the last 3 days and use the most recent one. Describe a warning gently as a pattern worth a look, never a verdict.
@@ -262,7 +264,8 @@ const TOOLS = [
     name: "get_workouts",
     description:
       "The user's most recent saved workouts, newest first: date, minutes, " +
-      "and exercises with sets (weight lb x reps) or distance in km.",
+      "and exercises with sets (weight x reps) or distance, in the user's " +
+      "units.",
     input_schema: {
       type: "object",
       properties: {
@@ -388,6 +391,9 @@ function validateAssistantRequest(data) {
     message, history, context, today: data.today, now: data.now,
     utcOffsetMinutes: offset, workoutCoach: data?.workoutCoach === true,
     conversationId,
+    // Names this turn so the app's Stop can cancel it (see runAssistant).
+    turnId: typeof data?.turnId === "string" &&
+      /^[A-Za-z0-9_-]{1,40}$/.test(data.turnId) ? data.turnId : null,
     // The insight card the message was sent from, if any.
     askedFrom: typeof data?.askedFrom === "string" && data.askedFrom.trim() ?
       data.askedFrom.trim().slice(0, 80) : null,
@@ -397,6 +403,8 @@ function validateAssistantRequest(data) {
     // it as a broken priority, so they never get propose_workout.
     canSaveWorkouts: Array.isArray(data?.capabilities) &&
       data.capabilities.includes("workout"),
+    // Settings → Units; older builds send none.
+    units: cleanUnits(data?.units),
   };
 }
 
@@ -493,9 +501,10 @@ const round = (value) =>
  *
  * @param {string} metric metric key
  * @param {*} raw stored value
+ * @param {function(number): number} convert into the user's units
  * @return {string|null}
  */
-function metricValue(metric, raw) {
+function metricValue(metric, raw, convert = (value) => value) {
   if (metric === "sleep" && raw && typeof raw === "object") {
     const hours = typeof raw.avg === "number" ? round(raw.avg) + "h" : null;
     const stages = raw.stages && typeof raw.stages === "object" ?
@@ -512,7 +521,7 @@ function metricValue(metric, raw) {
     value = [preferred, raw.avg, raw.sum, raw.max]
         .find((v) => typeof v === "number") ?? null;
   }
-  return value === null ? null : round(value);
+  return value === null ? null : round(convert(value));
 }
 
 /**
@@ -521,9 +530,10 @@ function metricValue(metric, raw) {
  * @param {Object} db Firestore
  * @param {string} uid user id
  * @param {Object} input tool input
+ * @param {Object} units the request's units
  * @return {Promise<string>}
  */
-async function getMetrics(db, uid, input) {
+async function getMetrics(db, uid, input, units) {
   const days = dayRange(input?.start_date, input?.end_date);
   if (!days) {
     throw new ToolInputError();
@@ -533,14 +543,18 @@ async function getMetrics(db, uid, input) {
   const user = db.collection("users").doc(uid);
   const snapshots = await db.getAll(
       ...days.map((day) => user.collection("metrics_daily").doc(day)));
+  const to = unitConverter(units);
+  const convert = {distance: to.distance, weight: to.bodyWeight};
+  const label = {distance: to.distanceLabel, weight: to.bodyWeightLabel};
   const lines = [];
   snapshots.forEach((snapshot, i) => {
     const data = snapshot.data();
     if (!data) return;
     const values = wanted
-        .map((metric) => [metric, metricValue(metric, data[metric])])
+        .map((metric) => [metric,
+          metricValue(metric, data[metric], convert[metric])])
         .filter(([, value]) => value !== null)
-        .map(([metric, value]) => `${metric}=${value}`);
+        .map(([metric, value]) => `${metric}=${value}${label[metric] ?? ""}`);
     if (values.length) lines.push(`${days[i]}: ${values.join(", ")}`);
   });
   return lines.length ?
@@ -578,8 +592,8 @@ function scoreLine(data) {
   const effort = data?.effort;
   if (typeof effort?.total === "number") {
     const notes = [
-      `mental ${num(effort.mental) ?? "-"}`,
-      `physical ${num(effort.physical) ?? "-"}`,
+      `schedule ${num(effort.mental) ?? "-"}`,
+      `activity ${num(effort.physical) ?? "-"}`,
       `busy ${effort.busyMinutes ?? 0} min`,
     ];
     if (effort.afterHoursMinutes) {
@@ -643,13 +657,15 @@ async function getScores(db, uid, input) {
  * @param {string} uid user id
  * @param {Object} input tool input
  * @param {number} offsetMinutes user's UTC offset
+ * @param {Object} units the request's units
  * @return {Promise<string>}
  */
-async function getWorkouts(db, uid, input, offsetMinutes) {
+async function getWorkouts(db, uid, input, offsetMinutes, units) {
   const limit = Math.min(Math.max(Number(input?.limit) || 8, 1), 20);
   const snapshot = await db.collection("users").doc(uid)
       .collection("workouts").orderBy("completedAt", "desc").limit(limit).get();
   if (snapshot.empty) return "No saved workouts.";
+  const to = unitConverter(units);
   const lines = snapshot.docs.map((doc) => {
     const data = doc.data();
     const completed = data.completedAt?.toDate?.();
@@ -663,11 +679,13 @@ async function getWorkouts(db, uid, input, offsetMinutes) {
         .slice(0, 8)
         .map((e) => {
           if (typeof e.distanceKm === "number") {
-            return `${e.name.trim()}=${round(e.distanceKm)}km`;
+            return `${e.name.trim()}=` +
+              `${round(to.distance(e.distanceKm))}${to.distanceLabel}`;
           }
           const sets = (Array.isArray(e.sets) ? e.sets : []).slice(0, 6)
               .map((s) =>
-                `${round(Number(s?.weightLbs) || 0)}lb×${Number(s?.reps) || 0}`)
+                `${round(to.lift(Number(s?.weightLbs) || 0))}` +
+                `${to.liftLabel}×${Number(s?.reps) || 0}`)
               .join("/");
           return sets ? `${e.name.trim()}=${sets}` : e.name.trim();
         });
@@ -689,13 +707,14 @@ async function getWorkouts(db, uid, input, offsetMinutes) {
 async function runTool(db, uid, block, request) {
   try {
     const content = block.name === "get_metrics" ?
-      await getMetrics(db, uid, block.input) :
+      await getMetrics(db, uid, block.input, request.units) :
       block.name === "get_scores" ?
       await getScores(db, uid, block.input) :
       block.name === "get_priorities" ?
       await getPriorities(db, uid, block.input, request.utcOffsetMinutes) :
       block.name === "get_workouts" ?
-      await getWorkouts(db, uid, block.input, request.utcOffsetMinutes) :
+      await getWorkouts(db, uid, block.input, request.utcOffsetMinutes,
+          request.units) :
       null;
     if (content === null) {
       return {type: "tool_result", tool_use_id: block.id, is_error: true,
@@ -1358,9 +1377,10 @@ function cleanReply(input) {
  * @param {Object} db Firestore
  * @param {string} uid user id
  * @param {Object} chart {metric, start_date, end_date}
+ * @param {Object} units the request's units
  * @return {Promise<Object|null>} metric block, or null with < 2 points
  */
-async function chartBlock(db, uid, chart) {
+async function chartBlock(db, uid, chart, units) {
   const metric = chart?.metric;
   const days = dayRange(chart?.start_date, chart?.end_date);
   if (!days || ![...METRICS, ...SCORE_SERIES].includes(metric)) return null;
@@ -1368,6 +1388,9 @@ async function chartBlock(db, uid, chart) {
   const user = db.collection("users").doc(uid);
   const snapshots = await db.getAll(...days.map((day) =>
     user.collection(score ? "scores_daily" : "metrics_daily").doc(day)));
+  const to = unitConverter(units);
+  const convert = {distance: to.distance, weight: to.bodyWeight};
+  const unit = {distance: to.distanceLabel, weight: to.bodyWeightLabel};
   const points = [];
   snapshots.forEach((snapshot, i) => {
     const data = snapshot.data();
@@ -1375,7 +1398,7 @@ async function chartBlock(db, uid, chart) {
       metric === "effort" ? data?.effort?.total :
       metric === "physical_health" ? data?.physical?.score :
       metric === "sleep" ? data?.sleep?.avg :
-      Number(metricValue(metric, data?.[metric]));
+      Number(metricValue(metric, data?.[metric], convert[metric]));
     if (typeof value === "number" && Number.isFinite(value)) {
       points.push({day: days[i], value: Math.round(value * 10) / 10});
     }
@@ -1383,7 +1406,8 @@ async function chartBlock(db, uid, chart) {
   if (points.length < 2) return null;
   const average = points.reduce((sum, p) => sum + p.value, 0) / points.length;
   return {
-    type: "metric", metric, label: LABELS[metric], unit: UNITS[metric] ?? null,
+    type: "metric", metric, label: LABELS[metric],
+    unit: unit[metric] ?? UNITS[metric] ?? null,
     screen: SCREENS[metric], points,
     average: Math.round(average * 10) / 10,
   };
@@ -1440,14 +1464,15 @@ function sourceBlocks(lookups) {
  * @param {string} uid user id
  * @param {Object} reply cleaned reply (with actions)
  * @param {Array<Object>} lookups successful data tool calls
+ * @param {Object} units the request's units
  * @return {Promise<Array<Object>>}
  */
-async function replyBlocks(db, uid, reply, lookups) {
+async function replyBlocks(db, uid, reply, lookups, units) {
   const blocks = [{type: "text", text: reply.message}];
   if (reply.crisis) return blocks;
   if (reply.chart) {
     try {
-      const chart = await chartBlock(db, uid, reply.chart);
+      const chart = await chartBlock(db, uid, reply.chart, units);
       if (chart) blocks.push(chart);
     } catch (error) {
       console.error("[assistant] chart failed", error);
@@ -1480,6 +1505,8 @@ async function runAssistant({client, db, uid, request: input, now,
   if (request.canSaveWorkouts) {
     system.push({type: "text", text: WORKOUT_ROUTINE_PROMPT});
   }
+  const units = unitsInstruction(request.units);
+  if (units) system.push({type: "text", text: units});
   const tools = request.canSaveWorkouts ? TOOLS :
     TOOLS.filter((tool) => tool.name !== "propose_workout");
   const workoutCache = {};
@@ -1490,6 +1517,17 @@ async function runAssistant({client, db, uid, request: input, now,
   const memoryState = {facts: memory.facts, pending: []};
   const actions = [];
   const lookups = []; // data tool calls that returned data, for source chips
+  // Stop in the app writes users/{uid}/assistant_stops/{turnId}. Checked
+  // before each model call and before saving: a stopped turn saves nothing,
+  // so the reply never turns up in the thread later.
+  const stopRef = request.turnId ? db.collection("users").doc(uid)
+      .collection("assistant_stops").doc(request.turnId) : null;
+  const stopped = async () => {
+    if (!stopRef || !(await stopRef.get()).exists) return null;
+    await stopRef.delete().catch(() => {});
+    return {usage, reply: {intent: "chitchat", message: "", stopped: true,
+      blocks: [], suggestions: []}, memoryChanges: 0};
+  };
   // save_memory and the propose_* tools change nothing yet: they are checked
   // now and applied after the reply (memory) or confirmed in the app.
   const deferred = {
@@ -1532,6 +1570,8 @@ async function runAssistant({client, db, uid, request: input, now,
     }
   };
   const finish = async (reply) => {
+    const stop = await stopped();
+    if (stop) return stop;
     // A crisis turn takes no actions, whatever the model proposed.
     const proposed = reply.crisis ? [] : actions;
     if (proposed.length) {
@@ -1549,7 +1589,7 @@ async function runAssistant({client, db, uid, request: input, now,
       (Array.isArray(reply.suggestions) ? reply.suggestions : [])
           .filter((t) => typeof t === "string" && t.trim())
           .map((t) => t.trim().slice(0, 60)).slice(0, 3);
-    reply.blocks = await replyBlocks(db, uid, reply, lookups);
+    reply.blocks = await replyBlocks(db, uid, reply, lookups, request.units);
     delete reply.chart;
     try {
       await saveMemory(db, uid, request, memoryState.pending, reply, now,
@@ -1564,6 +1604,8 @@ async function runAssistant({client, db, uid, request: input, now,
   };
 
   for (let call = 0; call < MAX_ROUNDS; call++) {
+    const stop = await stopped();
+    if (stop) return stop;
     const response = await client.beta.messages.create({
       model: MODEL,
       max_tokens: 8000,
@@ -1579,6 +1621,8 @@ async function runAssistant({client, db, uid, request: input, now,
     // Fallback replies are text only: no memory or proposals, but they
     // still go in the thread.
     const plain = async (cleaned) => {
+      const stop = await stopped();
+      if (stop) return stop;
       const reply = {...cleaned, suggestions: [],
         blocks: [{type: "text", text: cleaned.message}]};
       await keep(reply);

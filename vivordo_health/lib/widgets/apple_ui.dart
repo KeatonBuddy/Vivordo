@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 
 import '../theme/vivordo_theme.dart';
@@ -10,7 +13,8 @@ import '../theme/vivordo_theme.dart';
 const appleRed = Color(0xFFFF3B30);
 const _purple = Color(0xFF534AB7);
 
-Color _tint(BuildContext context) =>
+/// Vivordo's purple for text buttons and checkmarks, lighter in dark mode.
+Color appleTint(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
     ? const Color(0xFFAFA9EC)
     : _purple;
@@ -44,6 +48,7 @@ class AppleAlert extends StatelessWidget {
     this.message,
     this.content,
     required this.buttons,
+    this.maxWidth = 290,
   });
 
   final String title;
@@ -51,28 +56,32 @@ class AppleAlert extends StatelessWidget {
   final Widget? content;
   final List<AppleAlertButton> buttons;
 
+  /// iOS's alert width; wider for an alert with a lot to say.
+  final double maxWidth;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final divider = colors.textSecondary.withValues(alpha: .28);
+    TextStyle labelStyle(AppleAlertButton b) => TextStyle(
+      fontSize: 17,
+      fontWeight: b.bold ? FontWeight.w600 : FontWeight.w400,
+    );
     Widget button(AppleAlertButton b) => InkWell(
       onTap: b.onPressed,
       child: Container(
-        height: 46,
+        constraints: const BoxConstraints(minHeight: 46),
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
         child: Text(
           b.label,
           textAlign: TextAlign.center,
-          maxLines: 2,
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: b.bold ? FontWeight.w600 : FontWeight.w400,
+          style: labelStyle(b).copyWith(
             color: b.onPressed == null
                 ? colors.textSecondary.withValues(alpha: .5)
                 : b.destructive
                 ? appleRed
-                : _tint(context),
+                : appleTint(context),
           ),
         ),
       ),
@@ -85,59 +94,95 @@ class AppleAlert extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 290),
+        constraints: BoxConstraints(maxWidth: maxWidth),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
-              child: Column(
-                children: [
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: colors.textPrimary,
-                    ),
-                  ),
-                  if (message != null) ...[
-                    const SizedBox(height: 5),
+            // Scrolls at large text sizes; the buttons stay in view.
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+                child: Column(
+                  children: [
                     Text(
-                      message!,
+                      title,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: colors.textSecondary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
                       ),
                     ),
+                    if (message != null) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        message!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.35,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (content != null) ...[
+                      const SizedBox(height: 12),
+                      content!,
+                    ],
                   ],
-                  if (content != null) ...[
-                    const SizedBox(height: 12),
-                    content!,
-                  ],
-                ],
+                ),
               ),
             ),
             Divider(height: .5, thickness: .5, color: divider),
-            if (buttons.length == 2)
-              IntrinsicHeight(
-                child: Row(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Side by side only when both labels fit on one line, as
+                // iOS does; otherwise stacked, the first (cancel) button at
+                // the bottom.
+                // With room to spare, so a label never runs to the edges.
+                final half = (constraints.maxWidth - .5) / 2 - 32;
+                // Measured in the dialog's own text style, as drawn.
+                final base = DefaultTextStyle.of(context).style;
+                bool fits(AppleAlertButton b) => !(TextPainter(
+                  text: TextSpan(
+                    text: b.label,
+                    style: base.merge(labelStyle(b)),
+                  ),
+                  maxLines: 1,
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                )..layout(maxWidth: half)).didExceedMaxLines;
+                if (buttons.length == 2 && buttons.every(fits)) {
+                  return IntrinsicHeight(
+                    child: Row(
+                      children: [
+                        Expanded(child: button(buttons[0])),
+                        VerticalDivider(
+                          width: .5,
+                          thickness: .5,
+                          color: divider,
+                        ),
+                        Expanded(child: button(buttons[1])),
+                      ],
+                    ),
+                  );
+                }
+                final stacked = buttons.length == 2
+                    ? buttons.reversed.toList()
+                    : buttons;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(child: button(buttons[0])),
-                    VerticalDivider(width: .5, thickness: .5, color: divider),
-                    Expanded(child: button(buttons[1])),
+                    for (var i = 0; i < stacked.length; i++) ...[
+                      if (i > 0)
+                        Divider(height: .5, thickness: .5, color: divider),
+                      button(stacked[i]),
+                    ],
                   ],
-                ),
-              )
-            else
-              for (var i = 0; i < buttons.length; i++) ...[
-                if (i > 0) Divider(height: .5, thickness: .5, color: divider),
-                button(buttons[i]),
-              ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -168,6 +213,8 @@ Future<T?> showAppleAlert<T>(
   required List<AppleAlertAction<T>> actions,
 }) => showDialog<T>(
   context: context,
+  // An iOS alert stays until a button is tapped.
+  barrierDismissible: false,
   builder: (dialogContext) => AppleAlert(
     title: title,
     message: message,
@@ -198,7 +245,9 @@ Future<bool> confirmAction(
       title: title,
       message: message,
       actions: [
-        AppleAlertAction(cancelLabel, false, bold: !destructive),
+        // iOS bolds the likely choice: the action, or Cancel when the
+        // action is destructive.
+        AppleAlertAction(cancelLabel, false, bold: destructive),
         AppleAlertAction(
           confirmLabel,
           true,
@@ -219,12 +268,14 @@ class AppleAlertField extends StatelessWidget {
     this.autofocus = true,
     this.enabled = true,
     this.keyboardType,
+    this.autofillHints,
     this.onChanged,
   });
 
   final TextEditingController controller;
   final String? placeholder;
   final bool obscureText;
+  final Iterable<String>? autofillHints;
   final bool autofocus;
   final bool enabled;
   final TextInputType? keyboardType;
@@ -239,6 +290,7 @@ class AppleAlertField extends StatelessWidget {
       enabled: enabled,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      autofillHints: autofillHints,
       onChanged: onChanged,
       style: TextStyle(fontSize: 14, color: colors.textPrimary),
       decoration: InputDecoration(
@@ -250,7 +302,7 @@ class AppleAlertField extends StatelessWidget {
         border: _fieldBorder(colors.border),
         enabledBorder: _fieldBorder(colors.border),
         disabledBorder: _fieldBorder(colors.border),
-        focusedBorder: _fieldBorder(_tint(context)),
+        focusedBorder: _fieldBorder(appleTint(context)),
       ),
     );
   }
@@ -291,7 +343,7 @@ Future<T?> showAppleActionSheet<T>(
   builder: (sheetContext) => CupertinoTheme(
     data: CupertinoThemeData(
       brightness: Theme.of(context).brightness,
-      primaryColor: _tint(context),
+      primaryColor: appleTint(context),
     ),
     child: CupertinoActionSheet(
       title: title == null ? null : Text(title),
@@ -349,12 +401,19 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
   final shownIcon = icon ?? defaultIcon;
   return messenger.showSnackBar(
     SnackBar(
+      // A toast with a button (Undo) gets longer, and with VoiceOver on it
+      // stays until it's used or dismissed: reaching it takes time.
       duration:
           duration ??
           Duration(
-            seconds: kind == ToastKind.error || actionLabel != null ? 5 : 3,
+            seconds: actionLabel != null
+                ? 8
+                : kind == ToastKind.error
+                ? 5
+                : 3,
           ),
-      persist: false,
+      persist:
+          actionLabel != null && MediaQuery.accessibleNavigationOf(context),
       content: Row(
         children: [
           if (shownIcon != null) ...[
@@ -373,7 +432,39 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
 
-/// A modal sheet with a grabber and rounded top corners on the page colour.
+/// iOS raises sheets in dark mode: a shade lighter than the page, with the
+/// sheet's own cards and fields lighter again. Light mode is unchanged.
+VivordoColors raisedColors(BuildContext context) {
+  final colors = context.vivordoColors;
+  if (Theme.of(context).brightness == Brightness.light) return colors;
+  Color lift(Color color) =>
+      Color.alphaBlend(Colors.white.withValues(alpha: .07), color);
+  return colors.copyWith(
+    page: colors.card,
+    card: lift(colors.card),
+    cardMuted: lift(colors.cardMuted),
+    input: lift(colors.input),
+    border: lift(colors.border),
+  );
+}
+
+/// Gives [child] the [raisedColors], for the body of a sheet.
+class RaisedSheetTheme extends StatelessWidget {
+  const RaisedSheetTheme({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(extensions: [raisedColors(context)]),
+      child: child,
+    );
+  }
+}
+
+/// A modal sheet with a grabber and rounded top corners on the raised page colour.
 Future<T?> showAppleSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -386,20 +477,201 @@ Future<T?> showAppleSheet<T>(
   useSafeArea: true,
   isDismissible: isDismissible,
   enableDrag: isDismissible,
-  backgroundColor: context.vivordoColors.page,
+  backgroundColor: raisedColors(context).page,
   shape: const RoundedRectangleBorder(
     borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
   ),
-  builder: (sheetContext) => Padding(
-    padding: EdgeInsets.only(
-      bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+  builder: (sheetContext) => RaisedSheetTheme(
+    child: Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+      ),
+      child: Builder(builder: builder),
     ),
-    child: builder(sheetContext),
   ),
 );
 
-class _Grabber extends StatelessWidget {
-  const _Grabber();
+/// Closes a bottom sheet the way iOS does. Flutter's sheet only closes when
+/// dragged past half its height or flicked hard, so it springs back from a
+/// normal swipe; here a pull of a quarter of its height, or a quicker flick,
+/// closes it. A sheet whose content scrolls doesn't move at all (the scroll
+/// view takes the drag), so it also closes when its content is pulled down
+/// past the top. It wraps the whole app (MaterialApp.builder, with
+/// [observer] on the navigator), so it covers every sheet that can be swiped
+/// away (isDismissible and enableDrag), however it was opened, and only
+/// sheets: a full-screen page pulled down stays put. Not while typing, so a
+/// pull in a form doesn't throw away what's being written.
+class PullDownToCloseSheets extends StatefulWidget {
+  const PullDownToCloseSheets({super.key, required this.child});
+
+  final Widget child;
+
+  /// Knows the top route of the app's navigator, so a touch can be matched
+  /// to the sheet it lands on.
+  static final observer = _TopRouteObserver();
+
+  @override
+  State<PullDownToCloseSheets> createState() => _PullDownToCloseSheetsState();
+}
+
+class _TopRouteObserver extends NavigatorObserver {
+  Route<dynamic>? top;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      top = route;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      top = previousRoute;
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route == top) top = previousRoute;
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute == top) top = newRoute;
+  }
+}
+
+class _PullDownToCloseSheetsState extends State<PullDownToCloseSheets> {
+  ModalBottomSheetRoute<dynamic>? _sheet;
+  int? _pointer;
+  VelocityTracker? _velocity;
+
+  static bool _swipeable(Route<dynamic>? route) =>
+      route is ModalBottomSheetRoute &&
+      route.isCurrent &&
+      route.isDismissible &&
+      route.enableDrag &&
+      FocusManager.instance.primaryFocus?.context
+              ?.findAncestorWidgetOfExactType<EditableText>() ==
+          null;
+
+  void _close(ModalBottomSheetRoute<dynamic> sheet) {
+    // isCurrent turns false once popped, so one swipe closes one sheet.
+    // maybePop, so a sheet with unsaved edits (DiscardChangesGuard) asks.
+    if (sheet.isCurrent) sheet.navigator?.maybePop();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (event) {
+      if (_pointer != null) return;
+      final top = PullDownToCloseSheets.observer.top;
+      _sheet = _swipeable(top) ? top as ModalBottomSheetRoute : null;
+      _pointer = event.pointer;
+      _velocity = VelocityTracker.withKind(event.kind)
+        ..addPosition(event.timeStamp, event.position);
+    },
+    onPointerMove: (event) {
+      if (event.pointer == _pointer) {
+        _velocity?.addPosition(event.timeStamp, event.position);
+      }
+    },
+    onPointerUp: (event) {
+      if (event.pointer != _pointer) return;
+      final sheet = _sheet;
+      final speed = _velocity?.getVelocity().pixelsPerSecond.dy ?? 0;
+      _sheet = _pointer = _velocity = null;
+      if (sheet == null || !_swipeable(sheet)) return;
+      // How far the sheet itself was dragged down (content scrolling
+      // doesn't move it).
+      final pulled = 1 - (sheet.animation?.value ?? 1);
+      if (pulled > .25 || (pulled > .05 && speed > 300)) {
+        // After the sheet's own drag end, which would spring it back.
+        scheduleMicrotask(() => _close(sheet));
+      }
+    },
+    onPointerCancel: (event) {
+      if (event.pointer == _pointer) _sheet = _pointer = _velocity = null;
+    },
+    child: NotificationListener<ScrollUpdateNotification>(
+      onNotification: (update) {
+        final source = update.context;
+        // iOS lets the content bounce past the top while it's dragged.
+        if (source != null &&
+            update.dragDetails != null &&
+            update.metrics.axis == Axis.vertical &&
+            update.metrics.pixels < -60) {
+          final route = ModalRoute.of(source);
+          if (route is ModalBottomSheetRoute && _swipeable(route)) {
+            _close(route);
+          }
+        }
+        return false;
+      },
+      child: widget.child,
+    ),
+  );
+}
+
+/// Keeps a sheet with unsaved edits open, as iOS does: closing it any way
+/// (the close button, tapping outside, swiping down) asks "Discard
+/// Changes?" first. While [dirty] the sheet no longer follows a swipe, so
+/// Flutter's own drag can't close it without asking.
+class DiscardChangesGuard extends StatefulWidget {
+  const DiscardChangesGuard({
+    super.key,
+    required this.dirty,
+    required this.child,
+  });
+
+  final bool dirty;
+  final Widget child;
+
+  @override
+  State<DiscardChangesGuard> createState() => _DiscardChangesGuardState();
+}
+
+class _DiscardChangesGuardState extends State<DiscardChangesGuard> {
+  bool _asking = false;
+  double _pulled = 0;
+
+  Future<void> _confirm() async {
+    if (_asking) return;
+    _asking = true;
+    final discard = await showAppleActionSheet<bool>(
+      context,
+      actions: const [
+        AppleSheetAction('Discard Changes', true, destructive: true),
+      ],
+      cancelLabel: 'Keep Editing',
+    );
+    _asking = false;
+    if (discard == true && mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !widget.dirty,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) unawaited(_confirm());
+    },
+    // Always here, with no handlers while clean, so the form below keeps
+    // its state when it becomes dirty.
+    child: GestureDetector(
+      onVerticalDragStart: widget.dirty ? (_) => _pulled = 0 : null,
+      onVerticalDragUpdate: widget.dirty
+          ? (details) => _pulled += details.delta.dy
+          : null,
+      onVerticalDragEnd: widget.dirty
+          ? (details) {
+              if (_pulled > 40 || (details.primaryVelocity ?? 0) > 300) {
+                unawaited(Navigator.maybePop(context));
+              }
+            }
+          : null,
+      child: widget.child,
+    ),
+  );
+}
+
+/// The handle at the top of a sheet.
+class AppleGrabber extends StatelessWidget {
+  const AppleGrabber({super.key});
 
   @override
   Widget build(BuildContext context) => Center(
@@ -413,6 +685,68 @@ class _Grabber extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// A sheet's top bar: Cancel on the left, [title] centred, [doneLabel] on
+/// the right (disabled while [onDone] is null), as in iOS form sheets.
+class AppleSheetBar extends StatelessWidget {
+  const AppleSheetBar({
+    super.key,
+    required this.title,
+    required this.doneLabel,
+    required this.onDone,
+  });
+
+  final Widget title;
+  final String doneLabel;
+  final VoidCallback? onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return SizedBox(
+      height: 52,
+      child: Row(
+        children: [
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            onPressed: () => Navigator.maybePop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(fontSize: 17, color: appleTint(context)),
+            ),
+          ),
+          Expanded(
+            child: DefaultTextStyle.merge(
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+              child: title,
+            ),
+          ),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            onPressed: onDone,
+            child: Text(
+              doneLabel,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: onDone == null
+                    ? colors.textSecondary.withValues(alpha: .5)
+                    : appleTint(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// The body of a form sheet: Cancel · title · [doneLabel] across the top,
@@ -442,13 +776,13 @@ class AppleFormSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final tint = _tint(context);
+    final tint = appleTint(context);
     return SafeArea(
       top: false,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const _Grabber(),
+          const AppleGrabber(),
           SizedBox(
             height: 48,
             child: Row(
@@ -536,12 +870,8 @@ class AppleFormGroup extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
               child: Text(
-                header!.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 12,
-                  letterSpacing: .3,
-                  color: colors.textSecondary,
-                ),
+                header!,
+                style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
             ),
           Container(
@@ -630,11 +960,18 @@ class AppleFormRow extends StatelessWidget {
               ),
               if (value != null)
                 Flexible(
-                  child: Text(
-                    value!,
-                    textAlign: TextAlign.right,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 16, color: colors.textSecondary),
+                  // Fills its share of the row so the value sits on the right.
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      value!,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: colors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
               if (trailing != null) ...[const SizedBox(width: 8), trailing!],
@@ -740,14 +1077,16 @@ class AppleValuePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: active ? _tint(context).withValues(alpha: .14) : colors.input,
+        color: active
+            ? appleTint(context).withValues(alpha: .14)
+            : colors.input,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 15,
-          color: active ? _tint(context) : colors.textPrimary,
+          color: active ? appleTint(context) : colors.textPrimary,
         ),
       ),
     );
@@ -776,7 +1115,7 @@ Future<void> showInfoSheet(
   context,
   builder: (sheetContext) {
     final colors = sheetContext.vivordoColors;
-    final tint = _tint(sheetContext);
+    final tint = appleTint(sheetContext);
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -785,7 +1124,7 @@ Future<void> showInfoSheet(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _Grabber(),
+            const AppleGrabber(),
             const SizedBox(height: 10),
             Center(
               child: Container(
@@ -985,7 +1324,7 @@ class AppCheckCircle extends StatelessWidget {
       ),
     ),
     child: checked
-        ? Icon(Icons.check_rounded, size: size * .68, color: Colors.white)
+        ? Icon(CupertinoIcons.checkmark, size: size * .68, color: Colors.white)
         : null,
   );
 }
@@ -1014,8 +1353,104 @@ class AppleChoiceRow extends StatelessWidget {
     trailing: SizedBox(
       width: 20,
       child: selected
-          ? Icon(CupertinoIcons.checkmark_alt, size: 20, color: _tint(context))
+          ? Icon(
+              CupertinoIcons.checkmark_alt,
+              size: 20,
+              color: appleTint(context),
+            )
           : null,
     ),
   );
+}
+
+// ── Large titles ─────────────────────────────────────────────────────────────
+
+/// iOS large-title behaviour for a tab: once the page's own big title has
+/// scrolled [threshold] points away, [title] shows small and centred in a
+/// bar across the top, as in Apple's apps. Wraps the tab's whole body.
+class CollapsingTitle extends StatefulWidget {
+  const CollapsingTitle({
+    super.key,
+    required this.title,
+    required this.child,
+    this.threshold = 52,
+  });
+
+  final String title;
+  final Widget child;
+
+  /// How far the page scrolls before its big title is out of view.
+  final double threshold;
+
+  @override
+  State<CollapsingTitle> createState() => _CollapsingTitleState();
+}
+
+class _CollapsingTitleState extends State<CollapsingTitle> {
+  bool _shown = false;
+
+  bool _onScroll(ScrollUpdateNotification notification) {
+    // The page's own vertical scroll, not a sideways row inside it.
+    if (notification.depth == 0 && notification.metrics.axis == Axis.vertical) {
+      final shown = notification.metrics.pixels > widget.threshold;
+      if (shown != _shown) setState(() => _shown = shown);
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return NotificationListener<ScrollUpdateNotification>(
+      onNotification: _onScroll,
+      child: Stack(
+        children: [
+          widget.child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              ignoring: !_shown,
+              child: ExcludeSemantics(
+                // VoiceOver reads the big title; this is only its echo.
+                child: AnimatedOpacity(
+                  opacity: _shown ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 160),
+                  child: Container(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.paddingOf(context).top,
+                    ),
+                    height: MediaQuery.paddingOf(context).top + 44,
+                    decoration: BoxDecoration(
+                      color: colors.page,
+                      border: Border(
+                        bottom: BorderSide(color: colors.border, width: .5),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.3),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

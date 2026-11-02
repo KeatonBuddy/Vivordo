@@ -1,6 +1,12 @@
 /// Training load (docs/scores.md §4), as functions/training_load.js saves it
 /// in scores_daily/{day}.trainingLoad: this week's activity against the
 /// person's usual week. Words and rows for the Fitness and My Day cards.
+library;
+
+import 'package:intl/intl.dart';
+
+import 'day_key.dart';
+
 class TrainingLoadView {
   const TrainingLoadView({
     required this.dayKey,
@@ -15,10 +21,35 @@ class TrainingLoadView {
     required this.hrvLow,
     required this.restingHigh,
     required this.restingHrChange,
+    this.usualWeeks = 4,
   });
 
   static const version = 1;
   static const hardDay = 1.5;
+
+  /// How far back the details sheet goes.
+  static const historyWeeks = 12;
+
+  /// [latest] and the weeks before it, newest first, up to [historyWeeks]:
+  /// the record 7, 14... days earlier, or up to 3 days before that when a
+  /// morning didn't sync. Weeks without one (still learning) are skipped.
+  /// [records] maps scores_daily day keys to their trainingLoad.
+  static List<TrainingLoadView> weeks(
+    TrainingLoadView latest,
+    Map<String, Object?> records,
+  ) {
+    final day = DateTime.parse(latest.dayKey);
+    return [
+      latest,
+      for (var week = 1; week < historyWeeks; week++)
+        ?[
+          for (var back = 0; back <= 3; back++)
+            localDayKey(
+              DateTime(day.year, day.month, day.day - 7 * week - back),
+            ),
+        ].map((key) => fromMap(records[key], key)).nonNulls.firstOrNull,
+    ];
+  }
 
   /// The scores_daily day it was calculated for.
   final String dayKey;
@@ -28,6 +59,14 @@ class TrainingLoadView {
   final double ratio;
   final double thisWeek;
   final double usualWeek;
+
+  /// How many weeks before this one the usual week comes from: the week
+  /// before while history builds, up to 4.
+  final int usualWeeks;
+
+  /// "the week before", "the 2 weeks before"...
+  String get usualSpan =>
+      usualWeeks == 1 ? 'the week before' : 'the $usualWeeks weeks before';
   final int hardDays;
 
   /// heart, minutes, mixed or null.
@@ -56,6 +95,7 @@ class TrainingLoadView {
       ratio: ratio,
       thisWeek: (raw['thisWeek'] as num?)?.toDouble() ?? 0,
       usualWeek: (raw['usualWeek'] as num?)?.toDouble() ?? 0,
+      usualWeeks: (raw['usualWeeks'] as num?)?.toInt() ?? 4,
       hardDays: (raw['hardDays'] as num?)?.toInt() ?? 0,
       kind: raw['kind'] as String?,
       days: [
@@ -71,6 +111,15 @@ class TrainingLoadView {
       restingHigh: (body['restingHigh'] as num?)?.toInt() ?? 0,
       restingHrChange: (body['restingHrChange'] as num?)?.toDouble(),
     );
+  }
+
+  /// The 7 days' dates: "Oct 23 – 29", or "Sep 25 – Oct 1".
+  String get dateRange {
+    if (days.isEmpty) return dayKey;
+    final first = DateTime.parse(days.first.day);
+    final last = DateTime.parse(days.last.day);
+    final end = DateFormat(first.month == last.month ? 'd' : 'MMM d');
+    return '${DateFormat('MMM d').format(first)} – ${end.format(last)}';
   }
 
   /// High or Strained: the only states shown on My Day.
@@ -174,7 +223,7 @@ class TrainingLoadView {
   /// What Vivordo AI is told when asked to plan an easier week.
   String get chatContext => [
     'Training load: $label. The last 7 days were ${ratio.toStringAsFixed(2)}× '
-        'the usual week (the 4 weeks before), with $hardDays hard days '
+        'the usual week ($usualSpan), with $hardDays hard days '
         '(1.5× an ordinary active day or more). $measuredBy.',
     'Each day against an ordinary active day (1.0): '
         '${days.map((d) => '${d.day} ${d.value.toStringAsFixed(1)}').join(', ')}.',

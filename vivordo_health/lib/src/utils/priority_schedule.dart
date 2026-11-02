@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -78,22 +79,24 @@ int habitStreak(
 IconData? habitIcon(String title) {
   final t = title.toLowerCase();
   bool has(List<String> words) => words.any(t.contains);
-  if (has(['water', 'drink', 'hydrat'])) return Icons.water_drop_outlined;
+  if (has(['water', 'drink', 'hydrat'])) return CupertinoIcons.drop;
   if (has(['meditat', 'breath', 'mindful'])) return Icons.spa_outlined;
   if (has(['med', 'pill', 'vitamin', 'supplement', 'tablet'])) {
-    return Icons.medication_outlined;
+    return CupertinoIcons.capsule;
   }
   if (has(['run', 'jog'])) return Icons.directions_run_rounded;
   if (has(['walk', 'steps'])) return Icons.directions_walk_rounded;
   if (has(['stretch', 'yoga', 'mobility'])) {
     return Icons.self_improvement_rounded;
   }
-  if (has(['read', 'book'])) return Icons.menu_book_outlined;
-  if (has(['journal', 'write', 'gratitude'])) return Icons.edit_note_rounded;
+  if (has(['read', 'book'])) return CupertinoIcons.book;
+  if (has(['journal', 'write', 'gratitude'])) {
+    return CupertinoIcons.square_pencil;
+  }
   if (has(['gym', 'workout', 'lift', 'exercise'])) {
     return Icons.fitness_center_rounded;
   }
-  if (has(['sleep', 'bed'])) return Icons.bedtime_outlined;
+  if (has(['sleep', 'bed'])) return CupertinoIcons.moon;
   if (has(['fruit', 'veg', 'eat', 'meal'])) return Icons.restaurant_outlined;
   return null;
 }

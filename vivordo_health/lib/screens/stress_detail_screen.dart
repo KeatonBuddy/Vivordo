@@ -20,6 +20,7 @@ import '../widgets/contextual_insight_bar.dart';
 import '../widgets/home_stress_card.dart'
     show StressLevelChip, stressLevelColors;
 import '../widgets/morning_check_in_card.dart' show feelCheckInLabels;
+import '../src/utils/chart_text.dart';
 
 /// Stress, against the person's own usual: a dial anchored at their usual,
 /// today's curve, what moved the latest reading, a next step, the trend and
@@ -142,7 +143,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         leading: IconButton(
           tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _purple),
+          icon: const Icon(CupertinoIcons.back, color: _purple),
         ),
         title: const Text(
           'Stress',
@@ -152,7 +153,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           IconButton(
             tooltip: 'How stress is calculated',
             onPressed: _showHowItWorks,
-            icon: const Icon(Icons.info_outline_rounded, color: _purple),
+            icon: const Icon(CupertinoIcons.info, color: _purple),
           ),
           const SizedBox(width: 6),
         ],
@@ -162,7 +163,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final days = [
             for (final doc in snapshot.data?.docs ?? const [])
@@ -271,11 +272,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           Row(
             children: [
               Text(
-                'RIGHT NOW',
+                'Right now',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 1.4,
                   color: colors.textSecondary,
                 ),
               ),
@@ -343,11 +343,10 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                         Align(
                           alignment: Alignment.topCenter,
                           child: Text(
-                            'USUAL',
+                            'Usual',
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 13,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2,
                               color: colors.textSecondary,
                             ),
                           ),
@@ -400,8 +399,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   padding: const EdgeInsets.only(right: 6),
                   child: Icon(
                     difference > 0
-                        ? Icons.arrow_upward_rounded
-                        : Icons.arrow_downward_rounded,
+                        ? CupertinoIcons.arrow_up
+                        : CupertinoIcons.arrow_down,
                     size: 18,
                     color: difference > 0 ? _up(context) : _down(context),
                   ),
@@ -419,11 +418,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               IconButton(
                 tooltip: 'How to read the ring',
                 onPressed: _showRingInfo,
-                icon: const Icon(
-                  Icons.info_outline_rounded,
-                  color: _purple,
-                  size: 20,
-                ),
+                icon: const Icon(CupertinoIcons.info, color: _purple, size: 20),
               ),
             ],
           ),
@@ -442,8 +437,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               if (confidence != null)
                 _chip(
                   icon: grey
-                      ? Icons.error_outline_rounded
-                      : Icons.check_rounded,
+                      ? CupertinoIcons.exclamationmark_circle
+                      : CupertinoIcons.checkmark,
                   iconColor: grey ? _up(context) : _down(context),
                   text: [
                     '${confidence[0].toUpperCase()}${confidence.substring(1)} confidence',
@@ -760,18 +755,18 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
   }
 
   IconData _icon(StressSignalKind kind) => switch (kind) {
-    StressSignalKind.feel => Icons.sentiment_satisfied_rounded,
-    StressSignalKind.sleep => Icons.bedtime_rounded,
-    StressSignalKind.hrv => Icons.monitor_heart_rounded,
-    StressSignalKind.heartRate => Icons.favorite_rounded,
-    StressSignalKind.breathing => Icons.air_rounded,
+    StressSignalKind.feel => CupertinoIcons.smiley,
+    StressSignalKind.sleep => CupertinoIcons.moon_fill,
+    StressSignalKind.hrv => CupertinoIcons.waveform_path_ecg,
+    StressSignalKind.heartRate => CupertinoIcons.heart_fill,
+    StressSignalKind.breathing => CupertinoIcons.wind,
     StressSignalKind.sitting => Icons.event_seat_rounded,
-    StressSignalKind.timeOfDay => Icons.schedule_rounded,
+    StressSignalKind.timeOfDay => CupertinoIcons.clock,
     StressSignalKind.activity => Icons.directions_walk_rounded,
     StressSignalKind.mindfulness => Icons.self_improvement_rounded,
-    StressSignalKind.calendar => Icons.event_note_rounded,
-    StressSignalKind.bloodOxygen => Icons.water_drop_rounded,
-    StressSignalKind.other => Icons.insights_rounded,
+    StressSignalKind.calendar => CupertinoIcons.calendar,
+    StressSignalKind.bloodOxygen => CupertinoIcons.drop_fill,
+    StressSignalKind.other => CupertinoIcons.chart_bar_alt_fill,
   };
 
   // ── A next step ────────────────────────────────────────────────────────────
@@ -795,7 +790,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.auto_awesome_rounded,
+                  CupertinoIcons.sparkles,
                   size: 20,
                   color: _purple,
                 ),
@@ -839,9 +834,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 ),
               ),
               icon: Icon(
-                _windDownOn
-                    ? Icons.check_rounded
-                    : Icons.notifications_active_outlined,
+                _windDownOn ? CupertinoIcons.checkmark : CupertinoIcons.bell,
                 size: 18,
               ),
               label: Text(
@@ -1313,8 +1306,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                       children: [
                         Icon(
                           s.measured
-                              ? Icons.check_rounded
-                              : Icons.radio_button_unchecked_rounded,
+                              ? CupertinoIcons.checkmark
+                              : CupertinoIcons.circle,
                           size: 16,
                           color: s.measured
                               ? _down(context)
@@ -1376,7 +1369,11 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(Icons.sync_rounded, size: 16, color: colors.textSecondary),
+              Icon(
+                CupertinoIcons.arrow_2_circlepath,
+                size: 16,
+                color: colors.textSecondary,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1401,7 +1398,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   'How stress is calculated',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                Icon(Icons.chevron_right_rounded),
+                Icon(CupertinoIcons.chevron_right),
               ],
             ),
           ),
@@ -1715,39 +1712,61 @@ class _DayChartState extends State<_DayChart> {
     return local.difference(dayStart).inMinutes / 60;
   }
 
+  /// What the curve shows, for VoiceOver: the low and high of the day and
+  /// the latest reading.
+  String get _summary {
+    final r = widget.readings;
+    final low = r.reduce((a, b) => b.score < a.score ? b : a);
+    final high = r.reduce((a, b) => b.score > a.score ? b : a);
+    String level(StressReading x) => widget.showNumbers
+        ? '${x.score.round()}'
+        : stressBand(x.score).toLowerCase();
+    String at(StressReading x) => DateFormat('h:mm a').format(x.at.toLocal());
+    return 'Stress through the day: lowest ${level(low)} at ${at(low)}, '
+        'highest ${level(high)} at ${at(high)}, '
+        'latest ${level(r.last)} at ${at(r.last)}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final (start, end) = _hours;
-    return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (e) => _select(e.localPosition.dx, constraints.maxWidth),
-        onHorizontalDragUpdate: (e) =>
-            _select(e.localPosition.dx, constraints.maxWidth),
-        onHorizontalDragEnd: (_) => setState(() => _selected = null),
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _DayChartPainter(
-            points: [for (final r in widget.readings) (_hourOf(r.at), r.score)],
-            start: start,
-            end: end,
-            usualRange: widget.usualRange,
-            events: [
-              for (final e in widget.events) (_hourOf(e.$1), _hourOf(e.$2)),
-            ],
-            selected: _selected,
-            selectedLabel: _selected == null
-                ? null
-                : '${widget.showNumbers ? widget.readings[_selected!].score.round() : stressBand(widget.readings[_selected!].score)} · '
-                      '${DateFormat('h:mm a').format(widget.readings[_selected!].at.toLocal())}',
-            showAxis: widget.showNumbers,
-            line: _purple,
-            text: colors.textSecondary,
-            grid: colors.border,
-            band: colors.textPrimary.withValues(alpha: .12),
-            tooltip: colors.cardMuted,
-            tooltipText: colors.textPrimary,
+    return Semantics(
+      label: _summary,
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (e) => _select(e.localPosition.dx, constraints.maxWidth),
+            onHorizontalDragUpdate: (e) =>
+                _select(e.localPosition.dx, constraints.maxWidth),
+            onHorizontalDragEnd: (_) => setState(() => _selected = null),
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _DayChartPainter(
+                points: [
+                  for (final r in widget.readings) (_hourOf(r.at), r.score),
+                ],
+                start: start,
+                end: end,
+                usualRange: widget.usualRange,
+                events: [
+                  for (final e in widget.events) (_hourOf(e.$1), _hourOf(e.$2)),
+                ],
+                selected: _selected,
+                selectedLabel: _selected == null
+                    ? null
+                    : '${widget.showNumbers ? widget.readings[_selected!].score.round() : stressBand(widget.readings[_selected!].score)} · '
+                          '${DateFormat('h:mm a').format(widget.readings[_selected!].at.toLocal())}',
+                showAxis: widget.showNumbers,
+                line: _purple,
+                text: colors.textSecondary,
+                grid: colors.border,
+                band: colors.textPrimary.withValues(alpha: .12),
+                tooltip: colors.cardMuted,
+                tooltipText: colors.textPrimary,
+              ),
+            ),
           ),
         ),
       ),
@@ -1875,6 +1894,7 @@ class _DayChartPainter extends CustomPainter {
       );
       canvas.drawCircle(p, 5, Paint()..color = tooltipText);
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: selectedLabel,
           style: TextStyle(
@@ -1922,29 +1942,52 @@ class _RangeChart extends StatelessWidget {
   final List<String> labels;
   final ValueChanged<StressDay> onDay;
 
+  /// What the bars show, for VoiceOver: the period's average and its
+  /// highest day.
+  String get _summary {
+    final averages = [for (final d in days) ?d.average];
+    if (averages.isEmpty) return 'Stress by day: no readings yet.';
+    final mean = averages.reduce((a, b) => a + b) / averages.length;
+    final peak = days
+        .where((d) => d.maximum != null)
+        .fold<StressDay?>(
+          null,
+          (best, d) => best == null || d.maximum! > best.maximum! ? d : best,
+        );
+    return 'Stress by day, last ${days.length} days: average ${mean.round()}'
+        '${peak == null ? '' : ', highest ${peak.maximum!.round()} on '
+                  '${DateFormat('EEEE, MMM d').format(peak.date)}'}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    return LayoutBuilder(
-      builder: (context, constraints) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapUp: (e) {
-          final slot = (constraints.maxWidth - _ChartFrame.right) / days.length;
-          final i = (e.localPosition.dx / slot).floor();
-          if (i >= 0 && i < days.length) onDay(days[i]);
-        },
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _RangeChartPainter(
-            days: days,
-            labels: labels,
-            bar: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF4A4560)
-                : const Color(0xFFD5D0F0),
-            today: _purple.withValues(alpha: .6),
-            dot: colors.textPrimary,
-            text: colors.textSecondary,
-            grid: colors.border,
+    return Semantics(
+      label: _summary,
+      child: ExcludeSemantics(
+        child: LayoutBuilder(
+          builder: (context, constraints) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (e) {
+              final slot =
+                  (constraints.maxWidth - _ChartFrame.right) / days.length;
+              final i = (e.localPosition.dx / slot).floor();
+              if (i >= 0 && i < days.length) onDay(days[i]);
+            },
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _RangeChartPainter(
+                days: days,
+                labels: labels,
+                bar: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF4A4560)
+                    : const Color(0xFFD5D0F0),
+                today: _purple.withValues(alpha: .6),
+                dot: colors.textPrimary,
+                text: colors.textSecondary,
+                grid: colors.border,
+              ),
+            ),
           ),
         ),
       ),
@@ -2026,11 +2069,12 @@ class _RangeChartPainter extends CustomPainter {
       }
       if (labels[i].isNotEmpty) {
         final painter = TextPainter(
+          textScaler: chartTextScaler,
           text: TextSpan(
             text: labels[i],
             style: TextStyle(
               color: text,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: isToday ? FontWeight.w800 : FontWeight.w400,
             ),
           ),
@@ -2054,6 +2098,7 @@ class _RangeChartPainter extends CustomPainter {
 
 void _text(Canvas canvas, String value, Offset at, Color color, double size) {
   (TextPainter(
+    textScaler: chartTextScaler,
     text: TextSpan(
       text: value,
       style: TextStyle(color: color, fontSize: size),

@@ -50,7 +50,7 @@ void main() {
     tester,
   ) async {
     await openOccurrence(tester);
-    await tester.tap(find.text('Save Changes'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.text('Edit repeating event'), findsOneWidget);
     expect(find.text('This event'), findsOneWidget);
@@ -69,11 +69,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Every week'), warnIfMissed: false);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save Changes'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.text('This event'), findsNothing);
     expect(find.text('All events'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    // The alert's Cancel, above the sheet's.
+    await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
     expect(find.text('Edit Event'), findsOneWidget);
   });

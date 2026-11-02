@@ -24,6 +24,12 @@ struct VivordoSiriSnapshot: Equatable, Sendable {
   let capacityScore: Int?
   let capacityLabel: String
   let capacityDay: String
+  /// My Day's live Capacity: what's left of this morning's at each step
+  /// time (the first is when My Day sent it), and what's left by tonight.
+  let capacityLeftTimes: [Date]
+  let capacityLeftValues: [Int]
+  let capacityMorning: Int?
+  let capacityByTonight: Int?
   /// My Day's Demand for the rest of today and its headline ("Room to spare
   /// today"), as last shown there; nil until My Day has worked it out.
   let demand: Int?
@@ -118,6 +124,13 @@ struct VivordoSnapshotStore {
         ? positiveInt(defaults, key: "capacityScore", allowZero: true) : nil,
       capacityLabel: defaults.string(forKey: "capacityLabel") ?? "",
       capacityDay: defaults.string(forKey: "capacityDay") ?? "",
+      capacityLeftTimes: ((defaults.array(forKey: "capacityLeftTimes") as? [NSNumber]) ?? [])
+        .map { Date(timeIntervalSince1970: $0.doubleValue / 1000) },
+      capacityLeftValues: ((defaults.array(forKey: "capacityLeftValues") as? [NSNumber]) ?? [])
+        .map(\.intValue),
+      capacityMorning: positiveInt(defaults, key: "capacityLeftMorning"),
+      capacityByTonight: defaults.object(forKey: "capacityByTonight") == nil
+        ? nil : defaults.integer(forKey: "capacityByTonight"),
       demand: positiveInt(defaults, key: "siriDemand", allowZero: true),
       demandHeadline: defaults.string(forKey: "siriDemandHeadline") ?? "",
       demandAt: date(defaults, key: "siriDemandAt"),
@@ -291,6 +304,23 @@ struct VivordoSiriQueryService {
         return Self.missing(metric, dialog: "Vivordo doesn't have a step count for you yet today.")
       }
     case .capacity:
+      // My Day's live Capacity first: it can run on the app's own estimate
+      // before the server's score for today arrives.
+      if let live = Self.capacityLeft(snapshot, now: now) {
+        let tonight = live.byTonight < 0
+          ? "and your plan needs \(-live.byTonight) more than that"
+          : "about \(live.byTonight) by tonight"
+        return VivordoSiriAnswer(
+          metric: metric,
+          dialog: "You have \(live.left) Capacity left of the \(live.morning) you started today with, \(tonight).",
+          title: "Capacity left",
+          value: "\(live.left)",
+          unit: "started at \(live.morning)",
+          status: live.byTonight < 0 ? "Short by \(-live.byTonight) tonight" : "\(live.byTonight) by tonight",
+          detail: nil,
+          progress: Double(live.left) / Double(max(live.morning, 1))
+        )
+      }
       guard let score = snapshot.capacityScore,
             snapshot.capacityDay == snapshot.dataDay else {
         return Self.missing(metric, dialog: "Vivordo doesn't have your Capacity for today yet. It comes in once last night's sleep syncs.")
@@ -309,7 +339,7 @@ struct VivordoSiriQueryService {
       )
     case .trainingLoad:
       guard !snapshot.trainingState.isEmpty else {
-        return Self.missing(metric, dialog: "Vivordo is still learning your usual week of activity. Training load needs about four weeks.")
+        return Self.missing(metric, dialog: "Vivordo is still learning your usual week of activity. Training load starts after about two weeks of activity.")
       }
       let percent = Int((((snapshot.trainingRatio ?? 1) - 1) * 100).rounded())
       let vsUsual = abs(percent) < 5 ? "about your usual" :
@@ -352,6 +382,19 @@ struct VivordoSiriQueryService {
         progress: nil
       )
     }
+  }
+
+  /// My Day's live Capacity at `now`, when it was worked out for today.
+  static func capacityLeft(_ snapshot: VivordoSiriSnapshot, now: Date)
+    -> (left: Int, morning: Int, byTonight: Int)? {
+    guard let morning = snapshot.capacityMorning, let byTonight = snapshot.capacityByTonight,
+          snapshot.capacityLeftTimes.count == snapshot.capacityLeftValues.count,
+          let start = snapshot.capacityLeftTimes.first,
+          Calendar.autoupdatingCurrent.isDate(start, inSameDayAs: now),
+          let first = snapshot.capacityLeftValues.first else { return nil }
+    let left = Array(zip(snapshot.capacityLeftTimes, snapshot.capacityLeftValues))
+      .last(where: { $0.0 <= now })?.1 ?? first
+    return (max(0, left), morning, byTonight)
   }
 
   /// My Day's Demand when it was worked out for today in the last 2 hours.

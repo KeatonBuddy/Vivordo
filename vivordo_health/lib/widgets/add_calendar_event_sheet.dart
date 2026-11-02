@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -308,6 +309,20 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   );
   bool _loadingCalendars = true;
   bool _recurrenceChanged = false;
+  // The calendar loads after opening, so only a pick counts as an edit.
+  bool _calendarPicked = false;
+
+  /// What the form held when it opened; any difference asks before closing.
+  late final List<Object?> _initialValues;
+  List<Object?> get _values => [
+    _titleController.text,
+    _date,
+    _startTime,
+    _endTime,
+    _isAllDay,
+    _repeat,
+    _calendarPicked,
+  ];
 
   @override
   void initState() {
@@ -321,6 +336,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
     _endTime = TimeOfDay.fromDateTime(widget.initialEnd);
     _isAllDay = widget.initialIsAllDay;
     _repeat = widget.initialRepeat;
+    _initialValues = _values;
     _loadCalendars();
   }
 
@@ -445,7 +461,10 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
       },
     );
     if (selected != null && mounted) {
-      setState(() => _selectedCalendar = selected);
+      setState(() {
+        _selectedCalendar = selected;
+        _calendarPicked = true;
+      });
     }
   }
 
@@ -562,7 +581,12 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DiscardChangesGuard(
+    dirty: !listEquals(_values, _initialValues),
+    child: _sheet(context),
+  );
+
+  Widget _sheet(BuildContext context) {
     final colors = context.vivordoColors;
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
@@ -586,7 +610,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
         ),
         child: Column(
           children: [
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Container(
               width: 48,
               height: 5,
@@ -595,31 +619,12 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                 borderRadius: BorderRadius.circular(99),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 10, 14, 4),
-              child: Row(
-                children: [
-                  const SizedBox(width: 42),
-                  Expanded(
-                    child:
-                        widget.header ??
-                        Text(
-                          widget.isEditing ? 'Edit Event' : 'Add Event',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: colors.textPrimary,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: () => Navigator.pop(context),
-                    tooltip: 'Close',
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
+            AppleSheetBar(
+              title:
+                  widget.header ??
+                  Text(widget.isEditing ? 'Edit Event' : 'New Event'),
+              doneLabel: widget.isEditing ? 'Save' : 'Add',
+              onDone: _titleController.text.trim().isEmpty ? null : _submit,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -627,7 +632,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SheetLabel('EVENT'),
+                    const _SheetLabel('Event'),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _titleController,
@@ -657,25 +662,25 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                       ),
                     ),
                     const SizedBox(height: 26),
-                    const _SheetLabel('SCHEDULE'),
+                    const _SheetLabel('Schedule'),
                     const SizedBox(height: 10),
                     _SheetCard(
                       children: [
                         _PickerRow(
-                          icon: Icons.calendar_month_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Date',
                           value: DateFormat('MMMM d, y').format(_date),
                           onTap: _pickDate,
                         ),
                         _PickerRow(
-                          icon: Icons.schedule_rounded,
+                          icon: CupertinoIcons.clock,
                           label: 'Start time',
                           value: _startTime.format(context),
                           enabled: !_isAllDay,
                           onTap: () => _pickTime(start: true),
                         ),
                         _PickerRow(
-                          icon: Icons.schedule_rounded,
+                          icon: CupertinoIcons.clock,
                           label: 'End time',
                           // Matches CalendarEventDraft.end, which rolls an
                           // end at or before the start into the next day.
@@ -703,8 +708,23 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                               ),
                               AppSwitch(
                                 value: _isAllDay,
-                                onChanged: (value) =>
-                                    setState(() => _isAllDay = value),
+                                onChanged: (value) => setState(() {
+                                  _isAllDay = value;
+                                  // An all-day event opens at midnight to
+                                  // midnight: give it a real hour instead.
+                                  if (!value &&
+                                      _minutesOf(_startTime) == 0 &&
+                                      _minutesOf(_endTime) == 0) {
+                                    _startTime = const TimeOfDay(
+                                      hour: 9,
+                                      minute: 0,
+                                    );
+                                    _endTime = const TimeOfDay(
+                                      hour: 10,
+                                      minute: 0,
+                                    );
+                                  }
+                                }),
                               ),
                             ],
                           ),
@@ -712,7 +732,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                       ],
                     ),
                     const SizedBox(height: 26),
-                    const _SheetLabel('REPEAT'),
+                    const _SheetLabel('Repeat'),
                     const SizedBox(height: 10),
                     _SheetCard(
                       children: [
@@ -729,7 +749,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                           ],
                           // No onTap: the tap belongs to the menu button.
                           child: _PickerRow(
-                            icon: Icons.repeat_rounded,
+                            icon: CupertinoIcons.repeat,
                             label: 'Repeat',
                             trailingIcon:
                                 CupertinoIcons.chevron_up_chevron_down,
@@ -767,12 +787,12 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                       ),
                     ],
                     const SizedBox(height: 26),
-                    const _SheetLabel('CALENDAR'),
+                    const _SheetLabel('Calendar'),
                     const SizedBox(height: 10),
                     _SheetCard(
                       children: [
                         _PickerRow(
-                          icon: Icons.calendar_month_rounded,
+                          icon: CupertinoIcons.calendar,
                           label: 'Calendar',
                           value: _loadingCalendars
                               ? 'Loading…'
@@ -785,36 +805,6 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 28),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4148F5), Color(0xFF5D45DC)],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: FilledButton(
-                          onPressed: _titleController.text.trim().isEmpty
-                              ? null
-                              : _submit,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            disabledBackgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: Text(
-                            widget.isEditing ? 'Save Changes' : 'Add Event',
-                            style: const TextStyle(fontSize: 17),
-                          ),
-                        ),
-                      ),
-                    ),
                     if (widget.isEditing) ...[
                       const SizedBox(height: 18),
                       Center(
@@ -824,7 +814,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                             foregroundColor: const Color(0xFFFF574D),
                             textStyle: const TextStyle(fontSize: 16),
                           ),
-                          icon: const Icon(Icons.delete_outline_rounded),
+                          icon: const Icon(CupertinoIcons.delete),
                           label: const Text('Delete Event'),
                         ),
                       ),
@@ -850,7 +840,6 @@ class _SheetLabel extends StatelessWidget {
       color: Color(0xFFA9A7D8),
       fontSize: 13,
       fontWeight: FontWeight.w700,
-      letterSpacing: 1.4,
     ),
   );
 }
@@ -893,7 +882,7 @@ class _PickerRow extends StatelessWidget {
     this.onTap,
     this.enabled = true,
     this.calendarColor,
-    this.trailingIcon = Icons.chevron_right_rounded,
+    this.trailingIcon = CupertinoIcons.chevron_right,
   });
   final IconData icon;
   final IconData trailingIcon;
@@ -958,7 +947,7 @@ class _PickerRow extends StatelessWidget {
               Icon(
                 trailingIcon,
                 color: colors.textSecondary,
-                size: trailingIcon == Icons.chevron_right_rounded ? 22 : 17,
+                size: trailingIcon == CupertinoIcons.chevron_right ? 22 : 17,
               ),
             ],
           ),
@@ -1151,7 +1140,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
       onDone: () => Navigator.pop(context, _repeat),
       children: [
         const SizedBox(height: 8),
-        const _SheetLabel('EVERY'),
+        const _SheetLabel('Every'),
         const SizedBox(height: 10),
         Row(
           children: [
@@ -1162,7 +1151,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
                       () => _repeat = _repeat.copyWith(interval: interval - 1),
                     )
                   : null,
-              icon: const Icon(Icons.remove_rounded),
+              icon: const Icon(CupertinoIcons.minus),
             ),
             SizedBox(
               width: 44,
@@ -1183,7 +1172,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
                       () => _repeat = _repeat.copyWith(interval: interval + 1),
                     )
                   : null,
-              icon: const Icon(Icons.add_rounded),
+              icon: const Icon(CupertinoIcons.add),
             ),
           ],
         ),
@@ -1201,7 +1190,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
         ),
         if (_repeat.unit == RepeatUnit.week) ...[
           const SizedBox(height: 20),
-          const _SheetLabel('ON'),
+          const _SheetLabel('On'),
           const SizedBox(height: 10),
           _WeekdaySelector(
             selected: _repeat.weekdays,
@@ -1210,7 +1199,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
           ),
         ],
         const SizedBox(height: 20),
-        const _SheetLabel('ENDS'),
+        const _SheetLabel('Ends'),
         const SizedBox(height: 10),
         _Segmented(
           value: _repeat.until != null,
@@ -1228,7 +1217,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
           _SheetCard(
             children: [
               _PickerRow(
-                icon: Icons.event_busy_rounded,
+                icon: CupertinoIcons.calendar_badge_minus,
                 label: 'End date',
                 value: DateFormat('MMM d, y').format(_repeat.until!),
                 onTap: _pickUntil,

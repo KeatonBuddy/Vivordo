@@ -21,6 +21,20 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Vivordo Premium status, written only by functions (RevenueCat webhook
+    // and refreshSubscription). The owner reads it to unlock the app.
+    match /subscriptions/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // App-wide switches, such as app_config/premium {required} turned on at
+    // launch. Signed-in users read them; only the console changes them.
+    match /app_config/{configId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // ── User document + ALL subcollections ───────────────────────────────────
     // Subcollections covered: metrics_daily, preferences, questionnaire_responses,
     // insights, weekly_trends, insight_summaries, analytics_events,

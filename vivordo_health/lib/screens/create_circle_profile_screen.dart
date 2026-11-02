@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -270,7 +272,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                                 photoBytes == null &&
                                     widget.initialProfile?.photoUrl == null
                                 ? const Icon(
-                                    Icons.person_rounded,
+                                    CupertinoIcons.person_fill,
                                     color: _purple,
                                     size: 78,
                                   )
@@ -298,7 +300,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                                 ],
                               ),
                               child: const Icon(
-                                Icons.camera_alt_rounded,
+                                CupertinoIcons.camera_fill,
                                 color: Colors.white,
                               ),
                             ),
@@ -334,7 +336,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     _compactPhotoRow(),
                     const SizedBox(height: 22),
                   ],
-                  const _FormLabel('DISPLAY NAME'),
+                  const _FormLabel('Display name'),
                   const SizedBox(height: 9),
                   TextField(
                     controller: usernameController,
@@ -370,7 +372,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  const _FormLabel('BIO'),
+                  const _FormLabel('Bio'),
                   const SizedBox(height: 9),
                   TextField(
                     controller: bioController,
@@ -422,9 +424,9 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     ? const SizedBox(
                         width: 22,
                         height: 22,
-                        child: CircularProgressIndicator(
+                        child: CupertinoActivityIndicator(
                           color: Colors.white,
-                          strokeWidth: 2.5,
+                          radius: 11,
                         ),
                       )
                     : Text(
@@ -456,7 +458,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.lock_outline_rounded,
+                  CupertinoIcons.lock,
                   color: context.vivordoColors.textSecondary,
                   size: 15,
                 ),
@@ -500,7 +502,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                     ),
             ),
             child: photoBytes == null
-                ? const Icon(Icons.camera_alt_rounded, color: _purple)
+                ? const Icon(CupertinoIcons.camera_fill, color: _purple)
                 : null,
           ),
           const SizedBox(width: 16),
@@ -556,14 +558,14 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
   Widget? _usernameSuffix() => switch (usernameStatus) {
     _UsernameStatus.checking => const Padding(
       padding: EdgeInsets.all(14),
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: CupertinoActivityIndicator(),
     ),
     _UsernameStatus.available => const Icon(
-      Icons.check_rounded,
+      CupertinoIcons.checkmark,
       color: Color(0xFF12B76A),
     ),
     _UsernameStatus.taken || _UsernameStatus.invalid => const Icon(
-      Icons.close_rounded,
+      CupertinoIcons.xmark,
       color: Colors.redAccent,
     ),
     _ => null,
@@ -600,9 +602,8 @@ class _FormLabel extends StatelessWidget {
     text,
     style: TextStyle(
       color: context.vivordoColors.textSecondary,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w800,
-      letterSpacing: 1.5,
     ),
   );
 }

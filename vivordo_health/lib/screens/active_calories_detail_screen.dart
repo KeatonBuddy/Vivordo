@@ -3,13 +3,17 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import '../src/utils/chart_text.dart';
 
 class ActiveCaloriesDetailScreen extends StatefulWidget {
   const ActiveCaloriesDetailScreen({super.key});
@@ -23,7 +27,8 @@ class _ActiveCaloriesDetailScreenState
     extends State<ActiveCaloriesDetailScreen> {
   static const _orange = Color(0xFFFF6A00);
   static const _purple = Color(0xFF5B42F3);
-  int _rangeIndex = 0;
+  // Opens on Week; Day is a tap away.
+  int _rangeIndex = 1;
 
   int get _rangeDays => switch (_rangeIndex) {
     0 => 1,
@@ -35,6 +40,9 @@ class _ActiveCaloriesDetailScreenState
     1 => 'Weekly',
     _ => 'Monthly',
   };
+
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _calories = _caloriesStream();
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _caloriesStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -113,8 +121,9 @@ class _ActiveCaloriesDetailScreenState
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(CupertinoIcons.back),
           color: _purple,
         ),
         title: const Text(
@@ -123,11 +132,11 @@ class _ActiveCaloriesDetailScreenState
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _caloriesStream(),
+        stream: _calories,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final data = _rangeData(snapshot.data);
           final usualValues = _usualValues(snapshot.data);
@@ -237,46 +246,11 @@ class _ActiveCaloriesDetailScreenState
     );
   }
 
-  Widget _rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == _rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget _rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    value: _rangeIndex,
+    onChanged: (index) => setState(() => _rangeIndex = index),
+  );
 
   Widget _summaryCard(
     int total,
@@ -292,14 +266,14 @@ class _ActiveCaloriesDetailScreenState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.local_fire_department_rounded, _orange),
+              _iconBubble(CupertinoIcons.flame_fill, _orange),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${_rangeName.toUpperCase()} ACTIVE CALORIES',
+                      '$_rangeName active calories',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -344,8 +318,8 @@ class _ActiveCaloriesDetailScreenState
                           color: _rangeIndex == 0 && change < 10
                               ? context.vivordoColors.textSecondary
                               : change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -499,8 +473,8 @@ class _ActiveCaloriesDetailScreenState
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF20B26B),
+      style: TextStyle(
+        color: context.vivordoColors.success,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -552,24 +526,46 @@ class _CaloriesChartState extends State<_CaloriesChart> {
     if (!listEquals(oldWidget.values, widget.values)) selected = null;
   }
 
+  /// What the line shows, for VoiceOver: the period's average and best day.
+  String get _summary {
+    final days = widget.values.where((v) => v > 0).toList();
+    final period = 'Active calories, last ${widget.values.length} days';
+    if (days.isEmpty) return '$period: none recorded.';
+    final kcal = NumberFormat.decimalPattern();
+    final average = days.reduce((a, b) => a + b) / days.length;
+    var best = 0;
+    for (var i = 1; i < widget.values.length; i++) {
+      if (widget.values[i] > widget.values[best]) best = i;
+    }
+    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
+    return '$period: average ${kcal.format(average.round())} kcal, '
+        'most on ${day.format(widget.dates[best])} with '
+        '${kcal.format(widget.values[best].round())} kcal.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _CaloriesChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          maxY: widget.maxY,
-          usual: widget.usual,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _CaloriesChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              maxY: widget.maxY,
+              usual: widget.usual,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -666,6 +662,7 @@ class _CaloriesChartPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${NumberFormat.decimalPattern().format(values[index].round())} kcal';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -697,6 +694,7 @@ class _CaloriesChartPainter extends CustomPainter {
 
   void _text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -711,6 +709,7 @@ class _CaloriesChartPainter extends CustomPainter {
 
   void _centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(

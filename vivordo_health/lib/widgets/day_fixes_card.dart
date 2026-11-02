@@ -1,3 +1,5 @@
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -53,11 +55,10 @@ class DayFixesCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   tomorrow
-                      ? 'WAYS TO LIGHTEN TOMORROW'
-                      : 'WAYS TO LIGHTEN TODAY',
+                      ? 'Ways to lighten tomorrow'
+                      : 'Ways to lighten today',
                   style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: .8,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: colors.textSecondary,
                   ),
@@ -69,7 +70,7 @@ class DayFixesCard extends StatelessWidget {
                     : 'Hide until tomorrow',
                 visualDensity: VisualDensity.compact,
                 onPressed: onHide,
-                icon: Icon(Icons.close_rounded, color: colors.textSecondary),
+                icon: Icon(CupertinoIcons.xmark, color: colors.textSecondary),
               ),
             ],
           ),
@@ -168,19 +169,19 @@ class _FixRow extends StatelessWidget {
 /// What a fix says: icon, colour, title and detail.
 (IconData, Color, String, String) _fixText(DayFix fix) => switch (fix.kind) {
   DayFixKind.movePriority => (
-    Icons.event_repeat_rounded,
+    CupertinoIcons.calendar_today,
     VivordoTheme.brand,
     'Move "${fix.title}"',
     'To a lighter day this week',
   ),
   DayFixKind.buffer => (
-    Icons.more_time_rounded,
+    CupertinoIcons.clock,
     const Color(0xFF378ADD),
     '15-min buffer before ${fix.title}',
     'Ends the back-to-back after ${fix.after}',
   ),
   DayFixKind.energySlot => (
-    Icons.bolt_rounded,
+    CupertinoIcons.bolt_fill,
     _green,
     '${fix.title} at ${_time(fix.newStart!)}',
     'Out of a low-energy window, into your best time',
@@ -274,7 +275,7 @@ class BriefFix extends StatelessWidget {
                     : 'Hide until tomorrow',
                 visualDensity: VisualDensity.compact,
                 onPressed: onHide,
-                icon: const Icon(Icons.close_rounded, size: 18, color: ink),
+                icon: const Icon(CupertinoIcons.xmark, size: 18, color: ink),
               ),
             ],
           ),
@@ -541,7 +542,7 @@ class _DayPickerState extends State<_DayPicker> {
                       "Couldn't load the next few days.",
                       style: TextStyle(color: colors.textSecondary),
                     )
-                  : const CircularProgressIndicator(),
+                  : const CupertinoActivityIndicator(),
             ),
           )
         else
@@ -736,7 +737,11 @@ class _Warning extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.warning_amber_rounded, size: 18, color: _amber),
+        const Icon(
+          CupertinoIcons.exclamationmark_triangle,
+          size: 18,
+          color: _amber,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

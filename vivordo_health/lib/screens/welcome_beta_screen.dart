@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import 'onboarding_flow_screen.dart' show onboardingLight;
+import 'onboarding_flow_screen.dart' show onboardingTheme;
 import 'signup_screen.dart';
 
 /// The first screen of a new account, from Login's "Create account".
@@ -10,9 +10,9 @@ class WelcomeBetaScreen extends StatelessWidget {
   static const _purple = VivordoTheme.brand;
 
   @override
-  Widget build(BuildContext context) => onboardingLight(
+  Widget build(BuildContext context) => onboardingTheme(
     Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: context.vivordoColors.page,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 0, 28, 16),
@@ -33,30 +33,36 @@ class WelcomeBetaScreen extends StatelessWidget {
                             width: 340,
                             height: 270,
                             fit: BoxFit.contain,
+                            // Ink-coloured on a dark page, as on sign-in.
+                            color:
+                                Theme.of(context).brightness == Brightness.dark
+                                ? context.vivordoColors.textPrimary
+                                : null,
+                            colorBlendMode: BlendMode.srcIn,
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'Know your energy before your day uses it',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
                         height: 1.2,
-                        color: Color(0xFF1C1C1E),
+                        color: context.vivordoColors.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 14),
-                    const Text(
+                    Text(
                       'Vivordo reads your sleep, body and calendar to show what '
                       "you have, what's ahead and how your health is trending.",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 15,
                         height: 1.45,
-                        color: Color(0xFF8E8E93),
+                        color: context.vivordoColors.textSecondary,
                       ),
                     ),
                   ],

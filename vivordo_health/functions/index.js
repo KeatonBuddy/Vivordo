@@ -38,6 +38,7 @@ const {
   DAILY_CALL_LIMIT,
   DAILY_CHAT_LIMIT,
 } = require("./ai_limits");
+const {aiConsentAllows} = require("./ai_consent");
 const {runAssistant, validateAssistantRequest} = require("./assistant");
 const {buildTask, runTask} = require("./ai_tasks");
 const {
@@ -46,6 +47,13 @@ const {
 } = require("./account_deletion");
 const nodemailer = require("nodemailer");
 const {REPORT_EMAIL, reportEmail} = require("./report_alert");
+const {
+  hasPremium,
+  webhookUserIds,
+  refreshFromRevenueCat,
+  isStaff,
+  grantStaffAccess,
+} = require("./subscription");
 
 admin.initializeApp();
 setGlobalOptions({maxInstances: 10});
@@ -773,11 +781,52 @@ exports.achievementUnlockNotification = onDocumentWritten(
 // =============================================================================
 
 /**
- * Spends one call of the account's daily AI budget, shared by assistant and
- * aiTask. ai_usage has no client rule, so only the Admin SDK can read or
- * reset it.
+ * Throws unless the account has consented to Vivordo AI (ai_consent.js). A
+ * withdrawn consent always refuses; an account with no record yet is served
+ * until app_config/ai has requireConsent: true.
+ * @param {string} uid Account ID.
+ */
+async function requireAiConsent(uid) {
+  const db = admin.firestore();
+  const [user, config] = await Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("app_config").doc("ai").get(),
+  ]);
+  if (!aiConsentAllows(user.get("aiConsent"),
+      config.get("requireConsent") === true)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Vivordo AI is off for your account. Turn it on in Settings.",
+    );
+  }
+}
+
+/**
+ * Throws unless the account may use a paid feature. Premium is required only
+ * once app_config/premium has required: true (switched on at launch), so
+ * this can be deployed before the paywall ships.
+ * @param {string} uid Account ID.
+ */
+async function requirePremium(uid) {
+  const db = admin.firestore();
+  const config = await db.collection("app_config").doc("premium").get();
+  if (config.get("required") !== true) return;
+  const status = await db.collection("subscriptions").doc(uid).get();
+  if (!hasPremium(status.data(), Date.now())) {
+    throw new HttpsError(
+        "permission-denied",
+        "A Vivordo subscription is needed for this.",
+    );
+  }
+}
+
+/**
+ * Spends one call of the account's daily AI budget: chat's own
+ * (DAILY_CHAT_LIMIT) for Vivordo AI messages, otherwise the AI tasks'.
+ * ai_usage has no client rule, so only the Admin SDK can read or reset it.
  *
  * @param {string} uid The caller.
+ * @param {{chat: boolean}} options Whether this is a chat message.
  */
 async function consumeAiQuota(uid, {chat = false} = {}) {
   const db = admin.firestore();
@@ -812,6 +861,8 @@ exports.assistant = onCall(
       if (validated.error) {
         throw new HttpsError("invalid-argument", validated.error);
       }
+      await requireAiConsent(uid);
+      await requirePremium(uid);
       await consumeAiQuota(uid, {chat: true});
       const {reply, usage, memoryChanges} = await runAssistant({
         client: getAnthropicClient(),
@@ -843,6 +894,8 @@ exports.aiTask = onCall({secrets: [anthropicApiKey]}, async (request) => {
   const uid = requireAuth(request);
   const call = buildTask(request.data);
   if (call.error) throw new HttpsError("invalid-argument", call.error);
+  await requireAiConsent(uid);
+  await requirePremium(uid);
   await consumeAiQuota(uid);
   const {text, usage} = await runTask(getAnthropicClient(), call);
   console.log("[aiTask]", request.data.task, JSON.stringify({
@@ -870,6 +923,8 @@ exports.classifyPlanItems = onCall({secrets: [anthropicApiKey]},
       if (validated.error) {
         throw new HttpsError("invalid-argument", validated.error);
       }
+      await requireAiConsent(request.auth.uid);
+      await requirePremium(request.auth.uid);
       // Its own daily budget, so it never uses up Vivordo AI chat's.
       const db = admin.firestore();
       const usageRef = db.collection("ai_usage")
@@ -2480,6 +2535,7 @@ async function deleteVivordoAccountData(uid) {
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
     db.collection("ai_usage").doc(`${uid}_tasks`).delete(),
+    db.collection("subscriptions").doc(uid).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
     prefix: `circle_profiles/${uid}/`,
@@ -2594,4 +2650,65 @@ exports.reportAlert = onDocumentCreated({
     to: REPORT_EMAIL,
     ...reportEmail(event.params.reportId, report),
   });
+});
+
+// RevenueCat's secret API key (Project settings → API keys → Secret), and
+// the Authorization header value set on the RevenueCat webhook.
+const revenueCatApiKey = defineSecret("REVENUECAT_API_KEY");
+const revenueCatWebhookAuth = defineSecret("REVENUECAT_WEBHOOK_AUTH");
+
+/**
+ * RevenueCat calls this on every purchase, renewal, cancellation, expiry and
+ * transfer. The event only says who changed; each account's status is
+ * fetched fresh from RevenueCat. A failure returns 500 so RevenueCat retries.
+ */
+exports.revenueCatWebhook = onRequest({
+  secrets: [revenueCatApiKey, revenueCatWebhookAuth],
+}, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("POST only");
+    return;
+  }
+  if (req.get("Authorization") !== revenueCatWebhookAuth.value()) {
+    res.status(401).send("Unauthorized");
+    return;
+  }
+  const event = req.body?.event;
+  try {
+    for (const uid of webhookUserIds(event)) {
+      await refreshFromRevenueCat(
+          admin.firestore(), uid, revenueCatApiKey.value());
+    }
+    res.status(200).send("ok");
+  } catch (error) {
+    console.error("[revenueCatWebhook]", event?.type, error);
+    res.status(500).send("Retry");
+  }
+});
+
+/**
+ * The app calls this right after a purchase or restore, so Premium unlocks
+ * without waiting for the webhook, and before showing the paywall. A
+ * verified email on the staff list (staff_access/list.emails, edited in the
+ * console) without a subscription is granted one in RevenueCat, so staff go
+ * straight in. Returns the stored status.
+ */
+exports.refreshSubscription = onCall({
+  secrets: [revenueCatApiKey],
+}, async (request) => {
+  const uid = requireAuth(request);
+  const db = admin.firestore();
+  let status = await refreshFromRevenueCat(db, uid, revenueCatApiKey.value());
+  if (!status.active) {
+    const staff = await db.collection("staff_access").doc("list").get();
+    if (isStaff(request.auth.token, staff.get("emails"))) {
+      status = await grantStaffAccess(db, uid, revenueCatApiKey.value());
+    }
+  }
+  return {
+    active: status.active,
+    period: status.period,
+    expiresAt: status.expiresAt?.toISOString() ?? null,
+    willRenew: status.willRenew,
+  };
 });

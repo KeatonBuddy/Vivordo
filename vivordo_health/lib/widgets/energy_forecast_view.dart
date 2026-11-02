@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -102,11 +103,7 @@ class EnergySleepLine extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
             children: [
-              const Icon(
-                Icons.bedtime_outlined,
-                size: 18,
-                color: _energyWindDown,
-              ),
+              const Icon(CupertinoIcons.moon, size: 18, color: _energyWindDown),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -133,7 +130,53 @@ class EnergySleepLine extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                CupertinoIcons.chevron_right,
+                size: 18,
+                color: colors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// In the sleep line's place when there's no sleep and no usual sleep
+/// times, so nothing draws the energy line yet.
+class EnergyLineInvite extends StatelessWidget {
+  const EnergyLineInvite({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Material(
+      color: _energyWindDown.withValues(alpha: .10),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(CupertinoIcons.moon, size: 18, color: _energyWindDown),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Add your usual sleep times to see your energy through '
+                  'the day',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              Icon(
+                CupertinoIcons.chevron_right,
                 size: 18,
                 color: colors.textSecondary,
               ),
@@ -233,11 +276,33 @@ class EnergyCurve extends StatelessWidget {
   final DateTime until;
   final bool shadeWindows;
 
+  /// What the curve shows, for VoiceOver: the windows it shades.
+  String get _summary {
+    final windows = [
+      for (final phase in const [
+        EnergyPhase.peak,
+        EnergyPhase.dip,
+        EnergyPhase.secondWind,
+      ])
+        if (forecast.window(phase) case final w?
+            when w.end.isAfter(from) && w.start.isBefore(until))
+          '${energyPhaseName(w.phase)} ${energyWindowText(w)}',
+    ];
+    return windows.isEmpty
+        ? 'Energy forecast curve.'
+        : 'Energy forecast: ${windows.join(', ')}.';
+  }
+
   @override
-  Widget build(BuildContext context) => IgnorePointer(
-    child: CustomPaint(
-      size: Size.infinite,
-      painter: _EnergyCurvePainter(forecast, from, until, shadeWindows),
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: IgnorePointer(
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _EnergyCurvePainter(forecast, from, until, shadeWindows),
+        ),
+      ),
     ),
   );
 }
@@ -446,7 +511,7 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
   );
   return [
     (
-      Icons.bedtime_rounded,
+      CupertinoIcons.moon_fill,
       forecast.estimated && forecast.usesSchedule
           ? "No sleep is tracked for last night, so this uses your usual "
                 'sleep times. You can change them on the Sleep screen.'
@@ -459,6 +524,10 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           ? 'You slept ${_hoursText(forecast.sleptHours)}, '
                 '${_hoursText(short)} under your need, so today\'s peak is a '
                 'little lower and the dip a little deeper.'
+          : short <= -0.5
+          ? 'You slept ${_hoursText(forecast.sleptHours)}, '
+                '${_hoursText(-short)} over your need.'
+                '${forecast.sleepDebtHours >= 1 ? ' Half the extra pays back sleep debt.' : ''}'
           : 'You slept ${_hoursText(forecast.sleptHours)}, about what you '
                 'need.',
     ),
@@ -466,18 +535,25 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
       (
         f.id == hardTrainingFactor
             ? Icons.fitness_center_rounded
-            : Icons.nightlight_outlined,
+            : CupertinoIcons.moon,
         f.reason,
       ),
     if (groggy != null)
       (
-        Icons.wb_twilight_rounded,
+        CupertinoIcons.sunset_fill,
         '${forecast.estimated ? 'You usually wake' : 'You woke'} at '
             '${DateFormat.jm().format(forecast.wake)}. Expect some grogginess '
-            'until about ${DateFormat.jm().format(groggy.end)}.',
+            'until about ${DateFormat.jm().format(groggy.end)}'
+            '${switch (forecast.heavyGrogginess) {
+              HeavyGrogginess.sleepDebt when !forecast.needIsDefault => ", longer than usual since you've been short on sleep this "
+                  'week',
+              HeavyGrogginess.earlyWake => ', longer than usual since you woke earlier than you '
+                  'usually do',
+              _ => '',
+            }}.',
       ),
     (
-      Icons.schedule_rounded,
+      CupertinoIcons.clock,
       'Your body clock runs '
           '${mid < 2.5
               ? 'early'
@@ -488,13 +564,13 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
     ),
     if (forecast.sleepDebtHours >= 1 && !forecast.needIsDefault)
       (
-        Icons.hourglass_bottom_rounded,
+        CupertinoIcons.hourglass_bottomhalf_fill,
         "You're carrying about ${_hoursText(forecast.sleepDebtHours)} of "
             'sleep debt from the last week.',
       ),
     if (peak != null)
       (
-        Icons.lightbulb_outline_rounded,
+        CupertinoIcons.lightbulb,
         'Best for focus: ${energyWindowText(peak)}.'
             '${dip == null ? '' : ' Save routine tasks for ${energyWindowText(dip)}.'}',
       ),

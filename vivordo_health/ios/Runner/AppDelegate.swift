@@ -40,6 +40,11 @@ import WidgetKit
     application.registerForRemoteNotifications()
     // HealthKit only delivers in the background to queries started at launch.
     sleepObserver.start()
+    // Mirror the Siri/widget snapshot to the paired watch.
+    WatchSnapshotBridge.shared.activate()
+    WatchSnapshotBridge.shared.onAction = { [weak self] in
+      self?.homeWidgetChannel?.invokeMethod("watchAction", arguments: nil)
+    }
 
     return launched
   }
@@ -87,6 +92,30 @@ import WidgetKit
         result(nil)
       }
 
+      // Reduce Transparency, which Flutter doesn't expose: the glass tab
+      // bar goes solid while it's on (ReduceTransparency in Dart).
+      let accessibilityChannel = FlutterMethodChannel(
+        name: "com.vivordo.health/accessibility",
+        binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      )
+      accessibilityChannel.setMethodCallHandler { call, result in
+        guard call.method == "reduceTransparency" else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        result(UIAccessibility.isReduceTransparencyEnabled)
+      }
+      NotificationCenter.default.addObserver(
+        forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+        object: nil,
+        queue: .main
+      ) { _ in
+        accessibilityChannel.invokeMethod(
+          "reduceTransparency",
+          arguments: UIAccessibility.isReduceTransparencyEnabled
+        )
+      }
+
       let widgetChannel = FlutterMethodChannel(
         name: "com.vivordo.health/home_widgets",
         binaryMessenger: engineBridge.applicationRegistrar.messenger()
@@ -108,23 +137,24 @@ import WidgetKit
         // Check-ins tapped on the Mood widget (LogMoodIntent). Each sits under
         // its own key, so a tap and an upload never overwrite each other.
         if call.method == "pendingMoodCheckIns" {
-          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
-          let queued = (defaults?.dictionaryRepresentation() ?? [:])
-            .compactMap { key, value -> [String: Any]? in
-              guard key.hasPrefix("pendingMood."),
-                    var entry = value as? [String: Any] else { return nil }
-              entry["id"] = key
-              return entry
-            }
-          result(queued)
+          result(Self.queued(prefix: "pendingMood."))
           return
         }
         if call.method == "removeMoodCheckIns",
            let ids = call.arguments as? [String] {
-          let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
-          ids.filter { $0.hasPrefix("pendingMood.") }
-            .forEach { defaults?.removeObject(forKey: $0) }
+          Self.remove(ids, prefix: "pendingMood.")
           WidgetCenter.shared.reloadTimelines(ofKind: "VivordoMood")
+          result(nil)
+          return
+        }
+        // Things done on the watch (WatchSnapshotBridge), same shape.
+        if call.method == "pendingWatchActions" {
+          result(Self.queued(prefix: "pendingWatch."))
+          return
+        }
+        if call.method == "removeWatchActions",
+           let ids = call.arguments as? [String] {
+          Self.remove(ids, prefix: "pendingWatch.")
           result(nil)
           return
         }
@@ -142,11 +172,14 @@ import WidgetKit
               WidgetCenter.shared.reloadTimelines(ofKind: "VivordoTodayAgenda")
             }
             defaults.set(Date().timeIntervalSince1970, forKey: "updatedAt")
+            WatchSnapshotBridge.shared.push()
 
             let stressKeys: Set<String> = ["stressScore"]
             let capacityKeys: Set<String> = [
               "capacityScore", "capacityDelta", "capacityLabel", "capacityNote",
               "capacityDay", "dashboardHasCapacity",
+              "capacityLeftDay", "capacityLeftMorning", "capacityLeftTimes",
+              "capacityLeftValues", "capacityByTonight",
             ]
             let fitnessKeys: Set<String> = [
               "steps", "stepsGoal", "activeCalories", "activeCaloriesGoal",
@@ -179,6 +212,22 @@ import WidgetKit
         }
         result(FlutterMethodNotImplemented)
       }
+  }
+
+  /// App-group entries queued under `prefix`, each with its key as `id`.
+  private static func queued(prefix: String) -> [[String: Any]] {
+    let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+    return (defaults?.dictionaryRepresentation() ?? [:])
+      .compactMap { key, value -> [String: Any]? in
+        guard key.hasPrefix(prefix), var entry = value as? [String: Any] else { return nil }
+        entry["id"] = key
+        return entry
+      }
+  }
+
+  private static func remove(_ ids: [String], prefix: String) {
+    let defaults = UserDefaults(suiteName: "group.com.vivordo.health")
+    ids.filter { $0.hasPrefix(prefix) }.forEach { defaults?.removeObject(forKey: $0) }
   }
 
   private func deliverPendingWidgetDestination() {
@@ -352,6 +401,7 @@ private final class SleepObserver {
   private var channel: FlutterMethodChannel?
   private var waiting: [() -> Void] = []
   private var syncing = false
+  private var started = false
 
   func start() {
     guard HKHealthStore.isHealthDataAvailable() else { return }
@@ -359,6 +409,15 @@ private final class SleepObserver {
       [weak self] _, completion, error in
       DispatchQueue.main.async {
         guard let self, error == nil else { return completion() }
+        // HealthKit calls once as the query starts. On a normal open the
+        // launch sync already reads sleep; in the background that first call
+        // is the new-sleep wake, so it still syncs.
+        if !self.started {
+          self.started = true
+          if UIApplication.shared.applicationState != .background {
+            return completion()
+          }
+        }
         var called = false
         let done = {
           guard !called else { return }

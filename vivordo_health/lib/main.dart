@@ -5,11 +5,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
+import 'package:vivordo_health/screens/home_screen.dart';
 import 'package:vivordo_health/screens/main_navigation.dart';
 import 'package:vivordo_health/src/services/notification_service.dart';
+import 'package:vivordo_health/src/services/calendar_service.dart';
+import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/exercise_catalog_service.dart';
 import 'package:vivordo_health/src/services/achievement_unlock_service.dart';
 import 'package:vivordo_health/src/services/home_widget_service.dart';
@@ -21,8 +23,12 @@ import 'package:vivordo_health/src/services/whoop_ble_heart_rate_service.dart';
 import 'package:vivordo_health/src/services/analytics_service.dart';
 import 'package:vivordo_health/src/services/stress_score_service.dart';
 import 'package:vivordo_health/src/services/version_gate_service.dart';
+import 'package:vivordo_health/src/services/subscription_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/achievement_banner.dart';
 import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/launch_splash.dart';
 import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
@@ -37,6 +43,7 @@ import 'screens/heart_rate_detail_screen.dart';
 import 'screens/steps_detail_screen.dart';
 import 'screens/month_calendar_screen.dart';
 import 'screens/whats_new_screen.dart';
+import 'screens/paywall_screen.dart';
 
 // Change this identifier whenever a new release should display a fresh
 // What's New screen. It is stored per user in Firestore.
@@ -87,6 +94,7 @@ void main() async {
           ? HomeWidgetService.clearAccountSnapshot()
           : HomeWidgetService.syncMoodWidget(),
     );
+    if (user != null) unawaited(HomeWidgetService.syncWatchActions());
   });
   HealthService.listenForNewSleep();
 
@@ -129,21 +137,20 @@ void main() async {
               (controller ?? ThemeController())..bindUser(user),
         ),
       ],
-      // VersionGate checks Remote Config before anything else renders, then
-      // falls through to MyApp — kept as the provider's child (not wrapping
-      // the providers) so VersionGate's descendants still have User?/
-      // ThemeController available via context.
+      // VersionGate checks Remote Config alongside MyApp — kept as the
+      // provider's child (not wrapping the providers) so VersionGate's
+      // descendants still have User?/ThemeController available via context.
       child: const VersionGate(),
     ),
   );
 }
 
-/// Checks the installed app version against Remote Config exactly once per
-/// app launch, before any real screen (including LoginScreen) is reachable.
+/// Checks the installed app version against Remote Config once per app
+/// launch, without holding up the first screen.
 /// Deliberately NOT built as part of the '/' route inside MyApp — AuthGate
 /// is reached via pushNamedAndRemoveUntil('/', ...) repeatedly during normal
-/// use (after login, signup, email verification), and re-running this check
-/// on every one of those would flash a loading spinner each time.
+/// use (after login, signup, email verification), and the check should run
+/// once, not on every one of those.
 class VersionGate extends StatefulWidget {
   const VersionGate({super.key});
 
@@ -152,30 +159,16 @@ class VersionGate extends StatefulWidget {
 }
 
 class _VersionGateState extends State<VersionGate> {
-  late final Future<VersionCheckResult> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = VersionGateService.check();
-  }
+  // Created once so rebuilds don't re-run the check.
+  final _results = VersionGateService.watch();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<VersionCheckResult>(
-      future: _future,
+    // The app shows at once; the gate only closes if the config on the
+    // device, or the fetch that follows, says this version is too old.
+    return StreamBuilder<VersionCheckResult>(
+      stream: _results,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            theme: VivordoTheme.light,
-            darkTheme: VivordoTheme.dark,
-            themeMode: ThemeMode.system,
-            home: const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            ),
-          );
-        }
         final result = snapshot.data;
         if (result != null && result.updateRequired) {
           return MaterialApp(
@@ -203,7 +196,8 @@ class _MyAppState extends State<MyApp> {
   bool _openingWidget = false;
   StreamSubscription<AchievementUnlock>? _achievementUnlockSubscription;
   final List<AchievementUnlock> _pendingAchievementUnlocks = [];
-  bool _showingAchievementUnlock = false;
+  Timer? _achievementBannerDelay;
+  OverlayEntry? _achievementBanner;
 
   @override
   void initState() {
@@ -219,47 +213,71 @@ class _MyAppState extends State<MyApp> {
 
   void _queueAchievementUnlock(AchievementUnlock achievement) {
     _pendingAchievementUnlocks.add(achievement);
-    unawaited(_showNextAchievementUnlock());
+    // Unlocks that land together (one sync) share one banner.
+    _achievementBannerDelay?.cancel();
+    _achievementBannerDelay = Timer(
+      const Duration(milliseconds: 600),
+      _showAchievementBanner,
+    );
   }
 
-  Future<void> _showNextAchievementUnlock() async {
-    if (_showingAchievementUnlock || _pendingAchievementUnlocks.isEmpty) return;
-    final navigatorContext = navigatorKey.currentContext;
-    if (navigatorContext == null) {
+  void _showAchievementBanner() {
+    if (_pendingAchievementUnlocks.isEmpty) return;
+    final overlay = navigatorKey.currentState?.overlay;
+    if (overlay == null) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => unawaited(_showNextAchievementUnlock()),
+        (_) => _showAchievementBanner(),
       );
       return;
     }
-    _showingAchievementUnlock = true;
-    final achievement = _pendingAchievementUnlocks.removeAt(0);
-    await showGeneralDialog<void>(
-      context: navigatorContext,
-      barrierDismissible: false,
-      barrierLabel: 'Achievement unlocked',
-      barrierColor: Colors.black.withValues(alpha: .82),
-      transitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
-          AchievementUnlockedDialog(
-            achievement: achievement,
-            onDismiss: () => Navigator.of(dialogContext).pop(),
-          ),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutBack,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(scale: curved, child: child),
-        );
-      },
+    final unlocks = List.of(_pendingAchievementUnlocks);
+    _pendingAchievementUnlocks.clear();
+    _achievementBanner?.remove();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => AchievementBanner(
+        unlocks: unlocks,
+        onOpen: () => unawaited(_celebrateAchievements(unlocks)),
+        onDismissed: () {
+          if (_achievementBanner != entry) return;
+          _achievementBanner = null;
+          entry.remove();
+        },
+      ),
     );
-    _showingAchievementUnlock = false;
-    if (_pendingAchievementUnlocks.isNotEmpty) {
-      await Future<void>.delayed(const Duration(milliseconds: 180));
-      unawaited(_showNextAchievementUnlock());
+    _achievementBanner = entry;
+    overlay.insert(entry);
+  }
+
+  /// The full celebration, one achievement after another, from the banner.
+  Future<void> _celebrateAchievements(List<AchievementUnlock> unlocks) async {
+    for (final achievement in unlocks) {
+      final context = navigatorKey.currentContext;
+      if (context == null) return;
+      await showGeneralDialog<void>(
+        context: context,
+        // Opened on purpose from the banner, so a tap outside can close it.
+        barrierDismissible: true,
+        barrierLabel: 'Achievement unlocked',
+        barrierColor: Colors.black.withValues(alpha: .82),
+        transitionDuration: const Duration(milliseconds: 320),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+            AchievementUnlockedDialog(
+              achievement: achievement,
+              onDismiss: () => Navigator.of(dialogContext).pop(),
+            ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutBack,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: curved, child: child),
+          );
+        },
+      );
     }
   }
 
@@ -307,48 +325,45 @@ class _MyAppState extends State<MyApp> {
         await openActiveWorkoutFromExternal(createIfMissing: true);
         return true;
       }
+      // Switch the open app's tab instead of rebuilding it under a new
+      // route, which replayed the launch splash and dropped the account
+      // gates below it.
+      void openTab(int index, {String? route}) =>
+          MainNavigationScreen.openTab(navigator!, index, route: route);
+
       if (destination == 'mood') {
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute<void>(
-            builder: (_) => const MainNavigationScreen(openMoodCheckIn: true),
-          ),
-          (_) => false,
-        );
+        HomeScreen.moodCheckInRequested.value = true;
+        openTab(0);
         return true;
       }
+
       // The Capacity widget opens My Day, where Capacity lives.
       if (destination == 'myday' || destination == 'capacity') {
-        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
+        openTab(1);
         return true;
       }
 
       if (destination == 'fitness') {
-        navigator.pushNamedAndRemoveUntil('/fitness', (_) => false);
+        openTab(3);
         return true;
       }
 
+      // Detail screens open inside their tab, under the tab bar.
       if (destination == 'calendar') {
-        navigator.pushNamedAndRemoveUntil('/calendar', (_) => false);
-        await WidgetsBinding.instance.endOfFrame;
-        if (mounted && navigator.mounted) {
-          unawaited(navigator.pushNamed('/full-calendar'));
-        }
-        return mounted && navigator.mounted;
+        openTab(1, route: '/full-calendar');
+        return true;
       }
 
-      navigator.pushNamedAndRemoveUntil('/home', (_) => false);
-      final detailRoute = switch (destination) {
-        'stress' => '/stress',
-        'sleep' => '/sleep',
-        'heartrate' => '/heart-rate',
-        'steps' => '/steps',
-        _ => null,
-      };
-      if (detailRoute != null) {
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted || !navigator.mounted) return false;
-        unawaited(navigator.pushNamed(detailRoute));
-      }
+      openTab(
+        0,
+        route: switch (destination) {
+          'stress' => '/stress',
+          'sleep' => '/sleep',
+          'heartrate' => '/heart-rate',
+          'steps' => '/steps',
+          _ => null,
+        },
+      );
       return true;
     } finally {
       _openingWidget = false;
@@ -364,6 +379,7 @@ class _MyAppState extends State<MyApp> {
     WorkoutLiveActivityService.clearLaunchHandler();
     HomeWidgetService.clearLaunchHandler();
     _achievementUnlockSubscription?.cancel();
+    _achievementBannerDelay?.cancel();
     super.dispose();
   }
 
@@ -372,6 +388,7 @@ class _MyAppState extends State<MyApp> {
     final themeController = context.watch<ThemeController>();
     return MaterialApp(
       navigatorKey: navigatorKey,
+      navigatorObservers: [PullDownToCloseSheets.observer],
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
       builder: (context, child) => Actions(
@@ -384,10 +401,13 @@ class _MyAppState extends State<MyApp> {
                 },
               ),
         },
-        child: child ?? const SizedBox.shrink(),
+        child: PullDownToCloseSheets(child: child ?? const SizedBox.shrink()),
       ),
       theme: VivordoTheme.light,
       darkTheme: VivordoTheme.dark,
+      // Picked when Increase Contrast is on.
+      highContrastTheme: VivordoTheme.lightHighContrast,
+      highContrastDarkTheme: VivordoTheme.darkHighContrast,
       themeMode: themeController.mode,
       initialRoute: '/',
       routes: {
@@ -437,6 +457,21 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() => _locallyDismissedWhatsNewUid = uid);
     unawaited(_persistWhatsNewSeen(uid));
+  }
+
+  /// The copy saved on the phone first, so launch doesn't wait on the
+  /// network. The server is asked when there is no copy, or when the copy
+  /// says onboarding isn't done (it may have been finished on another
+  /// device).
+  static Future<DocumentSnapshot> _readUserDoc(String uid) async {
+    final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+    try {
+      final saved = await ref.get(const GetOptions(source: Source.cache));
+      if (saved.exists && !needsOnboarding(saved.data())) return saved;
+    } on FirebaseException {
+      // Nothing saved yet.
+    }
+    return ref.get();
   }
 
   Future<void> _persistWhatsNewSeen(String uid) async {
@@ -499,6 +534,7 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
         });
         unawaited(HomeWidgetService.refreshCalendarSnapshot());
         unawaited(HomeWidgetService.syncMoodWidget());
+        unawaited(HomeWidgetService.syncWatchActions());
         unawaited(
           DailyPriorityService.refreshReminders().catchError((Object error) {
             debugPrint('Could not refresh priority reminders: $error');
@@ -532,6 +568,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
     });
     NotificationService().configureForUser(uid);
     unawaited(ExerciseCatalogService.prefetch());
+    unawaited(
+      SubscriptionService.signIn(uid).catchError((Object error) {
+        debugPrint('RevenueCat setup failed: $error');
+      }),
+    );
     unawaited(HomeWidgetService.refreshCalendarSnapshot(force: true));
     AnalyticsService().logLogin();
   }
@@ -544,6 +585,11 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
       if (_lastSyncedUid != null) {
         NotificationService().clearUserReminders();
         unawaited(WhoopBleHeartRateService.instance.handleSignedOut());
+        // Google and Outlook sign-ins belong to the phone, not the Vivordo
+        // account: left connected, the next account read this one's
+        // calendar.
+        unawaited(CalendarService.signOut().catchError((Object _) {}));
+        unawaited(OutlookCalendarService.signOut().catchError((Object _) {}));
       }
       _lastSyncedUid = null;
       _userDocUid = null;
@@ -566,19 +612,14 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
     if (_userDocUid != user.uid) {
       _userDocUid = user.uid;
-      _userDocFuture = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      _userDocFuture = _readUserDoc(user.uid);
     }
 
     return FutureBuilder<DocumentSnapshot>(
       future: _userDocFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const LaunchSplash();
         }
 
         if (snapshot.hasError) {
@@ -597,12 +638,6 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
               // Onboarding covers what's new, so skip this release's recap.
               await _persistWhatsNewSeen(user.uid);
               if (!mounted) return;
-              // Onboarding forces a dark status bar; hand back the app's.
-              SystemChrome.setSystemUIOverlayStyle(
-                Theme.of(this.context).brightness == Brightness.dark
-                    ? SystemUiOverlayStyle.light
-                    : SystemUiOverlayStyle.dark,
-              );
               // Re-reads the user document, which now passes the check.
               setState(() => _userDocUid = null);
             },
@@ -611,11 +646,13 @@ class _AuthGateState extends State<AuthGate> with WidgetsBindingObserver {
 
         final seenRelease = preferences?['whatsNewSeenRelease'] as String?;
         final dismissedLocally = _locallyDismissedWhatsNewUid == user.uid;
-        if (!dismissedLocally && seenRelease != _whatsNewReleaseId) {
-          return WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid));
-        }
-        return MainNavigationScreen(
-          seenTours: data?['tours'] as Map<String, dynamic>?,
+        return PremiumGate(
+          uid: user.uid,
+          child: !dismissedLocally && seenRelease != _whatsNewReleaseId
+              ? WhatsNewScreen(onDismiss: () => _dismissWhatsNew(user.uid))
+              : MainNavigationScreen(
+                  seenTours: data?['tours'] as Map<String, dynamic>?,
+                ),
         );
       },
     );

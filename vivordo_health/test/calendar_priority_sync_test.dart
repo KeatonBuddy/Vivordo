@@ -44,4 +44,25 @@ void main() {
       isNull,
     );
   });
+
+  test('a priority leaves with its event and comes back with it', () {
+    Map<String, Object>? change(Map<String, dynamic> data, bool there) =>
+        DailyPriorityService.calendarPresenceChanges(data, there: there);
+    const open = {'source': 'calendar', 'dismissed': false};
+    expect(change(open, true), isNull);
+    final removed = change(open, false);
+    expect(removed, {'dismissed': true, 'removedWithEvent': true});
+    // Gone stays gone; back when the event is (an empty read, undone).
+    expect(change({...open, ...removed!}, false), isNull);
+    expect(change({...open, ...removed}, true), {
+      'dismissed': false,
+      'removedWithEvent': false,
+    });
+    // Ticked off, or removed by the user: left alone either way.
+    expect(change({...open, 'completed': true}, false), isNull);
+    expect(change({'source': 'calendar', 'dismissed': true}, false), isNull);
+    expect(change({'source': 'calendar', 'dismissed': true}, true), isNull);
+    // Only priorities made from events.
+    expect(change({'source': 'manual'}, false), isNull);
+  });
 }

@@ -6,6 +6,7 @@ import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
+import 'package:vivordo_health/src/services/calendar_snapshot_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
 import 'package:vivordo_health/src/utils/request_coalescer.dart';
 
@@ -57,6 +58,14 @@ class CalendarService {
   /// Bumped whenever the events may have changed, from any screen or Vivordo
   /// AI, so open screens can reload their schedule.
   static final ValueNotifier<int> eventsChanged = ValueNotifier<int>(0);
+
+  /// Bumped each time a Google or Outlook read for [getEventsBetween] fails
+  /// and comes back empty, so a screen can tell "no events" from "couldn't
+  /// load" by comparing it before and after its fetch.
+  // ponytail: a failed read is still cached for the coalescer's short ttl,
+  // and a caller that joins it later sees no bump; return a failure from
+  // getEventsBetween itself if a screen ever needs that window covered.
+  static int fetchFailures = 0;
 
   /// Silent, all-or-nothing fetch for scoring, from every connected
   /// calendar. Null means unavailable (nothing connected, or a connected
@@ -623,7 +632,22 @@ class CalendarService {
     }
     if (recurrence != null) updated.recurrence = recurrenceRules(recurrence);
     final api = await _authorizedCalendarApi();
-    var result = await api.events.patch(updated, sourceCalendarId, eventId);
+    gcal.Event result;
+    if (nextIsAllDay != originalIsAllDay) {
+      // A patch merges start and end, so the old date (or dateTime) stays
+      // beside the new one and Google refuses it. Replace the whole event.
+      final full = await api.events.get(sourceCalendarId, eventId)
+        ..start = updated.start
+        ..end = updated.end;
+      if (updated.summary != null) full.summary = updated.summary;
+      if (updated.recurrence != null) full.recurrence = updated.recurrence;
+      // All-day events are Free by default, and Free events don't count:
+      // a timed one is Busy, as Google Calendar does.
+      if (!nextIsAllDay) full.transparency = 'opaque';
+      result = await api.events.update(full, sourceCalendarId, eventId);
+    } else {
+      result = await api.events.patch(updated, sourceCalendarId, eventId);
+    }
     final destinationCalendarId = calendarId;
     if (destinationCalendarId != null &&
         destinationCalendarId != sourceCalendarId) {
@@ -782,6 +806,7 @@ class CalendarService {
       return events;
     } catch (e) {
       debugPrint('CalendarService error: $e');
+      fetchFailures++;
       return [];
     }
   }
@@ -866,6 +891,7 @@ class CalendarService {
     _currentUser = null;
     connectionNotifier.value = false;
     invalidateEventCache();
+    await CalendarSnapshotService.clear();
   }
 
   static Future<List<gcal.Event>> _fetchEventsFromCalendars(

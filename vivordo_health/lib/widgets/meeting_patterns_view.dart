@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:intl/intl.dart';
@@ -216,9 +217,9 @@ class MeetingPatternsRow extends StatelessWidget {
     } else if (patterns.learning &&
         patterns.measured > 0 &&
         now.weekday == DateTime.monday) {
-      icon = Icons.insights_rounded;
+      icon = CupertinoIcons.chart_bar_alt_fill;
       accent = const Color(0xFF7F77DD);
-      title = 'Learning which events get to you';
+      title = 'Learning which events affect you';
       subtitle =
           '${patterns.measured} of about ${MeetingPatterns.learningTarget} '
           'events measured';
@@ -279,7 +280,7 @@ class MeetingPatternsRow extends StatelessWidget {
                   ),
                 ),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  CupertinoIcons.chevron_right,
                   color: colors.textSecondary,
                   size: 20,
                 ),

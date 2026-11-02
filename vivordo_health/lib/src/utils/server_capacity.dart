@@ -1,3 +1,5 @@
+import 'score_breakdown.dart';
+
 /// Capacity calculated on the server (functions/capacity.js,
 /// docs/scores.md §4) and stored in `users/{uid}/scores_daily/{day}`.
 class ServerCapacity {
@@ -13,6 +15,7 @@ class ServerCapacity {
     this.activityThreshold,
     this.todayLoad,
     this.bodyNote,
+    this.breakdown = const [],
   });
 
   final int score;
@@ -50,6 +53,10 @@ class ServerCapacity {
   /// What today's overnight body part was calculated without, for the
   /// Capacity explanation; null when HRV was measured.
   final String? bodyNote;
+
+  /// Each part and how much it moved today against your usual
+  /// (capacityBreakdown), for the Capacity sheet.
+  final List<BreakdownRow> breakdown;
 
   /// Today's load against the usual when it's a big day, e.g. 3.1; null
   /// otherwise.
@@ -160,6 +167,18 @@ ServerCapacity? serverCapacityFor(
     sleepNeedHours: (today['sleepNeed'] as num?)?.toDouble(),
     usual: usual,
     bodyNote: capacityBodyNote(today),
+    breakdown: capacityBreakdown(
+      today,
+      [
+        for (final entry in days.entries)
+          if (entry.key.compareTo(dayKey) < 0)
+            if (entry.value['capacity'] case final Map past
+                when _comparable(past['version'], today['version']))
+              past,
+      ],
+      usualScore: usual?.round(),
+      day: DateTime.tryParse(dayKey),
+    ),
   );
 }
 

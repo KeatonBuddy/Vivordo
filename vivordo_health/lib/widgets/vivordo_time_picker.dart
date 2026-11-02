@@ -214,10 +214,35 @@ Future<DateTime?> showVivordoDatePicker({
                     primary: accent,
                     onPrimary: dark ? const Color(0xFF26215C) : Colors.white,
                   ),
+                  // Styled like iOS's calendar date picker: month title in
+                  // label colour with purple arrows, today in purple, the
+                  // chosen day on a pale purple circle (solid when it's today).
                   datePickerTheme: DatePickerThemeData(
                     backgroundColor: colors.card,
                     dayShape: const WidgetStatePropertyAll(CircleBorder()),
+                    toggleButtonTextStyle: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    subHeaderForegroundColor: accent,
+                    dayBackgroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? accent.withValues(alpha: .16)
+                          : null,
+                    ),
+                    dayForegroundColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.disabled)
+                          ? colors.textSecondary.withValues(alpha: .4)
+                          : states.contains(WidgetState.selected)
+                          ? accent
+                          : colors.textPrimary,
+                    ),
                     todayBorder: BorderSide.none,
+                    todayBackgroundColor: WidgetStateProperty.resolveWith(
+                      (states) =>
+                          states.contains(WidgetState.selected) ? accent : null,
+                    ),
                     todayForegroundColor: WidgetStateProperty.resolveWith(
                       (states) => states.contains(WidgetState.selected)
                           ? (dark ? const Color(0xFF26215C) : Colors.white)
@@ -228,7 +253,10 @@ Future<DateTime?> showVivordoDatePicker({
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
-                    dayStyle: const TextStyle(fontSize: 16),
+                    dayStyle: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 // The calendar's grid scrolls, so it would otherwise pad

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
@@ -5,7 +6,7 @@ import 'package:vivordo_health/widgets/add_priority_sheet.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 
 void main() {
-  testWidgets('disabled Add Priority text remains visible in light mode', (
+  testWidgets('Add stays disabled until the priority has a name', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -23,14 +24,12 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
 
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Add Priority'),
-    );
-    final disabledColor = button.style?.foregroundColor?.resolve({
-      WidgetState.disabled,
-    });
-
-    expect(disabledColor, Colors.white.withValues(alpha: .78));
+    CupertinoButton add() =>
+        tester.widget(find.widgetWithText(CupertinoButton, 'Add'));
+    expect(add().onPressed, isNull);
+    await tester.enterText(find.byType(TextField), 'Plan the week');
+    await tester.pump();
+    expect(add().onPressed, isNotNull);
   });
 
   testWidgets('the Habit switch swaps the workload for a daily goal', (
@@ -58,15 +57,15 @@ void main() {
     await tester.tap(find.byType(AppSwitch).first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Add Habit'), findsWidgets);
-    expect(find.text('WORKLOAD ESTIMATE'), findsNothing);
+    expect(find.text('New Habit'), findsOneWidget);
+    expect(find.text('Workload estimate'), findsNothing);
     expect(find.text('Add to calendar'), findsNothing);
     expect(find.text('Once'), findsNothing);
     await tester.tap(find.byTooltip('More'));
     await tester.tap(find.byTooltip('More'));
     await tester.pump();
     expect(find.text('3'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Add Habit'));
+    await tester.tap(find.widgetWithText(CupertinoButton, 'Add'));
     await tester.pumpAndSettle();
 
     expect(draft?.habit, isTrue);

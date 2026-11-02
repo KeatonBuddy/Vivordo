@@ -12,9 +12,12 @@ import 'package:vivordo_health/src/services/calendar_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:vivordo_health/src/services/metrics_service.dart';
+import 'package:vivordo_health/src/services/workout_service.dart';
+import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
+import 'package:vivordo_health/src/utils/watch_action.dart';
 
 class HomeWidgetService {
   const HomeWidgetService._();
@@ -29,6 +32,7 @@ class HomeWidgetService {
   static bool _publishing = false;
   static bool _publishingCalendar = false;
   static DateTime? _lastCalendarRefresh;
+  static MoodSnapshotPublished? _moodPublished;
   static String? _siriUid;
   static String? _siriGeneration;
 
@@ -90,6 +94,54 @@ class HomeWidgetService {
         );
   }
 
+  static final List<StreamSubscription<Object?>> _watchWorkoutSubscriptions =
+      [];
+  static String? _watchWorkoutsScope;
+
+  /// The Apple Watch's Workout list: saved workouts, each exercise with its
+  /// sets from last time. Refreshed when a template or a workout changes.
+  static void _watchWorkoutTemplates() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _watchWorkoutsScope == user.uid) return;
+    final scope = _watchWorkoutsScope = user.uid;
+    for (final subscription in _watchWorkoutSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _watchWorkoutSubscriptions.clear();
+    var templates = const <WorkoutTemplate>[];
+    var run = 0;
+    Future<void> publish() async {
+      final mine = ++run;
+      try {
+        final shown = templates.take(8).toList(growable: false);
+        final last = await WorkoutService.loadLatestExerciseSets(
+          shown.expand((t) => t.exercises.map((e) => e.name)),
+        );
+        if (mine != run || _watchWorkoutsScope != scope) return;
+        await _channel.invokeMethod<void>('updateSnapshot', {
+          'watchWorkouts': watchWorkoutValues(shown, last),
+        });
+      } catch (error) {
+        debugPrint('Watch workouts update failed: $error');
+      }
+    }
+
+    void onError(Object error) =>
+        debugPrint('Watch workouts unavailable: $error');
+    _watchWorkoutSubscriptions
+      ..add(
+        WorkoutService.watchTemplates().listen((value) {
+          templates = value;
+          unawaited(publish());
+        }, onError: onError),
+      )
+      ..add(
+        WorkoutService.watchRecent(
+          limit: 1,
+        ).listen((_) => unawaited(publish()), onError: onError),
+      );
+  }
+
   static int _accountGeneration = 0;
 
   static void _watchWidgetPriorities() {
@@ -109,6 +161,8 @@ class HomeWidgetService {
             'dashboardPriorities': priorities
                 .map(
                   (priority) => {
+                    'id': priority.id,
+                    'habit': priority.habit,
                     'title': priority.title,
                     'source': priority.source,
                     'isAllDay': priority.isAllDay,
@@ -134,6 +188,40 @@ class HomeWidgetService {
   }
 
   static String? _lastDemandSignature;
+  static String? _lastCapacityLeftSignature;
+
+  /// My Day's live Capacity for the Capacity widget, the Watch and Siri:
+  /// this morning's, what's left now and how it steps down as the plan
+  /// happens ([capacityLeftPath]), so they stay current between updates.
+  static Future<void> _publishCapacityLeft(
+    CapacityLeft live,
+    List<({DateTime at, double left})> path,
+  ) async {
+    if (!Platform.isIOS) return;
+    final times = [for (final p in path) p.at.millisecondsSinceEpoch];
+    final values = [for (final p in path) p.left.round()];
+    final day = DateFormat('yyyy-MM-dd').format(path.first.at);
+    // Minute-to-minute rebuilds only send when a number moves.
+    final signature =
+        '$day|${live.morning}|${values.join(',')}|'
+        '${live.byTonight.round()}';
+    if (_lastCapacityLeftSignature == signature) return;
+    _lastCapacityLeftSignature = signature;
+    try {
+      await _channel.invokeMethod<void>('updateSnapshot', {
+        'capacityLeftDay': day,
+        'capacityLeftMorning': live.morning,
+        'capacityLeftTimes': times,
+        'capacityLeftValues': values,
+        'capacityByTonight': live.byTonight.round(),
+      });
+    } on MissingPluginException {
+      // iOS builds only.
+    } on PlatformException catch (error) {
+      debugPrint('Capacity left update failed: ${error.message}');
+    }
+  }
+
   static String? _lastMeetingsSignature;
 
   static Future<void> _publishDemand(
@@ -192,6 +280,10 @@ class HomeWidgetService {
   ) async {
     if (!Platform.isIOS) return;
     _channel.setMethodCallHandler((call) async {
+      if (call.method == 'watchAction') {
+        await syncWatchActions();
+        return true;
+      }
       if (call.method != 'widgetTapped') return false;
       final destination = call.arguments as String?;
       if (destination == null) return false;
@@ -218,6 +310,62 @@ class HomeWidgetService {
   }
 
   static bool _syncingMood = false;
+  static bool _syncingActions = false;
+
+  /// Saves what was done on the Apple Watch (AppDelegate queues it from
+  /// WatchSnapshotBridge): finished resets, energy check-ins and priorities
+  /// ticked off. An action leaves the queue only once it is saved.
+  static Future<void> syncWatchActions() async {
+    if (!Platform.isIOS || _syncingActions) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    _syncingActions = true;
+    try {
+      final raw =
+          await _channel.invokeListMethod<Object?>('pendingWatchActions') ??
+          const [];
+      for (final action in pendingWatchActions(user.uid, raw)) {
+        switch (action.kind) {
+          case 'reset':
+            await MetricsService.saveWatchReset(action);
+          case 'checkIn':
+            final score = action.score!;
+            await MetricsService.saveMoodCheckIn(
+              MetricsService.moodLabelForScore(score),
+              moodScore: score,
+              occurredAt: action.at,
+              source: 'watch',
+            );
+          case 'taskDone':
+            await DailyPriorityService.completeById(
+              DateTime.parse(action.day!),
+              action.priorityId!,
+            );
+          case 'workout':
+            final workout = action.workout!;
+            // One id per watch workout, so a replay of the queue is a no-op.
+            final id = 'watch-${workout.startedAt.millisecondsSinceEpoch}';
+            if (!await WorkoutService.exists(id)) {
+              await WorkoutService.save(
+                id: id,
+                startedAt: workout.startedAt,
+                completedAt: workout.endedAt,
+                durationSeconds: workout.seconds,
+                exercises: workout.exercises,
+                customName: workout.name,
+              );
+            }
+        }
+        await _channel.invokeMethod<void>('removeWatchActions', [action.id]);
+      }
+    } on MissingPluginException {
+      // The native side is available after installing an iOS build.
+    } catch (error) {
+      debugPrint('Watch actions could not be saved: $error');
+    } finally {
+      _syncingActions = false;
+    }
+  }
 
   /// Saves mood check-ins tapped on the Mood widget, then refreshes the
   /// widget. Each tap keeps the time it was made, so one saved later still
@@ -243,7 +391,7 @@ class HomeWidgetService {
         await _channel.invokeMethod<void>('removeMoodCheckIns', [checkIn.id]);
       }
       // Saving a check-in already refreshes the widget.
-      if (queued.isEmpty) await publishMoodSnapshot();
+      if (queued.isEmpty) await publishMoodSnapshot(onlyIfStale: true);
     } on MissingPluginException {
       // The native widget is available after installing an iOS build.
     } on PlatformException catch (error) {
@@ -258,13 +406,24 @@ class HomeWidgetService {
   /// Tells the Mood widget who is signed in, how many check-ins today has
   /// and the latest one. One read rather than a listener: day documents
   /// carry large heart-rate arrays, and a listener re-sends the whole day on
-  /// every health write.
-  static Future<void> publishMoodSnapshot() async {
+  /// every health write. [onlyIfStale] (on resume) skips the read when
+  /// [moodSnapshotCurrent].
+  static Future<void> publishMoodSnapshot({bool onlyIfStale = false}) async {
     if (!Platform.isIOS) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final generation = _accountGeneration;
-    final today = localDayKey(DateTime.now());
+    final now = DateTime.now();
+    final today = localDayKey(now);
+    if (onlyIfStale &&
+        moodSnapshotCurrent(
+          _moodPublished,
+          uid: user.uid,
+          day: today,
+          now: now,
+        )) {
+      return;
+    }
     try {
       final day = await FirebaseFirestore.instance
           .collection('users')
@@ -278,6 +437,7 @@ class HomeWidgetService {
         'moodDay': today,
         ...moodWidgetValues(day.data()?['mood']),
       });
+      _moodPublished = (uid: user.uid, day: today, at: now);
     } on MissingPluginException {
       // The native widget is available after installing an iOS build.
     } catch (error) {
@@ -293,11 +453,18 @@ class HomeWidgetService {
     _capacityScope = null;
     await _capacitySubscription?.cancel();
     _capacitySubscription = null;
+    _watchWorkoutsScope = null;
+    for (final subscription in _watchWorkoutSubscriptions) {
+      await subscription.cancel();
+    }
+    _watchWorkoutSubscriptions.clear();
     _lastSignature = null;
     _lastCalendarSignature = null;
     _lastDemandSignature = null;
+    _lastCapacityLeftSignature = null;
     _lastMeetingsSignature = null;
     _lastCalendarRefresh = null;
+    _moodPublished = null;
     _siriUid = null;
     _siriGeneration = null;
     if (!Platform.isIOS) return;
@@ -316,6 +483,10 @@ class HomeWidgetService {
         'siriDemand': -1,
         'siriDemandHeadline': '',
         'siriDemandAt': 0,
+        'capacityLeftDay': '',
+        'capacityLeftTimes': <int>[],
+        'capacityLeftValues': <int>[],
+        'watchWorkouts': <Map<String, Object>>[],
         'siriMeetingPatterns': <Map<String, Object>>[],
         'steps': 0,
         'stepsGoal': 0,
@@ -381,6 +552,7 @@ class HomeWidgetService {
     if (!Platform.isIOS) return;
     _watchWidgetPriorities();
     _watchCapacity();
+    _watchWorkoutTemplates();
     unawaited(refreshCalendarSnapshot());
     if (_publishing) return;
     _publishing = true;
@@ -609,6 +781,12 @@ Future<void> publishSiriDemand({
   required String headline,
   required bool tomorrow,
 }) => HomeWidgetService._publishDemand(demand, headline, tomorrow);
+
+/// My Day's live Capacity, for the Capacity widget, the Watch and Siri.
+Future<void> publishCapacityLeft(
+  CapacityLeft live,
+  List<({DateTime at, double left})> path,
+) => HomeWidgetService._publishCapacityLeft(live, path);
 
 /// Today's meetings with a heart-rate pattern, for Siri.
 Future<void> publishSiriMeetings(

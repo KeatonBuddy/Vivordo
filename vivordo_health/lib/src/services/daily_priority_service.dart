@@ -41,7 +41,7 @@ class DailyPriority {
     required this.source,
     this.sourceStart,
     this.sourceEnd,
-    this.reminderMinutes = 60,
+    this.reminderMinutes,
     this.reminderTimeMinutes,
     this.date,
     this.templateId,
@@ -66,7 +66,9 @@ class DailyPriority {
   final String source;
   final DateTime? sourceStart;
   final DateTime? sourceEnd;
-  final int reminderMinutes;
+
+  /// Minutes before [sourceStart] to notify; null is no notification.
+  final int? reminderMinutes;
   final int? reminderTimeMinutes;
   final DateTime? date;
   final String? templateId;
@@ -94,7 +96,7 @@ class DailyPriority {
       source: data['source'] as String? ?? 'manual',
       sourceStart: (data['sourceStart'] as Timestamp?)?.toDate(),
       sourceEnd: (data['sourceEnd'] as Timestamp?)?.toDate(),
-      reminderMinutes: (data['reminderMinutes'] as num?)?.toInt() ?? 60,
+      reminderMinutes: (data['reminderMinutes'] as num?)?.toInt(),
       reminderTimeMinutes: (data['reminderTimeMinutes'] as num?)?.toInt(),
       reference: document.reference,
       date: DateTime.tryParse(document.reference.parent.parent?.id ?? ''),
@@ -512,6 +514,31 @@ class DailyPriorityService {
     };
   }
 
+  /// What to change on an imported calendar priority now that its event is
+  /// [there] or isn't, or null for nothing. One whose event is gone
+  /// (deleted, or moved to another day) is removed and marked, so it comes
+  /// back if the event does, e.g. after a calendar read that came back
+  /// empty. Ticked-off ones stay, and so do ones the user removed.
+  @visibleForTesting
+  static Map<String, Object>? calendarPresenceChanges(
+    Map<String, dynamic> data, {
+    required bool there,
+  }) {
+    if (data['source'] != 'calendar') return null;
+    final removedWithEvent = data['removedWithEvent'] == true;
+    if (there) {
+      return removedWithEvent
+          ? {'dismissed': false, 'removedWithEvent': false}
+          : null;
+    }
+    if (removedWithEvent ||
+        data['dismissed'] == true ||
+        data['completed'] == true) {
+      return null;
+    }
+    return {'dismissed': true, 'removedWithEvent': true};
+  }
+
   static Future<void> seedFromCalendar(
     DateTime day,
     Iterable<CalendarPriorityCandidate> candidates,
@@ -531,8 +558,10 @@ class DailyPriorityService {
       writes = 0;
     }
 
+    final seen = <String>{};
     for (final candidate in candidates) {
       final id = _calendarDocumentId(candidate.sourceEventKey);
+      seen.add(id);
       final existingDocument = existingById[id];
       if (!_shouldSuggest(candidate)) {
         final data = existingDocument?.data();
@@ -552,9 +581,14 @@ class DailyPriorityService {
         // The event moved (in the app, a day fix or Google Calendar): keep
         // its priority, and so its reminder, at the new time.
         final moved = calendarTimeChanges(existingDocument.data(), candidate);
-        if (moved != null) {
+        final back = calendarPresenceChanges(
+          existingDocument.data(),
+          there: true,
+        );
+        if (moved != null || back != null) {
           batch.update(existingDocument.reference, {
-            ...moved,
+            ...?moved,
+            ...?back,
             'updatedAt': FieldValue.serverTimestamp(),
           });
           writes++;
@@ -578,6 +612,18 @@ class DailyPriorityService {
       writes++;
       await flushIfFull();
     }
+    // Events no longer on this day take their priorities with them.
+    for (final document in existing.docs) {
+      if (seen.contains(document.id)) continue;
+      final gone = calendarPresenceChanges(document.data(), there: false);
+      if (gone == null) continue;
+      batch.update(document.reference, {
+        ...gone,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      writes++;
+      await flushIfFull();
+    }
     if (writes > 0) await batch.commit();
     await _userDocument()?.update({
       'priorityReminderDays': FieldValue.arrayUnion([localDayKey(day)]),
@@ -595,7 +641,7 @@ class DailyPriorityService {
     Set<int> selectedWeekdays = const {},
     DateTime? recurrenceEnd,
     Map<String, dynamic> planning = const {},
-    int reminderMinutes = 60,
+    int? reminderMinutes,
     int? reminderTimeMinutes,
     bool habit = false,
     int target = 1,
@@ -697,7 +743,7 @@ class DailyPriorityService {
           if ((data['planning'] as Map?)?['plannedDay'] != null)
             'plannedDay': localDayKey(date),
         },
-        'reminderMinutes': data['reminderMinutes'] ?? 60,
+        'reminderMinutes': data['reminderMinutes'],
         'reminderTimeMinutes': data['reminderTimeMinutes'],
         'completed': false,
         'dismissed': false,
@@ -727,7 +773,7 @@ class DailyPriorityService {
     required String title,
     DateTime? scheduledAt,
     Map<String, dynamic> planning = const {},
-    int reminderMinutes = 60,
+    int? reminderMinutes,
     int? reminderTimeMinutes,
   }) async {
     final collection = _collection(date);
@@ -801,6 +847,21 @@ class DailyPriorityService {
     });
     DayRecordService.syncSoon();
     await _syncReminder(priority.reference);
+  }
+
+  /// Ticks off a priority the watch only knows by id (never a habit: the
+  /// watch doesn't list those).
+  static Future<void> completeById(DateTime day, String id) async {
+    final reference = _collection(day)?.doc(id);
+    if (reference == null) return;
+    await reference.update({
+      'completed': true,
+      'completedAt': FieldValue.serverTimestamp(),
+      'completedDay': localDayKey(DateTime.now()),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    DayRecordService.syncSoon();
+    await _syncReminder(reference);
   }
 
   /// Sets how many times [habit] was done on its day (0 to its target),
@@ -939,7 +1000,7 @@ class DailyPriorityService {
   static Future<void> editReminder(
     DailyPriority priority,
     String title,
-    int minutes,
+    int? minutes,
     int? reminderTimeMinutes,
   ) async {
     await priority.reference.update({
@@ -957,7 +1018,7 @@ class DailyPriorityService {
     required DateTime date,
     required DateTime? scheduledAt,
     required bool completed,
-    required int reminderMinutes,
+    required int? reminderMinutes,
     required int? reminderTimeMinutes,
     Map<String, dynamic>? planning,
     String recurrence = 'none',
@@ -1112,7 +1173,7 @@ class DailyPriorityService {
         ? null
         : priorityReminderTime(
             start: (data['sourceStart'] as Timestamp?)?.toDate(),
-            minutesBefore: (data['reminderMinutes'] as num?)?.toInt() ?? 60,
+            minutesBefore: (data['reminderMinutes'] as num?)?.toInt(),
             completed: data['completed'] == true,
             allDay: data['isAllDay'] == true,
             now: DateTime.now(),

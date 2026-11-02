@@ -3,12 +3,16 @@ import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
+import '../src/utils/chart_text.dart';
 
 class MoodDetailScreen extends StatefulWidget {
   const MoodDetailScreen({super.key});
@@ -32,6 +36,9 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     1 => 'Weekly',
     _ => 'Monthly',
   };
+
+  // Made once: a new stream on each rebuild re-sent the whole range.
+  late final _mood = _moodStream();
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _moodStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -137,8 +144,9 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          tooltip: 'Back',
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(CupertinoIcons.back),
           color: _purple,
         ),
         title: const Text(
@@ -147,11 +155,11 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _moodStream(),
+        stream: _mood,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CupertinoActivityIndicator());
           }
           final data = _rangeData(snapshot.data);
           final usualValues = _usualValues(snapshot.data);
@@ -234,46 +242,11 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     );
   }
 
-  Widget _rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == _rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => _rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? _purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget _rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    value: _rangeIndex,
+    onChanged: (index) => setState(() => _rangeIndex = index),
+  );
 
   Widget _summaryCard(int average, int? change, int checkIns) {
     return _card(
@@ -283,14 +256,14 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _iconBubble(Icons.mood_rounded, _moodColor),
+              _iconBubble(CupertinoIcons.smiley, _moodColor),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${_rangeName.toUpperCase()} MOOD',
+                      '$_rangeName mood',
                       style: TextStyle(
                         color: context.vivordoColors.textSecondary,
                         fontSize: 13,
@@ -320,8 +293,8 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
                         '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs your usual',
                         style: TextStyle(
                           color: change >= 0
-                              ? const Color(0xFF20B26B)
-                              : Colors.red,
+                              ? context.vivordoColors.success
+                              : context.vivordoColors.danger,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
@@ -451,8 +424,8 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     ),
     child: Text(
       text,
-      style: const TextStyle(
-        color: Color(0xFF20B26B),
+      style: TextStyle(
+        color: context.vivordoColors.success,
         fontWeight: FontWeight.w700,
       ),
     ),
@@ -522,25 +495,56 @@ class _MoodChartState extends State<_MoodChart> {
     if (!listEquals(oldWidget.values, widget.values)) selected = null;
   }
 
+  /// What the line shows, for VoiceOver: the average, low and high.
+  /// Data points are shown only for the day view, one per check-in.
+  String get _summary {
+    final v = widget.values;
+    if (v.isEmpty) return 'Mood: no check-ins yet.';
+    final average = v.reduce((a, b) => a + b) / v.length;
+    var low = 0, high = 0;
+    for (var i = 1; i < v.length; i++) {
+      if (v[i] < v[low]) low = i;
+      if (v[i] > v[high]) high = i;
+    }
+    final day = widget.showDataPoints;
+    final when = DateFormat(
+      day
+          ? 'h:mm a'
+          : v.length <= 7
+          ? 'EEEE'
+          : 'MMM d',
+    );
+    final at = day ? 'at' : 'on';
+    return 'Mood, ${v.length} ${day ? 'check-ins' : 'days'}: '
+        'average ${average.round()} out of 100, '
+        'lowest ${v[low].round()} $at ${when.format(widget.dates[low])}, '
+        'highest ${v[high].round()} $at ${when.format(widget.dates[high])}.';
+  }
+
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      onHorizontalDragUpdate: (event) =>
-          _select(event.localPosition.dx, constraints.maxWidth),
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _MoodChartPainter(
-          values: widget.values,
-          labels: widget.labels,
-          dates: widget.dates,
-          maxY: widget.maxY,
-          usual: widget.usual,
-          showDataPoints: widget.showDataPoints,
-          selected: selected,
-          dark: Theme.of(context).brightness == Brightness.dark,
+  Widget build(BuildContext context) => Semantics(
+    label: _summary,
+    child: ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          onHorizontalDragUpdate: (event) =>
+              _select(event.localPosition.dx, constraints.maxWidth),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _MoodChartPainter(
+              values: widget.values,
+              labels: widget.labels,
+              dates: widget.dates,
+              maxY: widget.maxY,
+              usual: widget.usual,
+              showDataPoints: widget.showDataPoints,
+              selected: selected,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            ),
+          ),
         ),
       ),
     ),
@@ -647,6 +651,7 @@ class _MoodChartPainter extends CustomPainter {
       final label =
           '${DateFormat('MMM d').format(dates[index])}\n${_moodName(values[index])} · ${values[index].round()}/100';
       final painter = TextPainter(
+        textScaler: chartTextScaler,
         text: TextSpan(
           text: label,
           style: TextStyle(
@@ -686,6 +691,7 @@ class _MoodChartPainter extends CustomPainter {
 
   void _text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(
@@ -700,6 +706,7 @@ class _MoodChartPainter extends CustomPainter {
 
   void _centerText(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
+      textScaler: chartTextScaler,
       text: TextSpan(
         text: value,
         style: TextStyle(

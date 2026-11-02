@@ -1,10 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart'
+    show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
-import 'onboarding_flow_screen.dart' show onboardingLight;
+import 'onboarding_flow_screen.dart' show onboardingTheme;
 import '../widgets/privacy_support_links.dart';
 
 /// Creating an account: email first, then Apple or Google. Everything after
@@ -41,9 +44,6 @@ final List<_PasswordRequirement> _passwordRequirements = [
 ];
 
 const _purple = VivordoTheme.brand;
-const _ink = Color(0xFF1C1C1E);
-const _grey = Color(0xFF8E8E93);
-const _line = Color(0xFFE5E5EA);
 
 class _SignupScreenState extends State<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -58,6 +58,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _appleLoading = false;
   bool _googleLoading = false;
 
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
   bool get _busy => _emailLoading || _appleLoading || _googleLoading;
   bool get _showApple => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
@@ -98,7 +99,9 @@ class _SignupScreenState extends State<SignupScreen> {
     );
     if (!mounted) return;
     setState(() => _emailLoading = false);
-    if (success) _toAuthGate();
+    if (!success) return;
+    TextInput.finishAutofillContext();
+    _toAuthGate();
   }
 
   Future<void> _social(
@@ -114,156 +117,175 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => onboardingLight(
+  Widget build(BuildContext context) => onboardingTheme(
     Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      backgroundColor: context.vivordoColors.page,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
-        foregroundColor: _ink,
+        foregroundColor: context.vivordoColors.textPrimary,
       ),
       body: SafeArea(
         top: false,
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            children: [
-              const Text(
-                'ACCOUNT',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: .9,
-                  color: _purple,
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Create your account',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: _ink,
-                ),
-              ),
-              const SizedBox(height: 22),
-              _field(
-                controller: _name,
-                hint: 'First name',
-                icon: Icons.person_outline_rounded,
-                capitalization: TextCapitalization.words,
-                validator: (v) =>
-                    (v ?? '').trim().isEmpty ? 'Enter your first name' : null,
-              ),
-              _field(
-                controller: _email,
-                hint: 'you@email.com',
-                icon: Icons.mail_outline_rounded,
-                keyboard: TextInputType.emailAddress,
-                validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
-                    ? null
-                    : 'Enter a valid email',
-              ),
-              _field(
-                controller: _password,
-                hint: 'Password',
-                icon: Icons.lock_outline_rounded,
-                obscure: !_showPassword,
-                suffix: IconButton(
-                  tooltip: _showPassword ? 'Hide password' : 'Show password',
-                  icon: Icon(
-                    _showPassword
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    color: _grey,
+        // Cancelled on dispose so backing out never offers to save a
+        // password for an account that wasn't created.
+        child: AutofillGroup(
+          onDisposeAction: AutofillContextAction.cancel,
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              children: [
+                const Text(
+                  'Account',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _purple,
                   ),
-                  onPressed: () =>
-                      setState(() => _showPassword = !_showPassword),
                 ),
-              ),
-              if (_password.text.isNotEmpty || _passwordError != null)
+                const SizedBox(height: 6),
+                Text(
+                  'Create your account',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: context.vivordoColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                _field(
+                  controller: _name,
+                  hint: 'First name',
+                  icon: CupertinoIcons.person,
+                  capitalization: TextCapitalization.words,
+                  autofill: AutofillHints.givenName,
+                  validator: (v) =>
+                      (v ?? '').trim().isEmpty ? 'Enter your first name' : null,
+                ),
+                _field(
+                  controller: _email,
+                  hint: 'you@email.com',
+                  icon: CupertinoIcons.envelope,
+                  keyboard: TextInputType.emailAddress,
+                  autofill: AutofillHints.email,
+                  validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch(v ?? '')
+                      ? null
+                      : 'Enter a valid email',
+                ),
+                _field(
+                  controller: _password,
+                  hint: 'Password',
+                  icon: CupertinoIcons.lock,
+                  obscure: !_showPassword,
+                  autofill: AutofillHints.newPassword,
+                  action: TextInputAction.done,
+                  suffix: IconButton(
+                    tooltip: _showPassword ? 'Hide password' : 'Show password',
+                    icon: Icon(
+                      _showPassword
+                          ? CupertinoIcons.eye_slash
+                          : CupertinoIcons.eye,
+                      color: context.vivordoColors.textSecondary,
+                    ),
+                    onPressed: () =>
+                        setState(() => _showPassword = !_showPassword),
+                  ),
+                ),
+                if (_password.text.isNotEmpty || _passwordError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        for (final r in _passwordRequirements)
+                          _Requirement(r.label, r.isMet(_password.text)),
+                      ],
+                    ),
+                  ),
+                if (_passwordError != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Text(
+                      _passwordError!,
+                      style: const TextStyle(
+                        color: Color(0xFFFF3B30),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                _button(
+                  label: 'Create account',
+                  loading: _emailLoading,
+                  color: _purple,
+                  onPressed: _createWithEmail,
+                ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Row(
                     children: [
-                      for (final r in _passwordRequirements)
-                        _Requirement(r.label, r.isMet(_password.text)),
+                      Expanded(
+                        child: Divider(color: context.vivordoColors.border),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or',
+                          style: TextStyle(
+                            color: context.vivordoColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Divider(color: context.vivordoColors.border),
+                      ),
                     ],
                   ),
                 ),
-              if (_passwordError != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                  child: Text(
-                    _passwordError!,
-                    style: const TextStyle(
-                      color: Color(0xFFFF3B30),
-                      fontSize: 13,
+                if (_showApple) ...[
+                  _button(
+                    label: 'Continue with Apple',
+                    loading: _appleLoading,
+                    // Apple's button is white on a dark page.
+                    color: _dark ? Colors.white : Colors.black,
+                    foreground: _dark ? Colors.black : Colors.white,
+                    leading: const Icon(Icons.apple, size: 25),
+                    onPressed: () => _social(
+                      AuthService.signInWithApple,
+                      (v) => _appleLoading = v,
                     ),
                   ),
-                ),
-              const SizedBox(height: 8),
-              _button(
-                label: 'Create account',
-                loading: _emailLoading,
-                color: _purple,
-                onPressed: _createWithEmail,
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Row(
-                  children: [
-                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('or', style: TextStyle(color: _grey)),
-                    ),
-                    Expanded(child: Divider(color: Color(0xFFD1D1D6))),
-                  ],
-                ),
-              ),
-              if (_showApple) ...[
+                  const SizedBox(height: 12),
+                ],
                 _button(
-                  label: 'Continue with Apple',
-                  loading: _appleLoading,
-                  color: Colors.black,
-                  leading: const Icon(Icons.apple, size: 25),
+                  label: 'Continue with Google',
+                  loading: _googleLoading,
+                  color: const Color(0xFF4285F4),
+                  leading: Container(
+                    width: 30,
+                    height: 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/google_g_logo.svg',
+                      width: 20,
+                      height: 20,
+                    ),
+                  ),
                   onPressed: () => _social(
-                    AuthService.signInWithApple,
-                    (v) => _appleLoading = v,
+                    AuthService.signInWithGoogle,
+                    (v) => _googleLoading = v,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
+                const TermsAgreement(),
               ],
-              _button(
-                label: 'Continue with Google',
-                loading: _googleLoading,
-                color: const Color(0xFF4285F4),
-                leading: Container(
-                  width: 30,
-                  height: 30,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SvgPicture.asset(
-                    'assets/google_g_logo.svg',
-                    width: 20,
-                    height: 20,
-                  ),
-                ),
-                onPressed: () => _social(
-                  AuthService.signInWithGoogle,
-                  (v) => _googleLoading = v,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const TermsAgreement(),
-            ],
+            ),
           ),
         ),
       ),
@@ -277,6 +299,8 @@ class _SignupScreenState extends State<SignupScreen> {
     TextInputType? keyboard,
     TextCapitalization capitalization = TextCapitalization.none,
     bool obscure = false,
+    String? autofill,
+    TextInputAction action = TextInputAction.next,
     Widget? suffix,
     String? Function(String?)? validator,
   }) => Padding(
@@ -286,19 +310,27 @@ class _SignupScreenState extends State<SignupScreen> {
       keyboardType: keyboard,
       textCapitalization: capitalization,
       obscureText: obscure,
+      autofillHints: autofill == null ? null : [autofill],
+      textInputAction: action,
       autocorrect: false,
       validator: validator,
-      style: const TextStyle(color: _ink),
+      style: TextStyle(color: context.vivordoColors.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFFC7C7CC)),
-        prefixIcon: Icon(icon, color: const Color(0xFFC7C7CC), size: 20),
+        hintStyle: TextStyle(
+          color: context.vivordoColors.textSecondary.withValues(alpha: .6),
+        ),
+        prefixIcon: Icon(
+          icon,
+          color: context.vivordoColors.textSecondary.withValues(alpha: .6),
+          size: 20,
+        ),
         suffixIcon: suffix,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: context.vivordoColors.card,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _line),
+          borderSide: BorderSide(color: context.vivordoColors.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -321,6 +353,7 @@ class _SignupScreenState extends State<SignupScreen> {
     required bool loading,
     required Color color,
     required VoidCallback onPressed,
+    Color foreground = Colors.white,
     Widget? leading,
   }) => SizedBox(
     width: double.infinity,
@@ -330,18 +363,15 @@ class _SignupScreenState extends State<SignupScreen> {
       style: FilledButton.styleFrom(
         backgroundColor: color,
         disabledBackgroundColor: color.withValues(alpha: .62),
-        foregroundColor: Colors.white,
-        disabledForegroundColor: Colors.white,
+        foregroundColor: foreground,
+        disabledForegroundColor: foreground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       child: loading
-          ? const SizedBox(
+          ? SizedBox(
               width: 22,
               height: 22,
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 2.5,
-              ),
+              child: CupertinoActivityIndicator(color: foreground, radius: 11),
             )
           : Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -368,12 +398,14 @@ class _Requirement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = met ? const Color(0xFF34C759) : _grey;
+    final color = met
+        ? context.vivordoColors.success
+        : context.vivordoColors.textSecondary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          met ? Icons.check_circle_rounded : Icons.circle_outlined,
+          met ? CupertinoIcons.checkmark_circle_fill : CupertinoIcons.circle,
           size: 14,
           color: color,
         ),

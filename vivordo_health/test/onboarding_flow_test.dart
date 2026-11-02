@@ -15,7 +15,20 @@ void main() {
     expect(returning.first, OnboardingStep.intro);
     expect(fresh, isNot(contains(OnboardingStep.intro)));
     expect(fresh.first, OnboardingStep.about);
-    // Last, once Health, the calendar and AI consent are set.
     expect(fresh.last, OnboardingStep.history);
+  });
+
+  test('onboarding is short; the rest is optional setup afterwards', () {
+    expect(onboardingSteps(const {}), [
+      OnboardingStep.about,
+      OnboardingStep.health,
+      OnboardingStep.history,
+    ]);
+    // Every other step is offered after onboarding, none twice.
+    expect(
+      {...onboardingSteps({'onboardingCompleted': true}), ...setupSteps},
+      OnboardingStep.values.toSet(),
+    );
+    expect(setupSteps, isNot(contains(OnboardingStep.history)));
   });
 }

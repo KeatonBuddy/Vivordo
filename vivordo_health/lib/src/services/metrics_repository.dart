@@ -2,7 +2,10 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:collection/collection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/day_key.dart';
 import '../utils/fitness_activity_history.dart';
+import '../utils/heart_rate_history.dart';
+import '../utils/home_metrics_summary.dart';
 import '../utils/performance_trace.dart';
 import '../utils/screen_metric_projection.dart';
 export '../utils/screen_metric_projection.dart' show MetricsProjection;
@@ -228,6 +231,30 @@ class MetricsRepository {
     });
   }
 
+  /// Home's metrics history: a live [kHomeRecentWindowDays]-day window and
+  /// the rest of the 90 days. Metrics and the weekly review read their
+  /// sleep patterns from it too, so they share Home's listeners.
+  Stream<MetricWindow> watchHomeHistory({
+    required String uid,
+    required DateTime now,
+  }) {
+    final today = localDayKey(now);
+    return combineMetricWindows(
+      watch(
+        uid: uid,
+        startDay: homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays),
+        endDay: today,
+        projection: MetricsProjection.homeHistory,
+      ),
+      watch(
+        uid: uid,
+        startDay: homeMetricsWindowStartKey(now),
+        endDay: homeMetricsWindowStartKey(now, days: kHomeRecentWindowDays + 1),
+        projection: MetricsProjection.homeHistory,
+      ),
+    );
+  }
+
   Future<void> dispose() async {
     _disposed = true;
     await _auth?.cancel();
@@ -246,6 +273,14 @@ class _SharedWindow {
   final String endDay;
   final _hearts = <String, PreparedHeartRate>{};
   String? _heartDay;
+
+  /// The first day that carries [reactionHeartKey] (daily brief only).
+  late final String _reactionFrom = () {
+    final end = DateTime.parse(endDay);
+    return localDayKey(
+      DateTime(end.year, end.month, end.day - reactionHeartDays),
+    );
+  }();
   final _listeners = <MultiStreamController<MetricWindow>>{};
   var _activity = FitnessActivityHistory();
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
@@ -378,13 +413,25 @@ class _SharedWindow {
         projection,
         isToday: doc.id == endDay,
       );
-      if (projection == MetricsProjection.dailyBrief && doc.id == endDay) {
+      final date = DateTime.tryParse(doc.id);
+      if (projection == MetricsProjection.dailyBrief &&
+          (doc.id == endDay ||
+              (date != null && doc.id.compareTo(_reactionFrom) >= 0))) {
         next[doc.id] = Map.unmodifiable({
           ...data,
-          preparedHeartKey: projectHeartRate(
-            (path) => _field(doc, path),
-            doc.id,
-          ),
+          if (doc.id == endDay)
+            preparedHeartKey: projectHeartRate(
+              (path) => _field(doc, path),
+              doc.id,
+            ),
+          if (date != null && doc.id.compareTo(_reactionFrom) >= 0)
+            reactionHeartKey: DayHeartReadings(
+              mergedHeartRateHistory(
+                doc.data() ?? const {},
+                fallbackDate: date,
+                includeDailyFallback: false,
+              ),
+            ),
         });
       } else {
         next[doc.id] = data;

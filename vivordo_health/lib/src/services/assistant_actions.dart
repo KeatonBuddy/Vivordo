@@ -81,7 +81,7 @@ Future<String> applyPriorityAction(
     }
     final minutesBefore = reminder != null && scheduled != null
         ? scheduled.difference(reminder).inMinutes
-        : existing?.reminderMinutes ?? 0;
+        : existing?.reminderMinutes;
     final reminderClock = reminder != null && scheduled == null
         ? reminder.hour * 60 + reminder.minute
         : existing?.reminderTimeMinutes;
@@ -104,6 +104,7 @@ Future<String> applyPriorityAction(
           'Remind: ${DateFormat('MMM d, h:mm a').format(reminder)}',
         if (reminder == null &&
             scheduled != null &&
+            minutesBefore != null &&
             action.operation != 'delete')
           'Reminder: $minutesBefore minutes before scheduled time',
         if (reminder == null &&
@@ -116,7 +117,10 @@ Future<String> applyPriorityAction(
         if (existing?.sourceEventKey != null)
           'The calendar event will not be deleted.',
         if (action.operation != 'delete')
-          reminder == null && scheduled == null && reminderClock == null
+          reminder == null &&
+                  (scheduled == null
+                      ? reminderClock == null
+                      : minutesBefore == null)
               ? 'No timed reminder notification'
               : 'Notifications depend on your device notification permissions.',
       ].join('\n\n'),

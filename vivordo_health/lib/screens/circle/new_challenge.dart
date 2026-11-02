@@ -141,7 +141,7 @@ Future<void> _startNewChallenge(
         children: [
           SizedBox.square(
             dimension: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: CupertinoActivityIndicator(radius: 9),
           ),
           SizedBox(width: 12),
           Text('Sending challenge…'),
@@ -252,7 +252,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                 Row(
                   children: [
                     _IconCircleButton(
-                      icon: Icons.close_rounded,
+                      icon: CupertinoIcons.xmark,
                       tooltip: 'Close',
                       onTap: () => Navigator.maybePop(context),
                     ),
@@ -322,7 +322,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.info_outline_rounded,
+                        CupertinoIcons.info,
                         size: 20,
                         color: context.circle.accent,
                       ),
@@ -355,7 +355,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                             message: _messageController.text.trim(),
                           ),
                         ),
-                  icon: const Icon(Icons.send_rounded, size: 19),
+                  icon: const Icon(CupertinoIcons.paperplane_fill, size: 19),
                   label: const Text('Send challenge'),
                   style: _primaryButtonStyle(height: 54),
                 ),
@@ -469,7 +469,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
     }
     if (friends.isEmpty) {
       return _EmptyState(
-        icon: Icons.person_add_alt_1_rounded,
+        icon: CupertinoIcons.person_badge_plus,
         title: 'Add a friend first',
         detail:
             'Challenges need at least one Circle friend. Tap to find people.',
@@ -672,7 +672,7 @@ class _TargetPicker extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_down_rounded, color: context.muted),
+                Icon(CupertinoIcons.chevron_down, color: context.muted),
               ],
             ),
           ),
@@ -737,7 +737,7 @@ class _FriendChoice extends StatelessWidget {
                         ),
                       ),
                       child: const Icon(
-                        Icons.check_rounded,
+                        CupertinoIcons.checkmark,
                         size: 13,
                         color: Colors.white,
                       ),
@@ -874,7 +874,7 @@ class _SpecificExerciseSearchSheetState
                     ),
                   ),
                   _IconCircleButton(
-                    icon: Icons.close_rounded,
+                    icon: CupertinoIcons.xmark,
                     tooltip: 'Close',
                     onTap: () => Navigator.maybePop(context),
                   ),
@@ -1020,7 +1020,7 @@ class _ExerciseResultTile extends StatelessWidget {
                 ),
                 if (selected)
                   Icon(
-                    Icons.check_circle_rounded,
+                    CupertinoIcons.checkmark_circle_fill,
                     color: context.circle.accent,
                   ),
               ],
@@ -1060,7 +1060,7 @@ class _SearchField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: context.muted),
-        prefixIcon: Icon(Icons.search_rounded, color: context.muted),
+        prefixIcon: Icon(CupertinoIcons.search, color: context.muted),
         filled: true,
         fillColor: colors.input,
         contentPadding: const EdgeInsets.symmetric(vertical: 14),

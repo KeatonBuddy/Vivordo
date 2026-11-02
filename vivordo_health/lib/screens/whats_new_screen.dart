@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -9,42 +10,42 @@ class WhatsNewScreen extends StatelessWidget {
 
   static const _features = <_WhatsNewFeature>[
     _WhatsNewFeature(
-      icon: Icons.speed_rounded,
+      icon: CupertinoIcons.speedometer,
       colors: [Color(0xFF7667F4), Color(0xFF4935F5)],
       title: 'Your day at a glance',
       description:
           'See today’s schedule load, scheduled time and longest opening instantly.',
     ),
     _WhatsNewFeature(
-      icon: Icons.schedule_rounded,
+      icon: CupertinoIcons.clock,
       colors: [Color(0xFF77D36B), Color(0xFF37A84B)],
       title: 'Know what’s next',
       description:
           'Find your current opening and upcoming events from Google Calendar.',
     ),
     _WhatsNewFeature(
-      icon: Icons.check_circle_rounded,
+      icon: CupertinoIcons.checkmark_circle_fill,
       colors: [Color(0xFF66D46A), Color(0xFF27A94B)],
       title: 'Independent daily priorities',
       description:
           'Use smart calendar suggestions or add your own, then check them off as you go.',
     ),
     _WhatsNewFeature(
-      icon: Icons.account_tree_rounded,
+      icon: CupertinoIcons.list_bullet_indent,
       colors: [Color(0xFF76A7FF), Color(0xFF3478F6)],
       title: 'A connected timeline',
       description:
           'Follow the day in order, open events directly and jump into the full calendar.',
     ),
     _WhatsNewFeature(
-      icon: Icons.add_rounded,
+      icon: CupertinoIcons.add,
       colors: [Color(0xFFA697FF), Color(0xFF6752EF)],
       title: 'Add plans without leaving My Day',
       description:
           'Create calendar events or scheduled and repeating priorities in a few taps.',
     ),
     _WhatsNewFeature(
-      icon: Icons.menu_book_rounded,
+      icon: CupertinoIcons.book_fill,
       colors: [Color(0xFF43D7C8), Color(0xFF00AFA1)],
       title: 'Reflect in the moment',
       description:
@@ -106,6 +107,11 @@ class WhatsNewScreen extends StatelessWidget {
                       child: Image.asset(
                         'assets/vivordo_logo_long.png',
                         fit: BoxFit.contain,
+                        // Ink-coloured on a dark page, as on sign-in.
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? colors.textPrimary
+                            : null,
+                        colorBlendMode: BlendMode.srcIn,
                       ),
                     ),
                   ),
@@ -145,12 +151,11 @@ class WhatsNewScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: const Text(
-                        'MY DAY UPDATE',
+                        'My Day update',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: 0.25,
                         ),
                       ),
                     ),

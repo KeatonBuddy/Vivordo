@@ -26,6 +26,42 @@ private enum VivordoWidgetData {
     guard defaults.object(forKey: key) != nil else { return fallback }
     return defaults.integer(forKey: key)
   }
+
+  /// When My Day's live Capacity steps down today (what's left now, then as
+  /// the plan happens); empty when the app hasn't sent one for [date]'s day.
+  static func capacityLeftPath(for date: Date) -> [(at: Date, left: Int)] {
+    guard defaults.string(forKey: "capacityLeftDay") == VivordoCalendarDates.dayKey(for: date),
+          let times = defaults.array(forKey: "capacityLeftTimes") as? [NSNumber],
+          let values = defaults.array(forKey: "capacityLeftValues") as? [NSNumber],
+          !times.isEmpty, times.count == values.count else { return [] }
+    return zip(times, values).map {
+      (Date(timeIntervalSince1970: $0.0.doubleValue / 1_000), $0.1.intValue)
+    }
+  }
+}
+
+/// My Day's live Capacity at a moment: what's left of this morning's, and
+/// what's left by tonight if the plan happens (below 0: short).
+private struct CapacityLeftValue {
+  let left: Int
+  let morning: Int
+  let byTonight: Int
+
+  static func at(_ date: Date) -> CapacityLeftValue? {
+    let path = VivordoWidgetData.capacityLeftPath(for: date)
+    guard let point = path.last(where: { $0.at <= date }) ?? path.first else { return nil }
+    let morning = VivordoWidgetData.integer("capacityLeftMorning", fallback: 0)
+    guard morning > 0 else { return nil }
+    return CapacityLeftValue(
+      left: max(0, point.left),
+      morning: morning,
+      byTonight: VivordoWidgetData.integer("capacityByTonight", fallback: 0)
+    )
+  }
+
+  var tonight: String { byTonight < 0 ? "Short by \(-byTonight)" : "\(byTonight) by tonight" }
+  var tonightColor: Color { byTonight < 0 ? VivordoWidgetPalette.amber : VivordoWidgetPalette.mint }
+  var share: Double { Double(left) / Double(max(morning, 1)) }
 }
 
 private struct VivordoWidgetEntry: TimelineEntry {
@@ -48,6 +84,7 @@ private struct VivordoWidgetEntry: TimelineEntry {
   let hasMetrics: Bool
   let hasStress: Bool
   let hasCapacity: Bool
+  let capacityLeft: CapacityLeftValue?
   let updatedAt: Date?
 
   static func current(date: Date = .now) -> VivordoWidgetEntry {
@@ -72,6 +109,7 @@ private struct VivordoWidgetEntry: TimelineEntry {
       // so it carries its own day.
       hasCapacity: defaults.string(forKey: "capacityDay") == VivordoCalendarDates.dayKey(for: date)
         && defaults.bool(forKey: "dashboardHasCapacity"),
+      capacityLeft: .at(date),
       updatedAt: defaults.double(forKey: "dashboardMetricsUpdatedAt") > 0
         ? Date(timeIntervalSince1970: defaults.double(forKey: "dashboardMetricsUpdatedAt") / 1_000)
         : nil
@@ -97,6 +135,7 @@ private struct VivordoWidgetProvider: TimelineProvider {
       hasMetrics: true,
       hasStress: true,
       hasCapacity: true,
+      capacityLeft: CapacityLeftValue(left: 41, morning: 72, byTonight: 18),
       updatedAt: .now
     )
   }
@@ -111,7 +150,12 @@ private struct VivordoWidgetProvider: TimelineProvider {
     let midnight = VivordoCalendarDates.calendar.date(
       byAdding: .day, value: 1, to: VivordoCalendarDates.calendar.startOfDay(for: now)
     ) ?? now
-    completion(Timeline(entries: [.current(date: now), .current(date: midnight)],
+    // Live Capacity steps down as today's plan happens, so it moves between
+    // the app's updates.
+    let steps = VivordoWidgetData.capacityLeftPath(for: now)
+      .map(\.at).filter { $0 > now && $0 < midnight }
+    completion(Timeline(entries: [.current(date: now)] + steps.map { .current(date: $0) }
+                          + [.current(date: midnight)],
                         policy: .after(now.addingTimeInterval(15 * 60))))
   }
 }
@@ -262,6 +306,8 @@ private struct ScoreSmallView: View {
   let score: Int?
   let state: (label: String, color: Color)?
   let footnote: String
+  /// The arc's fill; score / 100 when not given.
+  var progress: Double? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -276,7 +322,7 @@ private struct ScoreSmallView: View {
           .minimumScaleFactor(0.6)
           .lineLimit(1)
         if let score, let state {
-          FitnessArc(progress: Double(score) / 100, color: state.color, lineWidth: 6)
+          FitnessArc(progress: progress ?? Double(score) / 100, color: state.color, lineWidth: 6)
             .frame(width: 42, height: 42)
         }
       }
@@ -355,6 +401,7 @@ private struct StressGaugeView: View {
 }
 
 private struct CapacityWidgetView: View {
+  @Environment(\.widgetFamily) private var family
   let entry: VivordoWidgetEntry
 
   private var footnote: String {
@@ -367,13 +414,92 @@ private struct CapacityWidgetView: View {
   }
 
   var body: some View {
-    ScoreSmallView(
-      title: "Capacity",
-      score: entry.hasCapacity ? entry.capacity : nil,
-      state: entry.capacityState,
-      footnote: footnote
-    )
+    Group {
+      switch family {
+      case .accessoryCircular:
+        CapacityGaugeView(entry: entry)
+      case .accessoryRectangular:
+        CapacityRectangularView(entry: entry)
+      case .accessoryInline:
+        if let live = entry.capacityLeft {
+          // The inline slot is narrow: drop words until it fits.
+          ViewThatFits {
+            Text("Capacity \(live.left) left · \(live.tonight)")
+            Text("\(live.left) left · \(live.tonight)")
+            Text("Capacity \(live.left) left")
+          }
+        } else {
+          Text(entry.hasCapacity ? "Capacity \(entry.capacity)" : "Capacity —")
+        }
+      default:
+        // During the day, what's left of this morning's Capacity.
+        if let live = entry.capacityLeft {
+          ScoreSmallView(
+            title: "Capacity left",
+            score: live.left,
+            state: (live.tonight, live.tonightColor),
+            footnote: "started at \(live.morning)",
+            progress: live.share
+          )
+        } else {
+          ScoreSmallView(
+            title: "Capacity",
+            score: entry.hasCapacity ? entry.capacity : nil,
+            state: entry.capacityState,
+            footnote: footnote
+          )
+        }
+      }
+    }
     .widgetURL(URL(string: "com.vivordo.health://widget/capacity"))
+  }
+}
+
+private struct CapacityGaugeView: View {
+  let entry: VivordoWidgetEntry
+
+  var body: some View {
+    let live = entry.capacityLeft
+    Gauge(
+      value: Double(live?.left ?? (entry.hasCapacity ? entry.capacity : 0)),
+      in: 0...Double(max(live?.morning ?? 100, 1))
+    ) {
+      Text(live == nil ? "" : "left")
+    } currentValueLabel: {
+      Text(live.map { "\($0.left)" } ?? (entry.hasCapacity ? "\(entry.capacity)" : "—"))
+    }
+    .gaugeStyle(.accessoryCircular)
+    .accessibilityLabel(live.map { "Capacity \($0.left) left, started at \($0.morning), \($0.tonight)" }
+      ?? "Capacity")
+  }
+}
+
+private struct CapacityRectangularView: View {
+  let entry: VivordoWidgetEntry
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      if let live = entry.capacityLeft {
+        Text("Capacity · started at \(live.morning)")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        Text("\(live.left) left")
+          .font(.headline)
+          .contentTransition(.numericText())
+        Text(live.tonight)
+          .font(.caption2)
+      } else {
+        Text("Capacity")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        Text(entry.hasCapacity ? "\(entry.capacity)" : "—")
+          .font(.headline)
+        Text(entry.hasCapacity ? entry.capacityState?.label ?? "" : "Open Vivordo")
+          .font(.caption2)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
   }
 }
 
@@ -419,9 +545,10 @@ private struct FitnessRingWidgetView: View {
       ProgressBar(progress: progress(entry.steps, entry.stepsGoal), color: VivordoWidgetPalette.purple)
         .padding(.top, 6)
       HStack {
-        Text("\(entry.hasMetrics ? entry.calories : 0) / \(entry.caloriesGoal) cal")
+        // "—" like steps until today's numbers arrive, never a false 0.
+        Text("\(entry.hasMetrics ? entry.calories.formatted() : "—") / \(entry.caloriesGoal) cal")
         Spacer(minLength: 4)
-        Text("\(entry.hasMetrics ? entry.exerciseMinutes : 0) / \(entry.exerciseGoal) min")
+        Text("\(entry.hasMetrics ? entry.exerciseMinutes.formatted() : "—") / \(entry.exerciseGoal) min")
       }
       .font(.caption2)
       .foregroundStyle(.secondary)
@@ -823,8 +950,8 @@ private struct CapacityWidget: Widget {
         .containerBackground(for: .widget) { VivordoWidgetBackground() }
     }
     .configurationDisplayName("Capacity")
-    .description("See how much energy you have today at a glance.")
-    .supportedFamilies([.systemSmall])
+    .description("How much of today's Capacity is left, and what's left by tonight.")
+    .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     .contentMarginsDisabled()
   }
 }

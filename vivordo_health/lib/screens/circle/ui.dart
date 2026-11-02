@@ -148,12 +148,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Text(
-        label.toUpperCase(),
+        label,
         style: TextStyle(
           color: context.muted,
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.w800,
-          letterSpacing: 1.4,
         ),
       ),
       if (badge > 0) ...[const SizedBox(width: 8), _CountBadge(count: badge)],
@@ -301,7 +300,7 @@ class _BackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _IconCircleButton(
-    icon: Icons.chevron_left_rounded,
+    icon: CupertinoIcons.chevron_left,
     tooltip: 'Back',
     onTap: () => Navigator.maybePop(context),
   );
@@ -492,7 +491,7 @@ class _Loading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     height: height,
-    child: const Center(child: CircularProgressIndicator(color: _brand)),
+    child: const Center(child: CupertinoActivityIndicator(color: _brand)),
   );
 }
 
@@ -558,7 +557,7 @@ class _StreakLabel extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       Icon(
-        Icons.local_fire_department_rounded,
+        CupertinoIcons.flame_fill,
         size: size + 2,
         color: context.circle.streak,
       ),

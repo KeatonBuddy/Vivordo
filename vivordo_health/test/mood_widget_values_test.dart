@@ -67,4 +67,24 @@ void main() {
       'moodLastAt': 0,
     });
   });
+
+  test(
+    'the widget skips a resume reread for an hour, same account and day',
+    () {
+      final last = (uid: 'me', day: '2026-10-10', at: at(9));
+      bool current(
+        DateTime now, {
+        String uid = 'me',
+        String day = '2026-10-10',
+      }) => moodSnapshotCurrent(last, uid: uid, day: day, now: now);
+      expect(current(at(9, 59)), isTrue);
+      expect(current(at(10)), isFalse);
+      expect(current(at(9, 30), uid: 'other'), isFalse);
+      expect(current(at(9, 30), day: '2026-10-11'), isFalse);
+      expect(
+        moodSnapshotCurrent(null, uid: 'me', day: '2026-10-10', now: at(9)),
+        isFalse,
+      );
+    },
+  );
 }

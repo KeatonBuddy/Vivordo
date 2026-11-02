@@ -1,10 +1,12 @@
 import 'dart:async';
 import '../widgets/app_tour.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
@@ -19,26 +21,60 @@ import 'sleep_detail_screen.dart';
 import 'stress_detail_screen.dart';
 import 'fitness_screen.dart';
 import 'my_day_screen.dart';
+import 'month_calendar_screen.dart';
+import 'steps_detail_screen.dart';
+import 'circle_screen.dart';
 import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/day_record_service.dart';
 import '../src/services/vo2_max_service.dart';
+import '../src/services/reduce_transparency.dart';
 import '../src/services/health_service.dart';
 import '../theme/vivordo_theme.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
-  final bool openMoodCheckIn;
 
   /// `tours` from the user document: which screen tours have been seen.
   final Map<String, dynamic>? seenTours;
   const MainNavigationScreen({
     super.key,
     this.initialIndex = 0,
-    this.openMoodCheckIn = false,
     this.seenTours,
   });
+
+  /// A tab asked for from outside the app (a widget link, a notification);
+  /// 5 opens Vivordo AI, as [initialIndex] does. The open screen switches
+  /// to it, or the next one to open starts on it. Switching keeps the app
+  /// as it is; rebuilding it would replay the launch splash.
+  static final requestedTab = ValueNotifier<int?>(null);
+
+  /// A screen to open in [requestedTab]'s stack, by its app route name.
+  static final requestedRoute = ValueNotifier<String?>(null);
+
+  /// Shows [tab] in the running app: closes whatever is pushed over it, then
+  /// opens [route] (one of [detailRoutes]) inside that tab.
+  static void openTab(NavigatorState navigator, int tab, {String? route}) {
+    navigator.popUntil((route) => route.isFirst);
+    requestedRoute.value = route;
+    // Re-requesting the same tab still has to run the listener.
+    requestedTab.value = null;
+    requestedTab.value = tab;
+  }
+
+  /// Screens that links (notifications, widgets) open inside a tab, so the
+  /// tab bar stays below them.
+  static final Map<String, WidgetBuilder> detailRoutes = {
+    '/full-calendar': (_) => const MonthCalendarScreen(),
+    '/wellness': (_) => const PhysicalHealthScreen(),
+    '/stress': (_) => const StressDetailScreen(),
+    '/sleep': (_) => const SleepDetailScreen(),
+    '/heart-rate': (_) => const HeartRateDetailScreen(),
+    '/steps': (_) => const StepsDetailScreen(),
+    '/circle': (_) => const CircleScreen(),
+    '/circle/challenges': (_) => const CircleScreen(initialTab: 1),
+  };
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -51,9 +87,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   late final AnimationController _chatRevealController;
   late final AnimationController _fitnessPulseController;
   late final Animation<double> _chatRevealAnimation;
-  final GlobalKey<NavigatorState> _contentNavigatorKey =
-      GlobalKey<NavigatorState>();
-  late final _ContentNavigatorObserver _contentNavigatorObserver;
+  // Each tab keeps its own stack, so a detail screen stays open in its tab
+  // while another tab is shown, under a tab bar that never hides.
+  final List<GlobalKey<NavigatorState>> _tabNavigatorKeys = List.generate(
+    5,
+    (_) => GlobalKey<NavigatorState>(),
+  );
+  late final List<_ContentNavigatorObserver> _tabObservers;
+  // One per tab so tapping the open tab scrolls only that tab to the top.
+  final List<ScrollController> _tabScrollControllers = List.generate(
+    5,
+    (_) => ScrollController(),
+  );
   final _insights = ScreenInsightController();
   final _contextPrompt = ValueNotifier<ScreenInsight?>(null);
   // Asked from a screen's insight bar, the chat rises as a sheet over that
@@ -100,7 +145,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final GlobalKey _metricsInsightsKey = GlobalKey();
   Timer? _healthRefreshTimer;
   final List<Timer> _tabPreloadTimers = [];
-  Future<void>? _circlePreload;
   AchievementMonitor? _achievementMonitor;
   final Set<int> _loadedTabs = {};
   late final List<ValueNotifier<bool>> _tabActivity;
@@ -110,6 +154,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final Color primaryPurple = VivordoTheme.brand;
   LiquidGlassSettings? _cachedGlassSettings;
   bool? _cachedGlassSettingsIsDark;
+  // How far the AI button has risen above the tab bar (0 to 1); the bar
+  // widens into its space as it goes.
+  final _insightLift = ValueNotifier<double>(0);
+
+  /// The floating tab bar's size and its gap to the screen's sides and
+  /// bottom, as in Apple's apps.
+  static const double _navBarHeight = 62;
+  static const double _navBarInset = 21;
+
+  /// How far up from the bottom edge the floating tab bar reaches, plus a
+  /// small gap: pushed screens keep their content above it.
+  static const double _navBarClearance = _navBarInset + _navBarHeight + 8;
 
   /// Analytics screen name per tab index, aligned with the nav bar order.
   static const List<String> _screenNames = [
@@ -125,9 +181,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _selectedIndex = widget.initialIndex == 5
-        ? 0
-        : widget.initialIndex.clamp(0, 4);
+    var startTab = widget.initialIndex;
+    if (MainNavigationScreen.requestedTab.value case final tab?) {
+      startTab = tab;
+      MainNavigationScreen.requestedTab.value = null;
+    }
+    final startInChat = startTab == 5;
+    _selectedIndex = startInChat ? 0 : startTab.clamp(0, 4);
+    MainNavigationScreen.requestedTab.addListener(_openRequestedTab);
     _loadedTabs.add(_selectedIndex);
     if (widget.seenTours case final seen?) {
       _seenTours = {...seen};
@@ -144,13 +205,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     }
     _tabActivity = List.generate(
       5,
-      (index) => ValueNotifier<bool>(
-        widget.initialIndex != 5 && index == _selectedIndex,
-      ),
+      (index) => ValueNotifier<bool>(!startInChat && index == _selectedIndex),
     );
     _homeStressReveal = ValueNotifier<bool>(false);
-    _contentNavigatorObserver = _ContentNavigatorObserver(
-      _handleContentNavigationChanged,
+    _tabObservers = List.generate(
+      5,
+      (_) => _ContentNavigatorObserver(_handleContentNavigationChanged),
     );
     _tabPages = List.generate(5, _buildCachedTabPage);
     _persistentChatScreen = AssistantScreen(
@@ -161,7 +221,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       onExpand: () => setState(() => _chatSheet.value = false),
     );
     _insights.onAsk = _askAbout;
-    _pandaHasBeenOpened = widget.initialIndex == 5;
+    // A detail screen's one-tap fix: back to the tabs, then there.
+    _insights.onOpen = (screen) {
+      _popToRoot(_selectedIndex);
+      unawaited(_openFromAssistant(screen));
+    };
+    _pandaHasBeenOpened = startInChat;
     _chatRevealController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 480),
@@ -183,8 +248,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _refreshTodayFromHealth();
     // Yesterday too, in case the app was last opened before it ended.
     unawaited(DayRecordService.syncOnOpen());
-    _circlePreload = CircleProfileService.preload();
+    // Warms Circle's data so the tab opens filled; launch doesn't wait.
+    unawaited(CircleProfileService.preload());
     _achievementMonitor = AchievementMonitor.start();
+    ReduceTransparency.start();
     // HealthKit does not push new values into Firestore. Keep the shared data
     // source current for both Home and Dashboard while the app is in use.
     // A full sync walks every consented metric, so keep the interval long and
@@ -195,10 +262,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       }
       _refreshTodayFromHealth();
     });
-    if (widget.initialIndex == 5) {
+    if (startInChat) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openChat());
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _preloadTabs());
+    if (MainNavigationScreen.requestedRoute.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openRequestedRoute(),
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _finishLaunch());
     AppTour.replayRequested.addListener(_replayTour);
   }
 
@@ -207,7 +279,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     AppTour.replayRequested.value = false;
     _seenTours = {};
     unawaited(resetTours());
-    _contentNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+    for (var index = 0; index < _tabNavigatorKeys.length; index++) {
+      _popToRoot(index);
+    }
     await _closeChat();
     // The route observer clears the detail flag after this frame.
     await WidgetsBinding.instance.endOfFrame;
@@ -428,12 +502,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   @override
   void dispose() {
+    MainNavigationScreen.requestedTab.removeListener(_openRequestedTab);
     _healthRefreshTimer?.cancel();
     unawaited(_achievementMonitor?.dispose() ?? Future<void>.value());
     for (final timer in _tabPreloadTimers) {
       timer.cancel();
     }
     _chatRevealController.dispose();
+    for (final controller in _tabScrollControllers) {
+      controller.dispose();
+    }
     AppTour.replayRequested.removeListener(_replayTour);
     FitnessWorkoutTimerState.isRunning.removeListener(_syncFitnessPulse);
     _fitnessPulseController.dispose();
@@ -441,6 +519,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       activity.dispose();
     }
     _homeStressReveal.dispose();
+    _insightLift.dispose();
     _insights.dispose();
     _contextPrompt.dispose();
     _chatSheet.dispose();
@@ -464,7 +543,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 yourDayKey: _homeYourDayKey,
                 insightsKey: _homeInsightsKey,
                 isActive: isActive,
-                openMoodCheckIn: widget.openMoodCheckIn,
                 onScanTap: _openScan,
                 onFitnessTap: () => _selectTab(3),
                 onMyDayTap: () => _selectTab(1),
@@ -523,6 +601,63 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (mounted) setState(() {});
   }
 
+  Future<void> _openRequestedTab() async {
+    final tab = MainNavigationScreen.requestedTab.value;
+    if (tab == null) return;
+    MainNavigationScreen.requestedTab.value = null;
+    if (tab == 5) {
+      _openChat();
+      return;
+    }
+    // Back to the tab itself, as a fresh screen would open.
+    _popToRoot(tab);
+    if (_chatOpen) await _closeChat();
+    if (!mounted) return;
+    _selectTab(tab);
+    await WidgetsBinding.instance.endOfFrame;
+    _openRequestedRoute();
+  }
+
+  /// Opens a linked screen ([MainNavigationScreen.requestedRoute]) in the
+  /// selected tab.
+  void _openRequestedRoute() {
+    final route = MainNavigationScreen.requestedRoute.value;
+    if (route == null || !mounted) return;
+    MainNavigationScreen.requestedRoute.value = null;
+    unawaited(_tabNavigatorKeys[_selectedIndex].currentState?.pushNamed(route));
+  }
+
+  bool _tabHasDetail(int index) =>
+      _tabNavigatorKeys[index].currentState?.canPop() ?? false;
+
+  void _popToRoot(int index) =>
+      _tabNavigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
+
+  /// Tapping the tab that's already open: back to its main screen, or, when
+  /// already there, to the top of it, as iOS tab bars do.
+  void _reselectTab(int index) {
+    if (_tabHasDetail(index)) {
+      _popToRoot(index);
+      return;
+    }
+    final controller = _tabScrollControllers[index];
+    if (!controller.hasClients) return;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    for (final position in controller.positions) {
+      if (reduceMotion) {
+        position.jumpTo(0);
+      } else {
+        unawaited(
+          position.animateTo(
+            0,
+            duration: const Duration(milliseconds: 380),
+            curve: Curves.easeOutCubic,
+          ),
+        );
+      }
+    }
+  }
+
   /// Switches to [index] and records the screen view. All tab changes route
   /// through here so analytics stay in sync with what's on screen.
   void _selectTab(int index) {
@@ -531,41 +666,41 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final previousIndex = _selectedIndex;
     _logScreenView(index);
     _tabActivity[previousIndex].value = false;
-    _tabActivity[index].value = !_chatOpen && !_detailRouteOpen;
+    _tabActivity[index].value = !_chatOpen && !_tabHasDetail(index);
     setState(() {
       _loadedTabs.add(index);
       _selectedIndex = index;
+      _detailRouteOpen = _tabHasDetail(index);
     });
-    _insights.select(_contentNavigatorObserver.topRoute, _screenNames[index]);
+    _insights.select(_tabObservers[index].topRoute, _screenNames[index]);
     if (!_startupSplashMounted) _maybeStartTour(_screenNames[index]);
   }
 
-  void _preloadTabs() {
-    var delay = 150;
-    for (var index = 0; index < _tabPages.length; index++) {
-      if (_loadedTabs.contains(index)) continue;
-      _tabPreloadTimers.add(
-        Timer(Duration(milliseconds: delay), () {
-          if (!mounted || _loadedTabs.contains(index)) return;
-          setState(() => _loadedTabs.add(index));
-        }),
-      );
-      delay += 150;
-    }
+  // Launch tuning: how long the selected tab gets to paint its saved data
+  // before the splash lifts, then when the other tabs start mounting. They
+  // mount after the splash so their build work never holds it up.
+  static const _firstDataGrace = Duration(milliseconds: 250);
+  static const _preloadStart = Duration(milliseconds: 600);
+  static const _preloadGap = Duration(milliseconds: 200);
+
+  void _finishLaunch() {
     _tabPreloadTimers.add(
-      // Give the newly mounted Firebase-backed screens time to receive their
-      // first snapshots before starting the transition. This prevents their
-      // initial layout work from competing with the fade animation.
-      Timer(Duration(milliseconds: delay + 1200), () async {
-        await _circlePreload?.timeout(
-          const Duration(seconds: 5),
-          onTimeout: () {},
-        );
+      Timer(_firstDataGrace, () async {
         await WidgetsBinding.instance.endOfFrame;
-        if (mounted) {
-          _homeStressReveal.value = true;
-          setState(() => _startupSplashMounted = false);
-          _maybeStartTour(_screenNames[_selectedIndex]);
+        if (!mounted) return;
+        _homeStressReveal.value = true;
+        setState(() => _startupSplashMounted = false);
+        _maybeStartTour(_screenNames[_selectedIndex]);
+        var delay = _preloadStart;
+        for (var index = 0; index < _tabPages.length; index++) {
+          if (_loadedTabs.contains(index)) continue;
+          _tabPreloadTimers.add(
+            Timer(delay, () {
+              if (!mounted || _loadedTabs.contains(index)) return;
+              setState(() => _loadedTabs.add(index));
+            }),
+          );
+          delay += _preloadGap;
         }
       }),
     );
@@ -613,7 +748,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _ => null,
     };
     if (detail != null) {
-      _contentNavigatorKey.currentState?.push(
+      _tabNavigatorKeys[_selectedIndex].currentState?.push(
         MaterialPageRoute<void>(builder: (_) => detail),
       );
       return;
@@ -637,10 +772,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void _handleContentNavigationChanged() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final detailOpen = _contentNavigatorKey.currentState?.canPop() ?? false;
+      final detailOpen = _tabHasDetail(_selectedIndex);
       _tabActivity[_selectedIndex].value = !detailOpen && !_chatOpen;
       _insights.select(
-        _contentNavigatorObserver.topRoute,
+        _tabObservers[_selectedIndex].topRoute,
         _screenNames[_selectedIndex],
       );
       if (detailOpen != _detailRouteOpen) {
@@ -668,26 +803,59 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // final step, which points at it.
     final hideAssistant =
         _chatOpen || keyboardOpen || (_tourScreen != null && !_tourShowsChat);
-    final activePage = IndexedStack(
+    // iOS hides the tab bar behind the keyboard.
+    final showNavBar = !keyboardOpen;
+    final theme = Theme.of(context);
+    // Screens pushed in a tab end above the floating tab bar; the tab pages
+    // themselves already leave room for it.
+    final tabTheme = theme.copyWith(
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: {
+          for (final platform in TargetPlatform.values)
+            platform: _AboveTabBarTransitions(
+              base: theme.pageTransitionsTheme,
+              bottom: showNavBar ? _navBarClearance : 0,
+              background: theme.scaffoldBackgroundColor,
+            ),
+        },
+      ),
+    );
+    final tabs = IndexedStack(
       index: _selectedIndex,
       children: List.generate(
         _tabPages.length,
         (index) => _loadedTabs.contains(index)
-            ? _tabPages[index]
+            ? TickerMode(
+                enabled: index == _selectedIndex,
+                child: Theme(
+                  data: tabTheme,
+                  child: Navigator(
+                    key: _tabNavigatorKeys[index],
+                    observers: [_tabObservers[index]],
+                    pages: [
+                      MaterialPage<void>(
+                        name: 'tab-$index',
+                        key: ValueKey('main-tab-page-$index'),
+                        child: PrimaryScrollController(
+                          controller: _tabScrollControllers[index],
+                          child: _tabPages[index],
+                        ),
+                      ),
+                    ],
+                    onDidRemovePage: (_) {},
+                    onGenerateRoute: (settings) => switch (MainNavigationScreen
+                        .detailRoutes[settings.name]) {
+                      final builder? => MaterialPageRoute<void>(
+                        settings: settings,
+                        builder: builder,
+                      ),
+                      null => null,
+                    },
+                  ),
+                ),
+              )
             : const SizedBox.shrink(),
       ),
-    );
-    final contentNavigator = Navigator(
-      key: _contentNavigatorKey,
-      observers: [_contentNavigatorObserver],
-      pages: [
-        MaterialPage<void>(
-          name: 'main-tabs',
-          key: const ValueKey('main-content-tabs'),
-          child: activePage,
-        ),
-      ],
-      onDidRemovePage: (_) {},
     );
 
     return PopScope(
@@ -697,7 +865,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         if (_chatOpen) {
           _closeChat();
         } else if (detailRouteVisible) {
-          _contentNavigatorKey.currentState?.maybePop(result);
+          _tabNavigatorKeys[_selectedIndex].currentState?.maybePop(result);
         }
       },
       child: Scaffold(
@@ -705,24 +873,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           children: [
             Positioned.fill(
               child: RepaintBoundary(
-                child: ScreenInsightScope(
-                  controller: _insights,
-                  child: contentNavigator,
-                ),
+                child: ScreenInsightScope(controller: _insights, child: tabs),
               ),
             ),
-            if (!detailRouteVisible)
-              Positioned(
-                bottom: 30,
-                left: 24,
-                right: 24,
+            if (showNavBar)
+              ValueListenableBuilder<double>(
+                valueListenable: _insightLift,
+                builder: (context, lift, bar) => Positioned(
+                  bottom: _navBarInset,
+                  left: _navBarInset,
+                  // Leaves room for the AI button beside it, and takes that
+                  // room back while the button is raised or hidden.
+                  right: hideAssistant
+                      ? _navBarInset
+                      : _navBarInset +
+                            (1 - lift) * (ContextualInsightBar.buttonSize + 8),
+                  child: bar!,
+                ),
                 child: _buildFloatingNavBar(),
               ),
             Positioned(
               key: const ValueKey('ai-chat-bubble-layer'),
-              right: 30,
-              left: 20,
-              bottom: detailRouteVisible ? 30 : 116,
+              right: _navBarInset,
+              left: _navBarInset,
+              bottom: _navBarInset,
               child: IgnorePointer(
                 key: _chatLayerKey,
                 ignoring: hideAssistant,
@@ -739,7 +913,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       suppressed:
                           hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
-                      collapsed: _buildChatBubble(),
+                      button: (context, waves, cheers) =>
+                          _buildChatButton(waves, cheers),
+                      onButtonTap: (from) => _openChat(from: from),
+                      lift: _insightLift,
                       onAsk: (_) => _askAbout(_insights.current),
                     ),
                   ),
@@ -813,20 +990,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               ),
             if (_startupSplashMounted)
               Positioned.fill(
-                child: AbsorbPointer(
-                  child: RepaintBoundary(
-                    child: ColoredBox(
-                      color: context.vivordoColors.page,
-                      child: Center(
-                        child: Image.asset(
-                          'assets/vivordo_splash_logo_full.png',
-                          width: 220,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                        ),
-                      ),
-                    ),
-                  ),
+                child: const AbsorbPointer(
+                  child: RepaintBoundary(child: LaunchSplash()),
                 ),
               ),
           ],
@@ -837,25 +1002,68 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   // No GlobalKey here: the insight bar crossfades this button, so two copies
   // can briefly coexist, which a GlobalKey forbids.
-  Widget _buildChatBubble() => Material(
-    color: primaryPurple,
-    elevation: 10,
-    shadowColor: primaryPurple.withValues(alpha: .38),
-    shape: const CircleBorder(),
-    clipBehavior: Clip.antiAlias,
-    child: Builder(
-      builder: (bubbleContext) => InkWell(
-        onTap: () => _openChat(from: bubbleContext),
-        child: const SizedBox(
-          width: 64,
-          height: 64,
-          child: Center(child: VivordoRobot(size: 30, faceOnly: true)),
+  // No GlobalKey here: the insight bar crossfades this button, so two copies
+  // can briefly coexist, which a GlobalKey forbids.
+  /// The Vivordo AI button: a glass circle like the tab bar, with the 3D
+  /// robot standing in it.
+  Widget _buildChatButton(int waves, int cheers) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: context.vivordoColors.shadow,
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: _glass(
+        radius: ContextualInsightBar.buttonSize / 2,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: isDark ? .10 : .6),
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: VivordoRobot3D(size: 46, waves: waves, cheers: cheers),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _buildFloatingNavBar() {
+  /// Liquid glass, or the solid card colour with iOS Reduce Transparency on.
+  Widget _glass({required double radius, required Widget child}) =>
+      ValueListenableBuilder<bool>(
+        valueListenable: ReduceTransparency.enabled,
+        child: child,
+        builder: (context, solid, child) => solid
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: ColoredBox(
+                  color: context.vivordoColors.card,
+                  child: child,
+                ),
+              )
+            : LiquidGlassLayer(
+                settings: _glassSettings(),
+                child: LiquidGlass(
+                  shape: LiquidRoundedSuperellipse(borderRadius: radius),
+                  clipBehavior: Clip.antiAlias,
+                  child: child!,
+                ),
+              ),
+      );
+
+  /// Liquid glass for the tab bar and the AI button, cached per brightness.
+  LiquidGlassSettings _glassSettings() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_cachedGlassSettingsIsDark != isDark) {
@@ -874,13 +1082,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             : Colors.white.withValues(alpha: .42),
       );
     }
-    final glassSettings = _cachedGlassSettings!;
+    return _cachedGlassSettings!;
+  }
 
+  Widget _buildFloatingNavBar() {
+    final colors = context.vivordoColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    const items = [
+      (CupertinoIcons.house_fill, 'Home'),
+      (CupertinoIcons.calendar_today, 'My Day'),
+      (Icons.fingerprint_rounded, 'Scan'),
+      (Icons.fitness_center_rounded, 'Fitness'),
+      (CupertinoIcons.chart_bar_fill, 'Metrics'),
+    ];
+
+    // Apple's iOS 26 tab bar shape and size, measured from Files: a 62pt
+    // capsule whose selected tab sits in a capsule inset 4pt. Colours stay
+    // Vivordo's: a purple pill behind the selected tab.
     return RepaintBoundary(
       key: _navBarKey,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(_navBarHeight / 2),
           boxShadow: [
             BoxShadow(
               color: colors.shadow,
@@ -889,34 +1113,50 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             ),
           ],
         ),
-        child: LiquidGlassLayer(
-          settings: glassSettings,
-          child: LiquidGlass(
-            shape: const LiquidRoundedSuperellipse(borderRadius: 24),
-            clipBehavior: Clip.antiAlias,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
+        child: _glass(
+          radius: _navBarHeight / 2,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              height: _navBarHeight,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(_navBarHeight / 2),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: isDark ? .10 : .6),
                 ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? .14 : .68),
+              ),
+              child: Stack(
+                children: [
+                  // The selection lens slides to the chosen tab. Placed
+                  // by fraction, so it keeps up while the bar widens.
+                  AnimatedAlign(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(
+                      -1 + 2 * _selectedIndex / (items.length - 1),
+                      0,
+                    ),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / items.length,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          shape: const StadiumBorder(),
+                          color: primaryPurple,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _navItem(Icons.home_rounded, "Home", 0),
-                    _navItem(Icons.calendar_month_rounded, "My Day", 1),
-                    _navItem(Icons.fingerprint_rounded, "Scan", 2),
-                    _navItem(Icons.fitness_center_rounded, "Fitness", 3),
-                    _navItem(Icons.bar_chart_rounded, "Metrics", 4),
-                  ],
-                ),
+                  Row(
+                    children: [
+                      for (final (index, (icon, label)) in items.indexed)
+                        Expanded(child: _navItem(icon, label, index)),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
@@ -929,85 +1169,136 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     bool isActive = _selectedIndex == index;
     final isWorkoutPulse =
         index == 3 && FitnessWorkoutTimerState.isRunning.value;
-    return InkWell(
-      onTap: () {
-        // The standard iOS selection tick, only when the tab actually changes.
-        if (index != _selectedIndex) unawaited(HapticFeedback.selectionClick());
-        _selectTab(index);
-      },
-      borderRadius: BorderRadius.circular(18),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive ? primaryPurple : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isWorkoutPulse)
-              // Without this boundary the pulse repaints the whole liquid
-              // glass nav bar every frame.
-              RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _fitnessPulseController,
-                  child: Icon(
-                    icon,
-                    color: isActive ? Colors.white : primaryPurple,
-                    size: 23,
-                  ),
-                  builder: (context, child) {
-                    final pulse = _fitnessPulseController.value;
-                    return Transform.scale(
-                      scale: 1 + (pulse * .18),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: primaryPurple.withValues(
-                                alpha: .16 + (pulse * .34),
-                              ),
-                              blurRadius: 5 + (pulse * 10),
-                              spreadRadius: pulse * 2,
-                            ),
-                          ],
-                        ),
-                        child: child,
-                      ),
-                    );
-                  },
-                ),
-              )
-            else
-              Icon(
-                icon,
-                color: isActive
-                    ? Colors.white
-                    : index == 2
-                    ? primaryPurple
-                    : context.vivordoColors.textSecondary,
-                size: 23,
-              ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                color: isActive
-                    ? Colors.white
-                    : index == 2
-                    ? primaryPurple
-                    : context.vivordoColors.textSecondary,
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: isActive,
+        child: _navItemButton(icon, label, index, isActive, isWorkoutPulse),
       ),
     );
   }
+
+  Widget _navItemButton(
+    IconData icon,
+    String label,
+    int index,
+    bool isActive,
+    bool isWorkoutPulse,
+  ) {
+    final color = isActive
+        ? Colors.white
+        : index == 2
+        ? primaryPurple
+        : context.vivordoColors.textSecondary;
+    final iconWidget = Icon(icon, color: color, size: 24);
+    return InkWell(
+      onTap: () {
+        if (index == _selectedIndex) {
+          _reselectTab(index);
+          return;
+        }
+        // The standard iOS selection tick, only when the tab actually changes.
+        unawaited(HapticFeedback.selectionClick());
+        _selectTab(index);
+      },
+      customBorder: const StadiumBorder(),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (isWorkoutPulse)
+            // Without this boundary the pulse repaints the whole liquid
+            // glass nav bar every frame.
+            RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _fitnessPulseController,
+                // Purple while a workout runs, as before.
+                child: Icon(
+                  icon,
+                  color: isActive ? Colors.white : primaryPurple,
+                  size: 24,
+                ),
+                builder: (context, child) {
+                  final pulse = _fitnessPulseController.value;
+                  return Transform.scale(
+                    scale: 1 + (pulse * .18),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryPurple.withValues(
+                              alpha: .16 + (pulse * .34),
+                            ),
+                            blurRadius: 5 + (pulse * 10),
+                            spreadRadius: pulse * 2,
+                          ),
+                        ],
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
+              ),
+            )
+          else
+            iconWidget,
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            // The bar keeps its height; iOS tab labels stop growing early too.
+            textScaler: MediaQuery.textScalerOf(
+              context,
+            ).clamp(maxScaleFactor: 1.15),
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The platform's page transition, with every screen above a tab's own page
+/// ending [bottom] above the screen's edge, clear of the floating tab bar.
+class _AboveTabBarTransitions extends PageTransitionsBuilder {
+  const _AboveTabBarTransitions({
+    required this.base,
+    required this.bottom,
+    required this.background,
+  });
+
+  final PageTransitionsTheme base;
+  final double bottom;
+  final Color background;
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => base.buildTransitions(
+    route,
+    context,
+    animation,
+    secondaryAnimation,
+    route.isFirst || bottom == 0
+        ? child
+        : ColoredBox(
+            color: background,
+            // The home-indicator inset stays: pages size their bottom
+            // spacing for it and the AI button above it.
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottom),
+              child: child,
+            ),
+          ),
+  );
 }
 
 class _ContentNavigatorObserver extends NavigatorObserver {

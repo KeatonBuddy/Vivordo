@@ -409,7 +409,7 @@ class _AddFriendRing extends StatelessWidget {
                 color: context.circle.accentTint,
                 border: Border.all(color: _brand, width: 2),
               ),
-              child: Icon(Icons.add_rounded, color: context.circle.accent),
+              child: Icon(CupertinoIcons.add, color: context.circle.accent),
             ),
             const SizedBox(height: 6),
             Text(
@@ -715,9 +715,9 @@ class _AcceptDeclineButtons extends StatelessWidget {
         child: busy
             ? const SizedBox.square(
                 dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
+                child: CupertinoActivityIndicator(
                   color: Colors.white,
+                  radius: 8,
                 ),
               )
             : const Text('Accept'),
@@ -833,7 +833,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
             const SizedBox(height: 14),
             if (visible.isEmpty)
               _EmptyState(
-                icon: Icons.favorite_border_rounded,
+                icon: CupertinoIcons.heart,
                 title: all.isEmpty
                     ? 'No recent activity'
                     : _filter == _ActivityFilter.workouts
@@ -861,9 +861,10 @@ class _ActivityFeedState extends State<_ActivityFeed> {
 bool _isMine(CircleActivity activity) =>
     activity.profile.uid == FirebaseAuth.instance.currentUser?.uid;
 
-String _activityDetails(CircleActivity activity) => [
+/// Distances are stored in km and shown in each viewer's own units.
+String _activityDetails(CircleActivity activity, Units units) => [
   if (activity.minutes > 0) '${activity.minutes} min',
-  if (activity.km != null) '${activity.km!.toStringAsFixed(1)} km',
+  if (activity.km != null) units.formatDistance(activity.km!),
   if (activity.sets != null && activity.sets! > 0) '${activity.sets} sets',
 ].join(' · ');
 
@@ -882,7 +883,7 @@ class _ActivityVisual extends StatelessWidget {
     }
     if (activity.kind == 'journal') {
       return _IconTile(
-        icon: Icons.menu_book_rounded,
+        icon: CupertinoIcons.book_fill,
         color: context.circle.pink,
         background: context.circle.pinkTint,
         size: size,
@@ -909,7 +910,10 @@ class _ActivityPostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final details = _activityDetails(activity);
+    final details = _activityDetails(
+      activity,
+      context.watch<ThemeController>().units,
+    );
     final (verb, subject) = switch (activity.kind) {
       'journal' => ('shared a', 'Journal Entry'),
       'achievement' => (
@@ -1038,9 +1042,7 @@ class _EngagementBarState extends State<_EngagementBar> {
         builder: (context, commentsSnapshot) => Row(
           children: [
             _EngagementButton(
-              icon: liked
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
+              icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
               label: '${likes.length}',
               semanticLabel: liked ? 'Unlike' : 'Like',
               active: liked,
@@ -1049,7 +1051,7 @@ class _EngagementBarState extends State<_EngagementBar> {
             ),
             const SizedBox(width: 10),
             _EngagementButton(
-              icon: Icons.chat_bubble_outline_rounded,
+              icon: CupertinoIcons.chat_bubble,
               label: '${commentsSnapshot.data?.length ?? 0}',
               semanticLabel: 'Comments',
               onTap: () => _openActivityDetails(context, widget.activity),
@@ -1058,7 +1060,7 @@ class _EngagementBarState extends State<_EngagementBar> {
             if (!_isMine(widget.activity))
               IconButton(
                 tooltip: 'Report post',
-                icon: Icon(Icons.flag_outlined, color: context.muted, size: 20),
+                icon: Icon(CupertinoIcons.flag, color: context.muted, size: 20),
                 onPressed: () => _reportPost(context, widget.activity),
               ),
           ],
@@ -1132,7 +1134,7 @@ class _EngagementButton extends StatelessWidget {
                 if (busy)
                   const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CupertinoActivityIndicator(radius: 9),
                   )
                 else
                   Icon(icon, size: 21, color: color),
@@ -1163,7 +1165,7 @@ class _AchievementActivityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fallback = _IconTile(
-      icon: Icons.emoji_events_rounded,
+      icon: CupertinoIcons.rosette,
       color: context.circle.accent,
       background: context.circle.accentTint,
       size: size,
@@ -1202,11 +1204,7 @@ Future<void> _reportPost(BuildContext context, CircleActivity activity) async {
     ),
   );
   if (submitted == true && context.mounted) {
-    _showSnack(
-      context,
-      'Report sent. Thanks for letting us know.',
-      kind: ToastKind.success,
-    );
+    await _offerBlock(context, activity.profile.uid, activity.profile.username);
   }
 }
 
@@ -1238,11 +1236,39 @@ Future<void> _reportComment(
     ),
   );
   if (sent == true && context.mounted) {
-    _showSnack(
-      context,
-      'Report sent. Thanks for letting us know.',
-      kind: ToastKind.success,
-    );
+    await _offerBlock(context, comment.authorUid, comment.authorName);
+  }
+}
+
+/// After a report: confirms it was sent and offers to block [username] too.
+Future<void> _offerBlock(
+  BuildContext context,
+  String uid,
+  String username,
+) async {
+  final block = await confirmAction(
+    context,
+    title: 'Report sent',
+    message:
+        'Thanks for letting us know. You can also block $username: this '
+        'removes your friendship and hides their posts, and they can’t find '
+        'or add you. They aren’t told.',
+    confirmLabel: 'Block',
+    cancelLabel: 'Not Now',
+  );
+  if (!block || !context.mounted) return;
+  try {
+    await CircleProfileService.blockUser(uid);
+    if (context.mounted) showToast(context, '$username is blocked.');
+  } catch (error) {
+    debugPrint('Block user failed: $error');
+    if (context.mounted) {
+      _showSnack(
+        context,
+        "Couldn't block $username. Try again.",
+        kind: ToastKind.error,
+      );
+    }
   }
 }
 
@@ -1347,7 +1373,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                         ),
                         if (!_isMine(activity))
                           _IconCircleButton(
-                            icon: Icons.flag_outlined,
+                            icon: CupertinoIcons.flag,
                             tooltip: 'Report post',
                             onTap: () => _reportPost(context, activity),
                           ),
@@ -1381,7 +1407,10 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                           _StatChip(label: '${activity.minutes} min'),
                         if (activity.km != null)
                           _StatChip(
-                            label: '${activity.km!.toStringAsFixed(1)} km',
+                            label: context
+                                .watch<ThemeController>()
+                                .units
+                                .formatDistance(activity.km!),
                           ),
                         if (activity.sets != null && activity.sets! > 0)
                           _StatChip(label: '${activity.sets} sets'),
@@ -1469,9 +1498,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
             ),
           ),
           _IconCircleButton(
-            icon: liked
-                ? Icons.favorite_rounded
-                : Icons.favorite_border_rounded,
+            icon: liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
             tooltip: liked ? 'Unlike' : 'Like',
             filled: liked,
             onTap: _savingLike ? null : () => _toggleLike(liked),
@@ -1803,11 +1830,11 @@ class _CommentComposer extends StatelessWidget {
                 dimension: 44,
                 child: Padding(
                   padding: EdgeInsets.all(12),
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CupertinoActivityIndicator(),
                 ),
               )
             : _IconCircleButton(
-                icon: Icons.send_rounded,
+                icon: CupertinoIcons.paperplane_fill,
                 tooltip: 'Send comment',
                 filled: true,
                 onTap: onSend,

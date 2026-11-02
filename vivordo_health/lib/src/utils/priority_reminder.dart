@@ -1,6 +1,9 @@
+/// When a priority's notification goes off, or null for none. A timed
+/// priority has none unless [minutesBefore] was set; an untimed one only
+/// with [reminderTimeMinutes].
 DateTime? priorityReminderTime({
   required DateTime? start,
-  required int minutesBefore,
+  required int? minutesBefore,
   required bool completed,
   required bool allDay,
   required DateTime now,
@@ -24,6 +27,7 @@ DateTime? priorityReminderTime({
     );
     return time.isAfter(now) ? time : null;
   }
+  if (minutesBefore == null) return null;
   final time = start.subtract(Duration(minutes: minutesBefore));
   return time.isAfter(now) ? time : null;
 }

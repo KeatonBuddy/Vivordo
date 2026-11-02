@@ -58,7 +58,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
                     const SizedBox(height: 18),
                     FilledButton.icon(
                       onPressed: () => _challenge(profile),
-                      icon: const Icon(Icons.emoji_events_rounded, size: 19),
+                      icon: const Icon(CupertinoIcons.rosette, size: 19),
                       label: Text('Challenge ${profile.username}'),
                       style: _primaryButtonStyle(),
                     ),
@@ -107,7 +107,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
       const Spacer(),
       if (isOwner) ...[
         _IconCircleButton(
-          icon: Icons.ios_share_rounded,
+          icon: CupertinoIcons.share,
           tooltip: 'Copy invite',
           onTap: () => _copy(
             context,
@@ -117,13 +117,13 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
         ),
         const SizedBox(width: 8),
         _IconCircleButton(
-          icon: Icons.edit_rounded,
+          icon: CupertinoIcons.pencil,
           tooltip: 'Edit profile',
           onTap: () => _edit(profile),
         ),
         const SizedBox(width: 8),
         _IconCircleButton(
-          icon: Icons.settings_outlined,
+          icon: CupertinoIcons.gear,
           tooltip: 'Settings',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
@@ -131,7 +131,7 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
         ),
       ] else
         _IconCircleButton(
-          icon: Icons.more_horiz_rounded,
+          icon: CupertinoIcons.ellipsis,
           tooltip: 'More options',
           onTap: () => _showFriendOptions(profile),
         ),
@@ -349,7 +349,7 @@ class _ProfileHero extends StatelessWidget {
                 right: -2,
                 bottom: 2,
                 child: _IconCircleButton(
-                  icon: Icons.camera_alt_rounded,
+                  icon: CupertinoIcons.camera_fill,
                   tooltip: 'Change photo',
                   filled: true,
                   onTap: onEdit,
@@ -747,7 +747,7 @@ class _ProfileActivityRow extends StatelessWidget {
     };
     final details = activity.kind == 'journal'
         ? activity.mood ?? 'Shared reflection'
-        : _activityDetails(activity);
+        : _activityDetails(activity, context.watch<ThemeController>().units);
     return _CircleCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       onTap: () => _openActivityDetails(context, activity),
@@ -782,7 +782,7 @@ class _ProfileActivityRow extends StatelessWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right_rounded, color: context.muted),
+          Icon(CupertinoIcons.chevron_right, color: context.muted),
         ],
       ),
     );

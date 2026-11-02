@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
@@ -57,19 +58,19 @@ String timeOfDayGreeting(DateTime now) => now.hour < 12
     : 'Good evening';
 
 const _feelIcons = [
-  Icons.sentiment_very_dissatisfied_rounded,
-  Icons.sentiment_dissatisfied_rounded,
-  Icons.sentiment_neutral_rounded,
-  Icons.sentiment_satisfied_rounded,
-  Icons.sentiment_very_satisfied_rounded,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley,
+  CupertinoIcons.smiley_fill,
 ];
 
 const _sleepIcons = [
-  Icons.bedtime_off_outlined,
-  Icons.bedtime_outlined,
-  Icons.bedtime_outlined,
-  Icons.bedtime_rounded,
-  Icons.bedtime_rounded,
+  CupertinoIcons.moon_zzz,
+  CupertinoIcons.moon,
+  CupertinoIcons.moon,
+  CupertinoIcons.moon_fill,
+  CupertinoIcons.moon_fill,
 ];
 
 /// The daily check-in on Home as one line, under the stress card: shown
@@ -118,7 +119,7 @@ class CheckInRow extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: colors.textSecondary),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
@@ -363,7 +364,7 @@ class _CheckInSheetState extends State<_CheckInSheet> {
               shape: BoxShape.circle,
             ),
             child: const Icon(
-              Icons.check_rounded,
+              CupertinoIcons.checkmark,
               color: Color(0xFF0F6E56),
               size: 30,
             ),
