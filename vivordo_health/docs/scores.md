@@ -719,7 +719,15 @@ and words, never a score.
   to your usual bedtime: body clock (a 24 h wave peaking 11 h after your
   sleep midpoint, plus a 12 h wave peaking 5.5 h after it) − sleep pressure
   (rising while awake, time constant 18.2 h, starting higher after a short
-  night or with sleep debt) − grogginess (fading over ~70 min). The constants
+  night or with sleep debt), times the share grogginess leaves you,
+  e^(−1.7 × grogginess), so it never pins the curve flat at zero
+  (grogginess fades over ~70 min; heavier and
+  longer after going to bed in sleep debt, ×(1 + 0.06 per hour, so a
+  catch-up night included), or after waking before your usual wake for that
+  kind of day, ×(1 + 0.15 per hour early, up to 3 h); at most ×2. A long
+  night on its own adds nothing, since one extended night in a rested
+  sleeper barely changes grogginess (Hilditch, Dement & Carskadon 2022).
+  The sheet names the bigger cause once it adds 0.2 or more). The constants
   are product choices fitted to the textbook day of an 11 PM–7 AM sleeper;
   tune them later against "How's your energy?" answers.
 - **Inputs:** the last 14 nights (sleep start and end), last night, and
@@ -728,8 +736,16 @@ and words, never a score.
   - **Chronotype:** the median sleep midpoint, preferring weekend nights
     when there are at least 2. Until there are 5 nights it comes from your
     usual sleep schedule (below), else 3:30 AM.
-  - **Sleep debt:** the shortfall against your need over the last 7 nights,
-    capped at 10 h.
+  - **Today's body clock** (from 5 nights): the chronotype pulled 35% of
+    the way towards the last 4 nights' midpoints (last night weighted 1,
+    then ½, ¼, ⅛), so a weekend lie-in makes Monday run later than Friday
+    (a 3 h later weekend wake moved the clock ~40 min in Taylor et al.
+    2008). Bedtime, the estimated wake and the sheet's "body clock runs
+    late" still use the chronotype.
+  - **Sleep debt:** the last 7 nights, oldest first: a short night adds
+    its shortfall against your need, a long night pays back half its extra
+    (one recovery night only partly restores, Banks et al. 2010), never
+    below 0 or above 10 h.
 - **Windows:**
   - groggy: until grogginess fades;
   - peak: the high point in the first half of the waking day;

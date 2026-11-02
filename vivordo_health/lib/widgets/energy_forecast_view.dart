@@ -524,6 +524,10 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           ? 'You slept ${_hoursText(forecast.sleptHours)}, '
                 '${_hoursText(short)} under your need, so today\'s peak is a '
                 'little lower and the dip a little deeper.'
+          : short <= -0.5
+          ? 'You slept ${_hoursText(forecast.sleptHours)}, '
+                '${_hoursText(-short)} over your need.'
+                '${forecast.sleepDebtHours >= 1 ? ' Half the extra pays back sleep debt.' : ''}'
           : 'You slept ${_hoursText(forecast.sleptHours)}, about what you '
                 'need.',
     ),
@@ -539,7 +543,14 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
         CupertinoIcons.sunset_fill,
         '${forecast.estimated ? 'You usually wake' : 'You woke'} at '
             '${DateFormat.jm().format(forecast.wake)}. Expect some grogginess '
-            'until about ${DateFormat.jm().format(groggy.end)}.',
+            'until about ${DateFormat.jm().format(groggy.end)}'
+            '${switch (forecast.heavyGrogginess) {
+              HeavyGrogginess.sleepDebt when !forecast.needIsDefault => ", longer than usual since you've been short on sleep this "
+                  'week',
+              HeavyGrogginess.earlyWake => ', longer than usual since you woke earlier than you '
+                  'usually do',
+              _ => '',
+            }}.',
       ),
     (
       CupertinoIcons.clock,
