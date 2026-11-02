@@ -219,7 +219,7 @@ class MeetingPatternsRow extends StatelessWidget {
         now.weekday == DateTime.monday) {
       icon = CupertinoIcons.chart_bar_alt_fill;
       accent = const Color(0xFF7F77DD);
-      title = 'Learning which events get to you';
+      title = 'Learning which events affect you';
       subtitle =
           '${patterns.measured} of about ${MeetingPatterns.learningTarget} '
           'events measured';

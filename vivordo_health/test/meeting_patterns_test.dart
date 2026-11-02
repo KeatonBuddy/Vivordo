@@ -235,7 +235,7 @@ void main() {
       await show(tester, learning, const []);
       expect(find.byType(InkWell), findsNothing);
       await show(tester, learning, const [], at: DateTime(2026, 10, 5, 9));
-      expect(find.text('Learning which events get to you'), findsOneWidget);
+      expect(find.text('Learning which events affect you'), findsOneWidget);
     });
   });
 

@@ -62,7 +62,7 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Learning which events get to you',
+                        'Learning which events affect you',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -71,10 +71,11 @@ class _MeetingPatternsScreenState extends State<MeetingPatternsScreen> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Vivordo needs your watch\'s heart rate during a few '
-                        'weeks of events before it can say anything honest. '
-                        'A repeating event needs 4 measured times; a kind '
-                        'of event needs 8.',
+                        'Vivordo needs your wearable\'s heart rate during a '
+                        'few weeks of events before it can say anything '
+                        'honest. A repeating event needs 4 measured times; a '
+                        'group of similar events, like 1:1s or anything '
+                        'before 10 AM, needs 8.',
                         style: secondary(),
                       ),
                       const SizedBox(height: 12),
