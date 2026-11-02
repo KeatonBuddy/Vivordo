@@ -401,6 +401,7 @@ private final class SleepObserver {
   private var channel: FlutterMethodChannel?
   private var waiting: [() -> Void] = []
   private var syncing = false
+  private var started = false
 
   func start() {
     guard HKHealthStore.isHealthDataAvailable() else { return }
@@ -408,6 +409,15 @@ private final class SleepObserver {
       [weak self] _, completion, error in
       DispatchQueue.main.async {
         guard let self, error == nil else { return completion() }
+        // HealthKit calls once as the query starts. On a normal open the
+        // launch sync already reads sleep; in the background that first call
+        // is the new-sleep wake, so it still syncs.
+        if !self.started {
+          self.started = true
+          if UIApplication.shared.applicationState != .background {
+            return completion()
+          }
+        }
         var called = false
         let done = {
           guard !called else { return }
