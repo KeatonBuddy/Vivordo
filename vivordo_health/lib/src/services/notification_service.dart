@@ -436,10 +436,10 @@ class NotificationService {
     (_) => ',',
   );
 
-  /// Asks the OS for notification permission (onboarding's last step; iOS and
-  /// Android 13+ show the prompt once). Returns whether notifications can show.
+  /// Asks iOS for notification permission (onboarding's last step; iOS only
+  /// ever shows the prompt once). Returns whether notifications can show.
   Future<bool> requestPermission() async {
-    if (kIsWeb) return true;
+    if (kIsWeb || !Platform.isIOS) return true;
     final settings = await _firebaseMessaging.requestPermission(
       alert: true,
       badge: true,
@@ -488,10 +488,7 @@ class NotificationService {
           );
 
       const InitializationSettings initializationSettings =
-          InitializationSettings(
-            iOS: initializationSettingsIOS,
-            android: AndroidInitializationSettings('ic_stat_vivordo'),
-          );
+          InitializationSettings(iOS: initializationSettingsIOS);
 
       await _localNotificationsPlugin.initialize(
         initializationSettings,
@@ -757,12 +754,6 @@ class NotificationService {
 
     const NotificationDetails platformChannelSpecifics = NotificationDetails(
       iOS: iOSPlatformChannelSpecifics,
-      android: AndroidNotificationDetails(
-        'general',
-        'General',
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
     );
 
     await _localNotificationsPlugin.show(
@@ -831,10 +822,6 @@ class NotificationService {
 
     const NotificationDetails notificationDetails = NotificationDetails(
       iOS: iOSDetails,
-      android: AndroidNotificationDetails(
-        'scan_reminders',
-        'Daily scan reminders',
-      ),
     );
 
     try {
@@ -1031,10 +1018,6 @@ class NotificationService {
     }
 
     const notificationDetails = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'calendar_check_in',
-        'Calendar check-ins',
-      ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,

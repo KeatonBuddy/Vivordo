@@ -1,4 +1,4 @@
-package com.vivordo.health
+package com.example.vivordo_health
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

@@ -1243,7 +1243,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                       status: (
                         selectedMetricCount > 0,
                         selectedMetricCount > 0
-                            ? '$selectedMetricCount of ${kAvailableHealthMetrics.length} metrics'
+                            ? '$selectedMetricCount of ${kHealthMetrics.length} metrics'
                             : 'Off',
                       ),
                       trailing: const _Chevron(),
@@ -2241,7 +2241,7 @@ Map<String, bool> _healthConsent(Map<String, dynamic> userData) =>
 
 int _selectedHealthMetrics(Map<String, dynamic> userData) {
   final consent = _healthConsent(userData);
-  return kAvailableHealthMetrics.where((metric) => consent[metric.key] == true).length;
+  return kHealthMetrics.where((metric) => consent[metric.key] == true).length;
 }
 
 /// Which Apple Health metrics Vivordo syncs, one switch each.
@@ -2323,7 +2323,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
         final data = snapshot.data?.data() ?? const <String, dynamic>{};
         final consent = _healthConsent(data);
         final selected = _selectedHealthMetrics(data);
-        final allOn = selected == kAvailableHealthMetrics.length;
+        final allOn = selected == kHealthMetrics.length;
         return Scaffold(
           backgroundColor: colors.page,
           body: SafeArea(
@@ -2410,7 +2410,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                 ),
                 _SettingsCard(
                   children: [
-                    for (final metric in kAvailableHealthMetrics)
+                    for (final metric in kHealthMetrics)
                       _metricRow(metric, enabled: consent[metric.key] == true),
                   ],
                 ),
