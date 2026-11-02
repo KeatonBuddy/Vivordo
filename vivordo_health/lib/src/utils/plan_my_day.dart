@@ -14,6 +14,14 @@ typedef PlannedSlot = ({
 
 typedef UnplacedTask = ({PlanTask task, String reason});
 
+/// The suggested plan, plus every time each task could go instead
+/// ([options], by task id).
+typedef DayPlan = ({
+  List<PlannedSlot> placed,
+  List<UnplacedTask> unplaced,
+  Map<String, List<PlannedSlot>> options,
+});
+
 const _step = Duration(minutes: 15);
 
 /// How soon from now a slot may start.
@@ -30,9 +38,11 @@ const _gap = Duration(minutes: 10);
 /// Demanding work goes first, into your peak or second wind; light work
 /// into the dip; moderate anywhere but a low patch. Without a [forecast],
 /// the earliest free time. Tasks with no room are [UnplacedTask]s, with why.
+/// Each task's [DayPlan.options] are one time in every free stretch it fits
+/// (the best fit in it), around events only, so you can choose your own.
 /// Priorities without a time already count in Demand, so placing them
 /// doesn't add to the day.
-({List<PlannedSlot> placed, List<UnplacedTask> unplaced}) planMyDay({
+DayPlan planMyDay({
   required DateTime now,
   required DateTime wrapUp,
   required List<EffortItem> items,
@@ -90,6 +100,52 @@ const _gap = Duration(minutes: 10);
     _ => 0,
   };
 
+  PlannedSlot slot(PlanTask task, DateTime start) => (
+    task: task,
+    start: start,
+    end: start.add(Duration(minutes: task.minutes)),
+    reason: switch ((task.effort, forecast?.phaseAt(start))) {
+      ('light', EnergyPhase.dip) => 'Light work for your dip',
+      (_, EnergyPhase.peak) => 'In your peak',
+      (_, EnergyPhase.secondWind) => 'In your second wind',
+      _ => 'The next open time',
+    },
+  );
+
+  // Before the plan takes any time: one option per free stretch.
+  final options = {
+    for (final task in tasks)
+      task.id: () {
+        final length = Duration(minutes: task.minutes);
+        final found = <PlannedSlot>[];
+        DateTime? best;
+        var bestFit = 1 << 30;
+        void close() {
+          if (best case final start?) found.add(slot(task, start));
+          best = null;
+          bestFit = 1 << 30;
+        }
+
+        for (
+          var start = earliest;
+          !start.add(length).isAfter(limit);
+          start = start.add(_step)
+        ) {
+          if (!free(start, start.add(length))) {
+            close();
+            continue;
+          }
+          final score = fit(task, forecast?.phaseAt(start));
+          if (score < bestFit) {
+            best = start;
+            bestFit = score;
+          }
+        }
+        close();
+        return found;
+      }(),
+  };
+
   final placed = <PlannedSlot>[];
   final unplaced = <UnplacedTask>[];
   for (final task in ordered) {
@@ -116,23 +172,11 @@ const _gap = Duration(minutes: 10);
       ));
       continue;
     }
-    final end = best.add(length);
-    busy.add((start: best, end: end));
-    final phase = forecast?.phaseAt(best);
-    placed.add((
-      task: task,
-      start: best,
-      end: end,
-      reason: switch ((task.effort, phase)) {
-        ('light', EnergyPhase.dip) => 'Light work for your dip',
-        (_, EnergyPhase.peak) => 'In your peak',
-        (_, EnergyPhase.secondWind) => 'In your second wind',
-        _ => 'The next open time',
-      },
-    ));
+    busy.add((start: best, end: best.add(length)));
+    placed.add(slot(task, best));
   }
   placed.sort((a, b) => a.start.compareTo(b.start));
-  return (placed: placed, unplaced: unplaced);
+  return (placed: placed, unplaced: unplaced, options: options);
 }
 
 String _gapLabel(int minutes) =>

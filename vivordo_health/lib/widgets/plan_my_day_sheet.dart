@@ -10,69 +10,143 @@ import 'vivordo_time_picker.dart';
 /// changed) and the tasks to move to tomorrow. Null when dismissed.
 typedef PlanChoice = ({List<PlannedSlot> slots, List<PlanTask> tomorrow});
 
-/// "Plan my day": the proposed times, each with why it's there. A slot can
-/// be retimed (tap) or skipped; what didn't fit can go to tomorrow. Times
-/// stay in Vivordo; the calendar isn't changed.
+/// "Plan my day": each priority with every time it could go today, the
+/// suggested one picked. Pick another, your own time, tomorrow, or none
+/// (tap the picked one again); a time taken by another priority can't be
+/// picked. Times stay in Vivordo; the calendar isn't changed.
 Future<PlanChoice?> showPlanMyDaySheet(
   BuildContext context, {
-  required List<PlannedSlot> placed,
-  required List<UnplacedTask> unplaced,
+  required DayPlan plan,
 }) => showAppleSheet<PlanChoice>(
   context,
-  builder: (sheetContext) =>
-      _PlanMyDaySheet(placed: placed, unplaced: unplaced),
+  builder: (sheetContext) => _PlanMyDaySheet(plan: plan),
 );
 
 class _PlanMyDaySheet extends StatefulWidget {
-  const _PlanMyDaySheet({required this.placed, required this.unplaced});
+  const _PlanMyDaySheet({required this.plan});
 
-  final List<PlannedSlot> placed;
-  final List<UnplacedTask> unplaced;
+  final DayPlan plan;
 
   @override
   State<_PlanMyDaySheet> createState() => _PlanMyDaySheetState();
 }
 
 class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
-  late final List<PlannedSlot> _slots = [...widget.placed];
-  final _skipped = <String>{};
+  // Suggested first, in time order, then what didn't fit.
+  late final List<PlanTask> _tasks = [
+    for (final slot in widget.plan.placed) slot.task,
+    for (final (:task, reason: _) in widget.plan.unplaced) task,
+  ];
+  late final Map<String, PlannedSlot> _picked = {
+    for (final slot in widget.plan.placed) slot.task.id: slot,
+  };
+
+  /// Times you set yourself, offered beside the suggestions.
+  final _own = <String, PlannedSlot>{};
   final _tomorrow = <String>{};
 
-  Future<void> _retime(int index) async {
-    final slot = _slots[index];
+  List<PlannedSlot> _optionsFor(PlanTask task) {
+    final options = {
+      for (final o in widget.plan.options[task.id] ?? const <PlannedSlot>[])
+        o.start: o,
+    };
+    for (final extra in [_picked[task.id], _own[task.id]]) {
+      if (extra != null) options[extra.start] = extra;
+    }
+    return options.values.toList()..sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  bool _clashes(PlannedSlot option) => _picked.values.any(
+    (p) =>
+        p.task.id != option.task.id &&
+        option.start.isBefore(p.end) &&
+        p.start.isBefore(option.end),
+  );
+
+  void _pick(PlanTask task, PlannedSlot slot) => setState(() {
+    _tomorrow.remove(task.id);
+    if (_picked[task.id]?.start == slot.start) {
+      _picked.remove(task.id);
+    } else {
+      _picked[task.id] = slot;
+    }
+  });
+
+  Future<void> _ownTime(PlanTask task) async {
+    final from = _picked[task.id]?.start ?? DateTime.now();
     final picked = await showVivordoTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(slot.start),
-      title: slot.task.title,
+      initialTime: TimeOfDay.fromDateTime(from),
+      title: task.title,
       minuteInterval: 5,
     );
     if (picked == null || !mounted) return;
     final start = DateTime(
-      slot.start.year,
-      slot.start.month,
-      slot.start.day,
+      from.year,
+      from.month,
+      from.day,
       picked.hour,
       picked.minute,
     );
-    setState(
-      () => _slots[index] = (
-        task: slot.task,
-        start: start,
-        end: start.add(slot.end.difference(slot.start)),
-        reason: 'Your time',
-      ),
+    final PlannedSlot slot = (
+      task: task,
+      start: start,
+      end: start.add(Duration(minutes: task.minutes)),
+      reason: 'Your time',
     );
+    _own[task.id] = slot;
+    _picked.remove(task.id);
+    _pick(task, slot);
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
-    final kept = [
-      for (final slot in _slots)
-        if (!_skipped.contains(slot.task.id)) slot,
+    final kept = [for (final task in _tasks) ?_picked[task.id]]
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final tomorrow = [
+      for (final task in _tasks)
+        if (_tomorrow.contains(task.id)) task,
     ];
     final secondary = TextStyle(fontSize: 12, color: colors.textSecondary);
     String time(DateTime t) => DateFormat.jm().format(t);
+    final reasons = {
+      for (final (:task, :reason) in widget.plan.unplaced) task.id: reason,
+    };
+
+    Widget chip(String label, {required bool selected, VoidCallback? onTap}) =>
+        Semantics(
+          button: true,
+          selected: selected,
+          enabled: onTap != null,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? VivordoTheme.brand : null,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: selected ? VivordoTheme.brand : colors.border,
+                ),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? Colors.white
+                      : onTap == null
+                      ? colors.textSecondary.withValues(alpha: .45)
+                      : colors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        );
+
     return SafeArea(
       top: false,
       child: ConstrainedBox(
@@ -95,142 +169,89 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                _slots.isEmpty
-                    ? 'There isn\'t room for these before your wrap-up.'
-                    : 'Times for ${_slots.length == 1 ? 'a priority' : '${_slots.length} priorities'}, around your events, heavy ones in your peak. Only in Vivordo; your calendar isn\'t changed.',
+                'Pick a time for each, or leave it for later. Times fit '
+                'around your events, heavy ones in your peak. Only in '
+                'Vivordo; your calendar isn\'t changed.',
                 style: TextStyle(fontSize: 14, color: colors.textSecondary),
               ),
               const SizedBox(height: 12),
-              for (var i = 0; i < _slots.length; i++)
+              for (final task in _tasks)
                 Builder(
                   builder: (context) {
-                    final slot = _slots[i];
-                    final skipped = _skipped.contains(slot.task.id);
-                    return DecoratedBox(
+                    final picked = _picked[task.id];
+                    final options = _optionsFor(task);
+                    final note = picked != null
+                        ? '${time(picked.start)}–${time(picked.end)} · ${picked.reason}'
+                        : _tomorrow.contains(task.id)
+                        ? 'Moves to tomorrow'
+                        : options.isEmpty
+                        ? reasons[task.id] ?? 'No room before your wrap-up'
+                        : options.every(_clashes)
+                        ? 'Its open times are taken by your other picks'
+                        : 'No time yet';
+                    return Container(
+                      // Full width, so the line above spans the sheet.
+                      width: double.infinity,
                       decoration: BoxDecoration(
                         border: Border(
                           top: BorderSide(color: colors.border, width: .5),
                         ),
                       ),
-                      child: InkWell(
-                        onTap: skipped ? null : () => _retime(i),
-                        child: Opacity(
-                          opacity: skipped ? .45 : 1,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Row(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            Text(note, style: secondary),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
                               children: [
-                                SizedBox(
-                                  width: 76,
-                                  child: Text(
-                                    time(slot.start),
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: VivordoTheme.brand,
-                                    ),
+                                for (final option in options)
+                                  chip(
+                                    time(option.start),
+                                    selected: picked?.start == option.start,
+                                    onTap: _clashes(option)
+                                        ? null
+                                        : () => _pick(task, option),
                                   ),
+                                chip(
+                                  'Other time',
+                                  selected: false,
+                                  onTap: () => _ownTime(task),
                                 ),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        slot.task.title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                          color: colors.textPrimary,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${time(slot.start)}–${time(slot.end)} · ${slot.reason}',
-                                        style: secondary,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => setState(
-                                    () => skipped
-                                        ? _skipped.remove(slot.task.id)
-                                        : _skipped.add(slot.task.id),
-                                  ),
-                                  child: Text(skipped ? 'Keep' : 'Skip'),
+                                chip(
+                                  'Tomorrow',
+                                  selected: _tomorrow.contains(task.id),
+                                  onTap: () => setState(() {
+                                    if (!_tomorrow.remove(task.id)) {
+                                      _tomorrow.add(task.id);
+                                      _picked.remove(task.id);
+                                    }
+                                  }),
                                 ),
                               ],
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     );
                   },
                 ),
-              if (widget.unplaced.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Text(
-                  "Couldn't fit",
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: colors.textSecondary,
-                  ),
-                ),
-                for (final (:task, :reason) in widget.unplaced)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: colors.border, width: .5),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  task.title,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: colors.textPrimary,
-                                  ),
-                                ),
-                                Text(reason, style: secondary),
-                              ],
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => setState(
-                              () => _tomorrow.contains(task.id)
-                                  ? _tomorrow.remove(task.id)
-                                  : _tomorrow.add(task.id),
-                            ),
-                            child: Text(
-                              _tomorrow.contains(task.id)
-                                  ? 'Tomorrow ✓'
-                                  : 'Tomorrow?',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => Navigator.pop<PlanChoice>(context, (
                   slots: kept,
-                  tomorrow: [
-                    for (final (:task, reason: _) in widget.unplaced)
-                      if (_tomorrow.contains(task.id)) task,
-                  ],
+                  tomorrow: tomorrow,
                 )),
                 style: FilledButton.styleFrom(
                   backgroundColor: VivordoTheme.brand,
@@ -240,7 +261,7 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
                   ),
                 ),
                 child: Text(
-                  kept.isEmpty && _tomorrow.isEmpty
+                  kept.isEmpty && tomorrow.isEmpty
                       ? 'Close'
                       : kept.isEmpty
                       ? 'Move to tomorrow'

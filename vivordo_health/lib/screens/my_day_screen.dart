@@ -2725,10 +2725,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   /// Today's plan for [untimed] priorities (plan_my_day.dart).
-  ({List<PlannedSlot> placed, List<UnplacedTask> unplaced}) _planFor(
-    List<DailyPriority> untimed,
-    DateTime now,
-  ) {
+  DayPlan _planFor(List<DailyPriority> untimed, DateTime now) {
     final today = DateUtils.dateOnly(now);
     return planMyDay(
       now: now,
@@ -2756,17 +2753,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// Plan my day: times for [untimed] priorities around today's events and
   /// energy (plan_my_day.dart), shown to keep, retime or skip. Times stay in
   /// Vivordo, like a time set by hand; what doesn't fit can go to tomorrow.
-  Future<void> _planMyDay(
-    List<DailyPriority> untimed,
-    ({List<PlannedSlot> placed, List<UnplacedTask> unplaced}) plan,
-  ) async {
+  Future<void> _planMyDay(List<DailyPriority> untimed, DayPlan plan) async {
     final today = DateUtils.dateOnly(DateTime.now());
     final byId = {for (final p in untimed) p.reference.path: p};
-    final choice = await showPlanMyDaySheet(
-      context,
-      placed: plan.placed,
-      unplaced: plan.unplaced,
-    );
+    final choice = await showPlanMyDaySheet(context, plan: plan);
     if (choice == null || !mounted) return;
     final tomorrow = today.add(const Duration(days: 1));
     Future<void> place(DailyPriority p, DateTime date, DateTime? start) =>

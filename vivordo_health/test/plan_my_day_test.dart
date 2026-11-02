@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/calendar_cognitive_load_service.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/energy_forecast.dart';
@@ -128,34 +129,69 @@ void main() {
         ),
       ),
     );
-    final report = task('Write lab report', 90, 'demanding');
-    final email = task('Email advisor', 15, 'light');
-    final outline = task('Start essay outline', 120, 'demanding');
+    // Outlook took 2:15, so Reel Upload's only time there is taken.
+    final outlook = task('Outlook verification', 60, 'moderate');
+    final submission = task('App submission', 120, 'demanding');
+    final reel = task('Reel upload', 60, 'moderate');
+    PlannedSlot slot(PlanTask t, DateTime start, String reason) => (
+      task: t,
+      start: start,
+      end: start.add(Duration(minutes: t.minutes)),
+      reason: reason,
+    );
     PlanChoice? choice;
     showPlanMyDaySheet(
       context,
-      placed: [
-        (task: report, start: at(9), end: at(10, 30), reason: 'In your peak'),
-        (
-          task: email,
-          start: at(14, 15),
-          end: at(14, 30),
-          reason: 'Light work for your dip',
-        ),
-      ],
-      unplaced: [(task: outline, reason: 'No 2-hour gap before your wrap-up')],
+      plan: (
+        placed: [
+          slot(outlook, at(14, 15), 'The next open time'),
+          slot(submission, at(15, 45), 'In your peak'),
+        ],
+        unplaced: [(task: reel, reason: 'No 1-hour gap before your wrap-up')],
+        options: {
+          outlook.id: [slot(outlook, at(14, 15), 'The next open time')],
+          submission.id: [slot(submission, at(15, 45), 'In your peak')],
+          reel.id: [slot(reel, at(14, 15), 'The next open time')],
+        },
+      ),
     ).then((value) => choice = value);
     await tester.pumpAndSettle();
     expect(find.text('Plan for today'), findsOneWidget);
     expect(find.textContaining('In your peak'), findsOneWidget);
-    // Skip the email, send the outline to tomorrow.
-    await tester.tap(find.text('Skip').last);
-    await tester.tap(find.text('Tomorrow?'));
+    // Reel Upload's 2:15 is Outlook's: it can't be picked yet.
+    final reelAt215 = find.text(DateFormat.jm().format(at(14, 15))).last;
+    await tester.tap(reelAt215);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Set this time'));
+    expect(
+      find.text('Its open times are taken by your other picks'),
+      findsOneWidget,
+    );
+    // Outlook to tomorrow frees it.
+    await tester.tap(find.text('Tomorrow').first);
     await tester.pumpAndSettle();
-    expect([for (final s in choice!.slots) s.task.id], ['Write lab report']);
-    expect([for (final t in choice!.tomorrow) t.id], ['Start essay outline']);
+    await tester.tap(reelAt215);
+    await tester.pumpAndSettle();
+    expect(find.text('Moves to tomorrow'), findsOneWidget);
+    await tester.tap(find.text('Set these times'));
+    await tester.pumpAndSettle();
+    expect(
+      [for (final s in choice!.slots) s.task.id],
+      ['Reel upload', 'App submission'],
+    );
+    expect([for (final t in choice!.tomorrow) t.id], ['Outlook verification']);
+  });
+
+  test('every free stretch offers a time', () {
+    final plan = planMyDay(
+      now: at(8, 45),
+      wrapUp: at(13),
+      items: [event('meeting', at(10), 60)],
+      tasks: [task('read', 30, 'moderate')],
+    );
+    expect(
+      [for (final o in plan.options['read']!) o.start],
+      [at(9), at(11, 15)],
+    );
   });
 
   test('after midnight, nothing before you wake', () {
