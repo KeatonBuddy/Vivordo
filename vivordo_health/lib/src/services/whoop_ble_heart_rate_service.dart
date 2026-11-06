@@ -140,6 +140,7 @@ class WhoopBleHeartRateService {
   }
 
   StreamSubscription<DiscoveredDevice>? _scanSubscription;
+  Completer<void>? _scanStop;
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
   StreamSubscription<List<int>>? _measurementSubscription;
   Timer? _flushTimer;
@@ -191,48 +192,66 @@ class WhoopBleHeartRateService {
     return 'wearable_ble';
   }
 
+  /// Scans for [duration], or until [stopScan], and returns what it found,
+  /// strongest signal first. [onFound] gets that list each time it changes.
   Future<List<WhoopBleDevice>> scanForDevices({
     Duration duration = const Duration(seconds: 8),
+    void Function(List<WhoopBleDevice> devices)? onFound,
   }) async {
     await _loadPairing();
     _ensurePlatformSupport();
-    await _scanSubscription?.cancel();
+    stopScan();
+    final stop = _scanStop = Completer<void>();
     final devices = <String, WhoopBleDevice>{};
+    List<WhoopBleDevice> sorted() =>
+        devices.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
     state.value = WhoopBleState(
       status: WhoopBleStatus.scanning,
       deviceName: _deviceId == null ? null : _displayName,
     );
+    final subscription = _ble
+        .scanForDevices(
+          withServices: [_heartRateService],
+          scanMode: ScanMode.lowLatency,
+          requireLocationServicesEnabled: false,
+        )
+        .listen((device) {
+          final name = device.name.trim().isEmpty
+              ? 'Heart-rate monitor'
+              : device.name.trim();
+          devices[device.id] = WhoopBleDevice(
+            id: device.id,
+            name: name,
+            rssi: device.rssi,
+          );
+          onFound?.call(sorted());
+        });
+    _scanSubscription = subscription;
     try {
-      _scanSubscription = _ble
-          .scanForDevices(
-            withServices: [_heartRateService],
-            scanMode: ScanMode.lowLatency,
-            requireLocationServicesEnabled: false,
-          )
-          .listen((device) {
-            final name = device.name.trim().isEmpty
-                ? 'Heart-rate monitor'
-                : device.name.trim();
-            devices[device.id] = WhoopBleDevice(
-              id: device.id,
-              name: name,
-              rssi: device.rssi,
-            );
-          });
-      await Future<void>.delayed(duration);
-      return devices.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+      await Future.any([Future<void>.delayed(duration), stop.future]);
+      return sorted();
     } finally {
-      await _scanSubscription?.cancel();
-      _scanSubscription = null;
-      if (state.value.status == WhoopBleStatus.scanning) {
-        state.value = WhoopBleState(
-          status: _deviceId == null
-              ? WhoopBleStatus.unpaired
-              : WhoopBleStatus.disconnected,
-          deviceName: _deviceId == null ? null : _displayName,
-        );
+      await subscription.cancel();
+      // Unless a newer scan owns the fields and the scanning state now.
+      if (identical(_scanStop, stop)) {
+        _scanStop = null;
+        _scanSubscription = null;
+        if (state.value.status == WhoopBleStatus.scanning) {
+          state.value = WhoopBleState(
+            status: _deviceId == null
+                ? WhoopBleStatus.unpaired
+                : WhoopBleStatus.disconnected,
+            deviceName: _deviceId == null ? null : _displayName,
+          );
+        }
       }
     }
+  }
+
+  /// Ends a running scan early; [scanForDevices] returns what it has so far.
+  void stopScan() {
+    final stop = _scanStop;
+    if (stop != null && !stop.isCompleted) stop.complete();
   }
 
   Future<void> pairAndStart(WhoopBleDevice device) async {

@@ -321,32 +321,12 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   }
 
   Future<void> _pairWearable() async {
+    final selected = await showAppleSheet<WhoopBleDevice>(
+      context,
+      builder: (_) => const _PairWearableSheet(),
+    );
+    if (selected == null) return;
     try {
-      final devices = await WhoopBleHeartRateService.instance.scanForDevices();
-      if (!mounted) return;
-      if (devices.isEmpty) {
-        showToast(
-          context,
-          'No heart-rate broadcast found. Turn on heart-rate sharing or broadcasting on your wearable and try again.',
-          kind: ToastKind.error,
-        );
-        return;
-      }
-      final selected = devices.length == 1
-          ? devices.first
-          : await showAppleActionSheet<WhoopBleDevice>(
-              context,
-              title: 'Choose your wearable',
-              message: 'Nearby heart-rate broadcasters',
-              actions: [
-                for (final device in devices)
-                  AppleSheetAction(
-                    '${device.name} · ${_signalLabel(device.rssi)}',
-                    device,
-                  ),
-              ],
-            );
-      if (selected == null) return;
       await WhoopBleHeartRateService.instance.pairAndStart(selected);
     } catch (error) {
       debugPrint('Could not pair wearable: $error');
@@ -361,12 +341,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       );
     }
   }
-
-  static String _signalLabel(int rssi) => rssi >= -60
-      ? 'Strong signal'
-      : rssi >= -75
-      ? 'Fair signal'
-      : 'Weak signal';
 
   void _toggleWearableCollapsed() {
     final collapsed = !(_wearableCollapsed ?? false);
@@ -1482,4 +1456,149 @@ class _HeartChartPainter extends CustomPainter {
       resting != oldDelegate.resting ||
       showTime != oldDelegate.showTime ||
       dark != oldDelegate.dark;
+}
+
+/// Opens straight away and lists nearby heart-rate broadcasts as the scan
+/// finds them, with how to turn sharing on; closes with the one tapped.
+class _PairWearableSheet extends StatefulWidget {
+  const _PairWearableSheet();
+
+  @override
+  State<_PairWearableSheet> createState() => _PairWearableSheetState();
+}
+
+class _PairWearableSheetState extends State<_PairWearableSheet> {
+  final _ble = WhoopBleHeartRateService.instance;
+  List<WhoopBleDevice> _devices = const [];
+  bool _scanning = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _scan();
+  }
+
+  @override
+  void dispose() {
+    _ble.stopScan();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    try {
+      final devices = await _ble.scanForDevices(
+        onFound: (devices) {
+          if (mounted) setState(() => _devices = devices);
+        },
+      );
+      if (mounted) setState(() => _devices = devices);
+    } catch (error) {
+      debugPrint('Wearable scan failed: $error');
+      // The service's StateErrors carry our own plain-language messages.
+      if (mounted) {
+        setState(
+          () => _error = error is StateError
+              ? error.message
+              : "Couldn't search for wearables. Try again.",
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  void _searchAgain() {
+    setState(() {
+      _scanning = true;
+      _error = null;
+      _devices = const [];
+    });
+    _scan();
+  }
+
+  static String _signalLabel(int rssi) => rssi >= -60
+      ? 'Strong signal'
+      : rssi >= -75
+      ? 'Fair signal'
+      : 'Weak signal';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    Widget howTo(String name, String steps) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            name,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            steps,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.3,
+              color: colors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+    return AppleFormSheet(
+      title: 'Pair a wearable',
+      doneLabel: 'Search again',
+      onDone: _scanning ? null : _searchAgain,
+      children: [
+        AppleFormGroup(
+          header: 'Nearby',
+          footer:
+              _error ??
+              (!_scanning && _devices.isEmpty
+                  ? 'Turn on heart-rate sharing, keep the wearable close to '
+                        'your phone, then search again.'
+                  : null),
+          children: [
+            for (final device in _devices)
+              AppleFormRow(
+                label: device.name,
+                value: _signalLabel(device.rssi),
+                chevron: true,
+                onTap: () {
+                  _ble.stopScan();
+                  Navigator.pop(context, device);
+                },
+              ),
+            if (_scanning)
+              const AppleFormRow(
+                label: 'Looking for wearables…',
+                trailing: CupertinoActivityIndicator(),
+              )
+            else if (_devices.isEmpty)
+              const AppleFormRow(label: 'None found'),
+          ],
+        ),
+        AppleFormGroup(
+          header: 'Turn on heart-rate sharing first',
+          children: [
+            howTo('WHOOP', 'In the WHOOP app, turn on Heart Rate Broadcast.'),
+            howTo(
+              'Fitbit',
+              'In the Google Health app, open Connections → Fitbit Air and tap Share heart rate.',
+            ),
+            howTo(
+              'Chest straps and others',
+              'Most start sharing as soon as you put them on.',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
