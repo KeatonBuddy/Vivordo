@@ -74,4 +74,57 @@ void main() {
     expect(draft?.time, isNull);
     expect(draft?.addToCalendar, isFalse);
   });
+
+  testWidgets("a carried-over priority's calendar event goes on today", (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final today = DateUtils.dateOnly(DateTime.now());
+    final tuesday = today.subtract(const Duration(days: 3));
+    PriorityDraft? draft;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => draft = await showPriorityEditor(
+              context,
+              PriorityDraft(
+                title: 'Grocery run',
+                date: tuesday,
+                time: null,
+                addToCalendar: false,
+                repeat: PriorityRepeat.once,
+                selectedWeekdays: {tuesday.weekday},
+                repeatEnd: null,
+              ),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find
+            .ancestor(
+              of: find.text('Add to calendar'),
+              matching: find.byType(Row),
+            )
+            .first,
+        matching: find.byType(AppSwitch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CupertinoButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(draft?.addToCalendar, isTrue);
+    expect(draft?.date, today);
+  });
 }

@@ -666,8 +666,16 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             label: 'Add to calendar',
                             detail: 'Create an event in your calendar',
                             value: _addToCalendar,
-                            onChanged: (value) =>
-                                setState(() => _addToCalendar = value),
+                            onChanged: (value) => setState(() {
+                              _addToCalendar = value;
+                              // A carried-over priority is on today's list:
+                              // its event goes today, not on the day it
+                              // was first planned.
+                              final today = DateUtils.dateOnly(DateTime.now());
+                              if (value && _date.isBefore(today)) {
+                                _date = today;
+                              }
+                            }),
                           ),
                         ],
                       ),
