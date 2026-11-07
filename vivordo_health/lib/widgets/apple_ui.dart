@@ -371,7 +371,8 @@ enum ToastKind { info, success, offline, error }
 
 /// A short floating capsule message. Error toasts say what failed in plain
 /// words; never pass raw exception text (log it with debugPrint instead).
-ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
+/// From a sheet or dialog it shows above it, and returns null.
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showToast(
   BuildContext context,
   String message, {
   ToastKind kind = ToastKind.info,
@@ -380,7 +381,6 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
   VoidCallback? onAction,
   Duration? duration,
 }) {
-  final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
   // The capsule is dark in light mode and light in dark mode.
   final onDark = Theme.of(context).brightness == Brightness.light;
   final (defaultIcon, iconColor) = switch (kind) {
@@ -399,33 +399,105 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showToast(
     ToastKind.info => (null, Colors.transparent),
   };
   final shownIcon = icon ?? defaultIcon;
-  return messenger.showSnackBar(
-    SnackBar(
-      // A toast with a button (Undo) gets longer, and with VoiceOver on it
-      // stays until it's used or dismissed: reaching it takes time.
-      duration:
-          duration ??
-          Duration(
-            seconds: actionLabel != null
-                ? 8
-                : kind == ToastKind.error
-                ? 5
-                : 3,
-          ),
-      persist:
-          actionLabel != null && MediaQuery.accessibleNavigationOf(context),
-      content: Row(
-        children: [
-          if (shownIcon != null) ...[
-            Icon(shownIcon, size: 19, color: iconColor),
-            const SizedBox(width: 10),
-          ],
-          Expanded(child: Text(message)),
+  final snackBar = SnackBar(
+    // A toast with a button (Undo) gets longer, and with VoiceOver on it
+    // stays until it's used or dismissed: reaching it takes time.
+    duration:
+        duration ??
+        Duration(
+          seconds: actionLabel != null
+              ? 8
+              : kind == ToastKind.error
+              ? 5
+              : 3,
+        ),
+    persist: actionLabel != null && MediaQuery.accessibleNavigationOf(context),
+    content: Row(
+      children: [
+        if (shownIcon != null) ...[
+          Icon(shownIcon, size: 19, color: iconColor),
+          const SizedBox(width: 10),
         ],
+        Expanded(child: Text(message)),
+      ],
+    ),
+    action: actionLabel == null
+        ? null
+        : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
+  );
+  // The page's Scaffold draws its toasts under a sheet or dialog.
+  if (ModalRoute.of(context) is PopupRoute) {
+    _OverlayToast.show(context, snackBar);
+    return null;
+  }
+  return (ScaffoldMessenger.of(
+    context,
+  )..hideCurrentSnackBar()).showSnackBar(snackBar);
+}
+
+/// A toast in the root overlay, above every route; one at a time.
+class _OverlayToast extends StatefulWidget {
+  const _OverlayToast({required this.snackBar, required this.onDone});
+
+  final SnackBar snackBar;
+  final VoidCallback onDone;
+
+  static OverlayEntry? _current;
+
+  static void show(BuildContext context, SnackBar snackBar) {
+    _current?.remove();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _OverlayToast(
+        snackBar: snackBar,
+        onDone: () {
+          entry.remove();
+          if (_current == entry) _current = null;
+        },
       ),
-      action: actionLabel == null
-          ? null
-          : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
+    );
+    _current = entry;
+    Overlay.of(context, rootOverlay: true).insert(entry);
+  }
+
+  @override
+  State<_OverlayToast> createState() => _OverlayToastState();
+}
+
+class _OverlayToastState extends State<_OverlayToast>
+    with SingleTickerProviderStateMixin {
+  late final _animation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  )..forward();
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.snackBar.duration, () async {
+      await _animation.reverse();
+      if (mounted) widget.onDone();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.bottomCenter,
+    child: Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      // Its own messenger, so the toast's Undo or swipe can't close one
+      // on the page.
+      child: ScaffoldMessenger(
+        child: widget.snackBar.withAnimation(_animation),
+      ),
     ),
   );
 }

@@ -2595,7 +2595,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       message,
       actionLabel: 'Undo',
       onAction: () => undone = true,
-    ).closed;
+    )?.closed;
     return undone;
   }
 

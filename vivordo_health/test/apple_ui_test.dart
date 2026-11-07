@@ -465,4 +465,37 @@ void main() {
     await tester.tap(find.text('Keep workout'));
     await tester.pumpAndSettle();
   });
+
+  testWidgets('a toast from a sheet shows above the sheet', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppleSheet<void>(
+                context,
+                builder: (sheetContext) => TextButton(
+                  onPressed: () => showToast(sheetContext, 'From the sheet'),
+                  child: const Text('Toast'),
+                ),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Toast'));
+    await tester.pumpAndSettle();
+
+    // On top, not under the sheet's barrier.
+    expect(find.text('From the sheet').hitTestable(), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('From the sheet'), findsNothing);
+  });
 }
