@@ -295,17 +295,8 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
   void _submit({bool deleteRequested = false, bool deleteAll = false}) {
     final title = _controller.text.trim();
     if (!deleteRequested && title.isEmpty) return;
-    if (!deleteRequested &&
-        !_habit &&
-        _addToCalendar &&
-        _time != null &&
-        _planning['minutes'] == null) {
-      showToast(
-        context,
-        'Add an estimated duration before creating a timed calendar event.',
-      );
-      return;
-    }
+    // A timed event with no duration set lasts an hour
+    // (addPriorityCalendarEvent).
     Navigator.pop(
       context,
       PriorityDraft(

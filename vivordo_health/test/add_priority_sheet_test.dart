@@ -127,4 +127,55 @@ void main() {
     expect(draft?.addToCalendar, isTrue);
     expect(draft?.date, today);
   });
+
+  testWidgets('a timed calendar priority adds without a duration', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final nine = DateUtils.dateOnly(
+      DateTime.now(),
+    ).add(const Duration(days: 5, hours: 9));
+    Object? draft;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: VivordoTheme.light,
+        home: Builder(
+          builder: (context) => TextButton(
+            // As the calendar's "+" opens it: a time, no duration.
+            onPressed: () async => draft = await showModalBottomSheet<Object>(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => addPriorityForm(at: nine),
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Test');
+    await tester.tap(
+      find.descendant(
+        of: find
+            .ancestor(
+              of: find.text('Add to calendar'),
+              matching: find.byType(Row),
+            )
+            .first,
+        matching: find.byType(AppSwitch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(CupertinoButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    expect(draft, isA<PriorityDraft>());
+    final saved = draft! as PriorityDraft;
+    expect(saved.addToCalendar, isTrue);
+    expect(saved.scheduledAt, nine);
+  });
 }
