@@ -29,6 +29,7 @@ import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/day_record_service.dart';
+import '../src/services/event_invite_service.dart';
 import '../src/services/vo2_max_service.dart';
 import '../src/services/reduce_transparency.dart';
 import '../src/services/health_service.dart';
@@ -250,6 +251,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _refreshTodayFromHealth();
     // Yesterday too, in case the app was last opened before it ended.
     unawaited(DayRecordService.syncOnOpen());
+    unawaited(EventInviteService.syncCopies());
     // Warms Circle's data so the tab opens filled; launch doesn't wait.
     unawaited(CircleProfileService.preload());
     _achievementMonitor = AchievementMonitor.start();
@@ -499,6 +501,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _refreshTodayFromHealth();
       _achievementMonitor?.scheduleNow();
       unawaited(DayRecordService.syncOnOpen());
+      unawaited(EventInviteService.syncCopies());
     }
   }
 

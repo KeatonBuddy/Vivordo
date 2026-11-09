@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/screens/invites_screen.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/event_invite_service.dart';
+import 'package:vivordo_health/src/utils/invite_fit.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/add_calendar_event_sheet.dart';
 
@@ -88,15 +90,29 @@ void main() {
       ),
     );
     await tester.pump();
+    // Nobody is listed until you search.
+    expect(find.text('maya.k'), findsNothing);
 
+    await tester.enterText(find.byType(TextField), 'MAY');
+    await tester.pump();
+    expect(find.text('jordan.t'), findsNothing);
     await tester.tap(find.text('maya.k'));
     await tester.pump();
     expect(selected, ['m']);
     expect(find.text('1 selected'), findsOneWidget);
+    // Picking clears the search; the friend stays as a chip.
+    expect(find.text('maya.k'), findsOneWidget);
+    expect(find.bySemanticsLabel('Remove maya.k'), findsOneWidget);
 
+    await tester.enterText(find.byType(TextField), 'zz');
+    await tester.pump();
+    expect(find.text('No friends match “zz”.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'j');
+    await tester.pump();
     await tester.tap(find.text('jordan.t'));
     await tester.pump();
-    await tester.tap(find.text('maya.k'));
+    await tester.tap(find.bySemanticsLabel('Remove maya.k'));
     await tester.pump();
     expect(selected, ['j']);
   });
@@ -137,10 +153,7 @@ void main() {
     ]);
     await tester.pump();
 
-    expect(
-      find.text('maya.k invited you', findRichText: true),
-      findsOneWidget,
-    );
+    expect(find.text('maya.k invited you', findRichText: true), findsOneWidget);
     expect(find.text('Waiting for you'), findsOneWidget);
     expect(find.text('1 going · 1 waiting'), findsOneWidget);
 
@@ -178,5 +191,149 @@ void main() {
     await tester.pump();
     expect(find.text('0'), findsNothing);
     expect(find.byTooltip('Invites'), findsOneWidget);
+  });
+
+  testWidgets('an accepted invite can be backed out of after confirming', (
+    tester,
+  ) async {
+    final answers = <(String, bool)>[];
+    await tester.pumpWidget(
+      _app(
+        InvitesScreen(
+          uid: 'me',
+          received: Stream.value([
+            _invite(responses: {'me': 'accepted'}),
+          ]),
+          sent: Stream.value(const []),
+          respond: (invite, {required accept}) async =>
+              answers.add((invite.id, accept)),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Going'), findsOneWidget);
+    expect(find.text('From maya.k'), findsOneWidget);
+
+    await tester.tap(find.text("Can't make it"));
+    await tester.pumpAndSettle();
+    expect(answers, isEmpty, reason: 'asks first');
+    await tester.tap(find.text("Can't make it").last);
+    await tester.pumpAndSettle();
+    expect(answers, [('i1', false)]);
+  });
+
+  testWidgets('the sender sees each friend and their answer', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        InvitesScreen(
+          uid: 'maya',
+          received: Stream.value(const []),
+          sent: Stream.value([
+            EventInvite(
+              id: 's1',
+              fromUid: 'maya',
+              fromName: 'maya.k',
+              title: 'Run club',
+              start: _soon,
+              end: _soon.add(const Duration(hours: 1)),
+              recipientUids: const ['j', 'r', 'x'],
+              recipientNames: const {'j': 'jordan.t', 'r': 'Rohan'},
+              responses: const {
+                'j': 'accepted',
+                'r': 'declined',
+                'x': 'pending',
+              },
+            ),
+          ]),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('jordan.t'), findsOneWidget);
+    expect(find.text('Rohan'), findsOneWidget);
+    expect(find.text('A friend'), findsOneWidget);
+    expect(find.text('Going'), findsOneWidget);
+    expect(find.text("Can't make it"), findsOneWidget);
+    expect(find.text('Waiting'), findsOneWidget);
+  });
+
+  testWidgets('a waiting invite shows how it fits your day', (tester) async {
+    final invite = _invite();
+    await tester.pumpWidget(
+      _app(
+        InvitesScreen(
+          uid: 'me',
+          received: Stream.value([invite]),
+          sent: Stream.value(const []),
+          loadFit: (_) async => inviteFit(
+            start: invite.start,
+            end: invite.end,
+            dayEvents: [
+              (
+                title: 'Lab',
+                start: invite.start.add(const Duration(minutes: 30)),
+                end: invite.end.add(const Duration(hours: 1)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('Your '), findsOneWidget);
+    expect(find.text('Lab'), findsOneWidget);
+    expect(find.textContaining('Clashes with Lab'), findsOneWidget);
+  });
+
+  group('calendar copies of accepted invites', () {
+    final now = DateTime.now();
+    final going = _invite(responses: {'me': 'accepted'});
+    Map<String, dynamic> copyOf(EventInvite invite) => {
+      'eventId': 'e1',
+      'title': invite.title,
+      'start': Timestamp.fromDate(invite.start),
+      'end': Timestamp.fromDate(invite.end),
+      'allDay': invite.allDay,
+    };
+    CopyAction action(Map<String, dynamic> copy, EventInvite? invite) =>
+        copyAction(copy: copy, invite: invite, uid: 'me', now: now);
+
+    test('an unchanged invite leaves the copy alone', () {
+      expect(action(copyOf(going), going), CopyAction.keep);
+    });
+
+    test('a moved or renamed event replaces the copy', () {
+      final moved = _invite(
+        responses: {'me': 'accepted'},
+        start: going.start.add(const Duration(hours: 1)),
+      );
+      expect(action(copyOf(going), moved), CopyAction.replace);
+      // Copies saved before details were kept get refreshed once.
+      expect(action({'eventId': 'e1'}, going), CopyAction.replace);
+    });
+
+    test('cancelled, declined or gone before it happens: removed', () {
+      final copy = copyOf(going);
+      expect(
+        action(copy, _invite(responses: {'me': 'accepted'}, cancelled: true)),
+        CopyAction.remove,
+      );
+      expect(
+        action(copy, _invite(responses: {'me': 'declined'})),
+        CopyAction.remove,
+      );
+      expect(action(copy, null), CopyAction.remove);
+    });
+
+    test('after the event, copies stay in the calendar but stop syncing', () {
+      final past = _invite(
+        responses: {'me': 'accepted'},
+        start: now.subtract(const Duration(hours: 3)),
+      );
+      expect(action(copyOf(past), past), CopyAction.forget);
+      expect(action(copyOf(past), null), CopyAction.forget);
+      expect(action({'eventId': 'e1'}, null), CopyAction.forget);
+    });
   });
 }

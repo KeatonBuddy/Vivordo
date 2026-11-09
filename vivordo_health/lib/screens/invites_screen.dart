@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../src/services/event_invite_service.dart';
+import '../src/utils/invite_fit.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
 import 'circle_screen.dart' show CirclePersonAvatar;
@@ -36,6 +37,7 @@ class InvitesScreen extends StatefulWidget {
     this.sent,
     this.uid,
     this.respond,
+    this.loadFit,
   });
 
   /// For tests; the invite service otherwise.
@@ -44,6 +46,7 @@ class InvitesScreen extends StatefulWidget {
   final String? uid;
   final Future<void> Function(EventInvite invite, {required bool accept})?
   respond;
+  final Future<InviteFit?> Function(EventInvite invite)? loadFit;
 
   @override
   State<InvitesScreen> createState() => _InvitesScreenState();
@@ -53,16 +56,55 @@ class _InvitesScreenState extends State<InvitesScreen> {
   late final _received = widget.received ?? EventInviteService.watchReceived();
   late final _sent = widget.sent ?? EventInviteService.watchSent();
   late final _uid = widget.uid ?? FirebaseAuth.instance.currentUser?.uid;
-  final Set<String> _busy = {};
+
+  /// Invite id → the answer being sent (true = accept).
+  final Map<String, bool> _answering = {};
+
+  /// Each waiting invite's fit, loaded once rather than on every rebuild.
+  final Map<String, Future<InviteFit?>> _fits = {};
+
+  // Screens given test streams don't reach for the real calendar.
+  Future<InviteFit?> _loadFit(EventInvite invite) =>
+      widget.loadFit?.call(invite) ??
+      (widget.received == null
+          ? EventInviteService.fitFor(invite)
+          : Future.value());
+
+  @override
+  void initState() {
+    super.initState();
+    // A change or cancellation push opens here: bring your calendar in line.
+    if (widget.received == null) unawaited(EventInviteService.syncCopies());
+  }
+
+  Future<void> _backOut(EventInvite invite) async {
+    final confirmed = await confirmAction(
+      context,
+      title: "Can't make it?",
+      message:
+          'This takes “${invite.title}” off your calendar and lets '
+          '${invite.fromName} know.',
+      confirmLabel: "Can't make it",
+    );
+    if (confirmed && mounted) await _answer(invite, false);
+  }
 
   Future<void> _answer(EventInvite invite, bool accept) async {
-    setState(() => _busy.add(invite.id));
+    setState(() => _answering[invite.id] = accept);
     try {
       await (widget.respond ?? EventInviteService.respond)(
         invite,
         accept: accept,
       );
       if (mounted && accept) showToast(context, 'Added to your calendar.');
+      if (mounted && !accept) {
+        showToast(
+          context,
+          invite.responses[_uid] == 'accepted'
+              ? 'Taken off your calendar.'
+              : 'Declined. ${invite.fromName} will be told.',
+        );
+      }
     } on NoCalendarConnected {
       if (mounted) {
         showToast(
@@ -81,7 +123,7 @@ class _InvitesScreenState extends State<InvitesScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _busy.remove(invite.id));
+      if (mounted) setState(() => _answering.remove(invite.id));
     }
   }
 
@@ -102,6 +144,10 @@ class _InvitesScreenState extends State<InvitesScreen> {
               final waiting = [
                 for (final invite in received.data ?? const <EventInvite>[])
                   if (uid != null && invite.pendingFor(uid, now)) invite,
+              ];
+              final going = [
+                for (final invite in received.data ?? const <EventInvite>[])
+                  if (uid != null && invite.goingFor(uid, now)) invite,
               ];
               final yours = [
                 for (final invite in sent.data ?? const <EventInvite>[])
@@ -145,7 +191,7 @@ class _InvitesScreenState extends State<InvitesScreen> {
                       padding: EdgeInsets.all(34),
                       child: Center(child: CupertinoActivityIndicator()),
                     )
-                  else if (waiting.isEmpty && yours.isEmpty)
+                  else if (waiting.isEmpty && going.isEmpty && yours.isEmpty)
                     const _Empty(
                       title: 'No invites yet',
                       body:
@@ -159,9 +205,20 @@ class _InvitesScreenState extends State<InvitesScreen> {
                       for (final invite in waiting)
                         _InviteCard(
                           invite: invite,
-                          busy: _busy.contains(invite.id),
+                          fit: _fits[invite.id] ??= _loadFit(invite),
+                          answering: _answering[invite.id],
                           onAnswer: (accept) =>
                               unawaited(_answer(invite, accept)),
+                        ),
+                      const SizedBox(height: 14),
+                    ],
+                    if (going.isNotEmpty) ...[
+                      const _Label('Going'),
+                      for (final invite in going)
+                        _GoingCard(
+                          invite: invite,
+                          busy: _answering.containsKey(invite.id),
+                          onBackOut: () => unawaited(_backOut(invite)),
                         ),
                       const SizedBox(height: 14),
                     ],
@@ -218,13 +275,20 @@ class _Card extends StatelessWidget {
 class _InviteCard extends StatelessWidget {
   const _InviteCard({
     required this.invite,
-    required this.busy,
+    required this.answering,
     required this.onAnswer,
+    this.fit,
   });
 
   final EventInvite invite;
-  final bool busy;
+
+  /// The answer being sent (true = accept), or null when idle; its button
+  /// shows the spinner.
+  final bool? answering;
   final ValueChanged<bool> onAnswer;
+
+  /// How it fits your day; nothing shows until (or unless) it loads.
+  final Future<InviteFit?>? fit;
 
   @override
   Widget build(BuildContext context) {
@@ -278,32 +342,45 @@ class _InviteCard extends StatelessWidget {
             inviteWhen(invite),
             style: TextStyle(color: colors.textSecondary, fontSize: 14),
           ),
+          FutureBuilder<InviteFit?>(
+            future: fit,
+            builder: (context, snapshot) {
+              final value = snapshot.data;
+              if (value == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _FitView(invite: invite, fit: value),
+              );
+            },
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
                 child: FilledButton(
-                  onPressed: busy ? null : () => onAnswer(false),
+                  onPressed: answering != null ? null : () => onAnswer(false),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
                     backgroundColor: colors.cardMuted,
                     foregroundColor: colors.textPrimary,
                     shape: buttonShape,
                   ),
-                  child: const Text('Decline'),
+                  child: answering == false
+                      ? const CupertinoActivityIndicator()
+                      : const Text('Decline'),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: FilledButton(
-                  onPressed: busy ? null : () => onAnswer(true),
+                  onPressed: answering != null ? null : () => onAnswer(true),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(44),
                     backgroundColor: _purple,
                     foregroundColor: Colors.white,
                     shape: buttonShape,
                   ),
-                  child: busy
+                  child: answering == true
                       ? const CupertinoActivityIndicator(color: Colors.white)
                       : const Text(
                           'Accept',
@@ -354,6 +431,100 @@ class _SentCard extends StatelessWidget {
           Text(
             inviteReplies(invite),
             style: TextStyle(color: colors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          for (final uid in invite.recipientUids)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  CirclePersonAvatar(
+                    name: invite.recipientNames[uid] ?? 'A friend',
+                    uid: uid,
+                    size: 26,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      invite.recipientNames[uid] ?? 'A friend',
+                      style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                    ),
+                  ),
+                  Text(
+                    switch (invite.responses[uid]) {
+                      'accepted' => 'Going',
+                      'declined' => "Can't make it",
+                      _ => 'Waiting',
+                    },
+                    style: TextStyle(
+                      color: invite.responses[uid] == 'accepted'
+                          ? colors.success
+                          : colors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An invite you've said yes to, with a way to back out before it starts.
+class _GoingCard extends StatelessWidget {
+  const _GoingCard({
+    required this.invite,
+    required this.busy,
+    required this.onBackOut,
+  });
+
+  final EventInvite invite;
+  final bool busy;
+  final VoidCallback onBackOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    // The time gets the card's full width; the button shares the last line.
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            invite.title,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            inviteWhen(invite),
+            style: TextStyle(color: colors.textSecondary, fontSize: 13),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'From ${invite.fromName}',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                ),
+              ),
+              TextButton(
+                onPressed: busy ? null : onBackOut,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(44, 44),
+                  foregroundColor: colors.danger,
+                ),
+                child: busy
+                    ? const CupertinoActivityIndicator()
+                    : const Text("Can't make it"),
+              ),
+            ],
           ),
         ],
       ),
@@ -430,4 +601,192 @@ class _InvitesButtonState extends State<InvitesButton> {
       );
     },
   );
+}
+
+/// Option B from the mock: your events on the top lane, the invite below,
+/// clashes shaded across both, then a line on how it fits.
+class _FitView extends StatelessWidget {
+  const _FitView({required this.invite, required this.fit});
+
+  final EventInvite invite;
+  final InviteFit fit;
+
+  static const _amber = Color(0xFFFFB340);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final span = fit.windowEnd.difference(fit.windowStart).inMinutes;
+    double at(DateTime t) =>
+        (t.difference(fit.windowStart).inMinutes / span).clamp(0.0, 1.0);
+    final labels = [
+      for (
+        var t = fit.windowStart;
+        t.isBefore(fit.windowEnd);
+        t = t.add(const Duration(hours: 2))
+      )
+        t,
+    ];
+    final tint = fit.warning ? _amber : colors.success;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colors.cardMuted,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Your ${DateFormat('EEEE').format(invite.start)}',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  Widget block(
+                    FitBlock b, {
+                    required double top,
+                    required Color color,
+                    Color? border,
+                    bool bold = false,
+                  }) {
+                    final left = at(b.start) * width;
+                    return Positioned(
+                      left: left,
+                      width: (at(b.end) * width - left).clamp(4.0, width),
+                      top: top,
+                      height: 28,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        alignment: Alignment.centerLeft,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(6),
+                          border: border == null
+                              ? null
+                              : Border.all(color: border, width: 1.5),
+                        ),
+                        child: Text(
+                          b.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 11,
+                            fontWeight: bold
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return SizedBox(
+                    height: 64,
+                    child: Stack(
+                      children: [
+                        for (final clash in fit.clashes)
+                          Positioned(
+                            left: at(clash.start) * width,
+                            width: (at(clash.end) - at(clash.start)) * width,
+                            top: 0,
+                            bottom: 0,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: _amber.withValues(alpha: .18),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        for (final event in fit.events)
+                          block(
+                            event,
+                            top: 0,
+                            color: colors.textPrimary.withValues(alpha: .12),
+                          ),
+                        block(
+                          (
+                            title: invite.title,
+                            start: invite.start,
+                            end: invite.end,
+                          ),
+                          top: 36,
+                          color: _purple.withValues(alpha: .25),
+                          border: _purple,
+                          bold: true,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
+              LayoutBuilder(
+                builder: (context, constraints) => SizedBox(
+                  height: 14,
+                  child: Stack(
+                    children: [
+                      for (final t in labels)
+                        Positioned(
+                          left: at(t) * constraints.maxWidth,
+                          child: Text(
+                            DateFormat('j').format(t),
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                fit.warning
+                    ? CupertinoIcons.exclamationmark_circle
+                    : CupertinoIcons.checkmark_alt,
+                size: 16,
+                color: tint,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  fit.message,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

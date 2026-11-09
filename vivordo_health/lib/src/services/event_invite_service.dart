@@ -4,7 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
+import '../utils/energy_forecast.dart';
+import '../utils/invite_fit.dart';
 import 'calendar_service.dart';
+import 'wind_down_reminder.dart';
 
 /// A calendar invite between Circle friends (event_invites/{id}). Only the
 /// title and time are shared; the invite callables do every write.
@@ -19,6 +22,7 @@ class EventInvite {
     this.fromPhotoUrl,
     this.allDay = false,
     this.recipientUids = const [],
+    this.recipientNames = const {},
     this.responses = const {},
     this.cancelled = false,
   });
@@ -34,6 +38,9 @@ class EventInvite {
         end: (data['end'] as Timestamp?)?.toDate() ?? DateTime(0),
         allDay: data['allDay'] == true,
         recipientUids: List<String>.from(data['recipientUids'] as List? ?? []),
+        recipientNames: Map<String, String>.from(
+          data['recipientNames'] as Map? ?? {},
+        ),
         responses: Map<String, String>.from(data['responses'] as Map? ?? {}),
         cancelled: data['status'] == 'cancelled',
       );
@@ -48,6 +55,9 @@ class EventInvite {
   final bool allDay;
   final List<String> recipientUids;
 
+  /// uid → username, for the sender's list of who said what.
+  final Map<String, String> recipientNames;
+
   /// uid → pending, accepted or declined.
   final Map<String, String> responses;
   final bool cancelled;
@@ -55,6 +65,10 @@ class EventInvite {
   /// Still waiting on [uid]'s answer, and still worth answering.
   bool pendingFor(String uid, DateTime now) =>
       !cancelled && responses[uid] == 'pending' && end.isAfter(now);
+
+  /// [uid] said yes and it hasn't happened yet, so they can still back out.
+  bool goingFor(String uid, DateTime now) =>
+      !cancelled && responses[uid] == 'accepted' && end.isAfter(now);
 
   int count(String answer) => responses.values.where((a) => a == answer).length;
 }
@@ -154,17 +168,159 @@ class EventInviteService {
       rethrow;
     }
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (!accept && uid != null) await _removeCopy(uid, invite.id);
     if (copy?.id != null && uid != null) {
       // Private to you: which calendar event is this invite's copy, so a
       // change from the sender can follow it later.
       await _firestore
           .doc('users/$uid/event_invite_copies/${invite.id}')
-          .set({
-            'eventId': copy!.id,
-            'calendarId': CalendarService.calendarIdForEvent(copy),
-            'createdAt': FieldValue.serverTimestamp(),
-          })
+          .set(_copyFields(invite, copy!))
           .catchError((Object e) => debugPrint('Invite copy not saved: $e'));
+    }
+  }
+
+  /// What a calendar copy was made from, so [syncCopies] can tell when the
+  /// sender changed it.
+  static Map<String, Object?> _copyFields(
+    EventInvite invite,
+    gcal.Event copy,
+  ) => {
+    'eventId': copy.id,
+    'calendarId': CalendarService.calendarIdForEvent(copy),
+    'title': invite.title,
+    'start': Timestamp.fromDate(invite.start),
+    'end': Timestamp.fromDate(invite.end),
+    'allDay': invite.allDay,
+    'syncedAt': FieldValue.serverTimestamp(),
+  };
+
+  static Future<void>? _syncing;
+
+  /// Brings your calendar copies of accepted invites in line with the
+  /// invites: moved when the sender changed the event, removed when it was
+  /// cancelled or you're no longer on it. Runs when the app opens or
+  /// resumes, since only this device can write your calendar.
+  static Future<void> syncCopies() =>
+      _syncing ??= _syncCopies().whenComplete(() => _syncing = null);
+
+  static Future<void> _syncCopies() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final copies = await _firestore
+          .collection('users/$uid/event_invite_copies')
+          .get();
+      if (copies.docs.isEmpty || !await CalendarService.isAnyConnected()) {
+        return;
+      }
+      for (final doc in copies.docs) {
+        EventInvite? invite;
+        try {
+          final snapshot = await _invites.doc(doc.id).get();
+          if (snapshot.exists) {
+            invite = EventInvite.fromMap(snapshot.id, snapshot.data()!);
+          }
+        } on FirebaseException catch (error) {
+          // Taken off the invite (unfriended): it no longer applies.
+          if (error.code != 'permission-denied') rethrow;
+        }
+        await _applyCopyAction(
+          doc.reference,
+          doc.data(),
+          invite,
+          copyAction(
+            copy: doc.data(),
+            invite: invite,
+            uid: uid,
+            now: DateTime.now(),
+          ),
+        );
+      }
+    } catch (error) {
+      debugPrint('Invite calendar copies not synced: $error');
+    }
+  }
+
+  static Future<void> _applyCopyAction(
+    DocumentReference<Map<String, dynamic>> reference,
+    Map<String, dynamic> copy,
+    EventInvite? invite,
+    CopyAction action,
+  ) async {
+    if (action == CopyAction.keep) return;
+    final eventId = copy['eventId'] as String?;
+    if (action != CopyAction.forget && eventId != null) {
+      await CalendarService.deleteEventById(
+        eventId,
+        calendarId: copy['calendarId'] as String?,
+      );
+    }
+    if (action == CopyAction.replace && invite != null) {
+      final event = await CalendarService.createEvent(
+        title: invite.title,
+        start: invite.start,
+        end: invite.end,
+        recurrence: 'none',
+        isAllDay: invite.allDay,
+      );
+      await reference.set(_copyFields(invite, event));
+      return;
+    }
+    await reference.delete();
+  }
+
+  /// How [invite] sits in your day, read from your own calendar on this
+  /// device (nothing goes to the sender). Null for all-day invites or when
+  /// no calendar can be read.
+  static Future<InviteFit?> fitFor(EventInvite invite) async {
+    if (invite.allDay || !await CalendarService.isAnyConnected()) return null;
+    final day = DateTime(
+      invite.start.year,
+      invite.start.month,
+      invite.start.day,
+    );
+    try {
+      final (events, forecast) = await (
+        CalendarService.getEventsBetween(day, day.add(const Duration(days: 1))),
+        WindDownReminders.forecastFor(day).catchError((_) => null),
+      ).wait;
+      return inviteFit(
+        start: invite.start,
+        end: invite.end,
+        dip: forecast?.window(EnergyPhase.dip),
+        dayEvents: [
+          for (final event in events)
+            if (event.start?.dateTime != null && event.end?.dateTime != null)
+              (
+                title: event.summary ?? 'Busy',
+                start: event.start!.dateTime!.toLocal(),
+                end: event.end!.dateTime!.toLocal(),
+              ),
+        ],
+      );
+    } catch (error) {
+      debugPrint('Invite fit not loaded: $error');
+      return null;
+    }
+  }
+
+  /// Backing out of an invite you'd accepted takes its event off your
+  /// calendar. Best effort: your answer is already recorded.
+  static Future<void> _removeCopy(String uid, String inviteId) async {
+    final reference = _firestore.doc(
+      'users/$uid/event_invite_copies/$inviteId',
+    );
+    try {
+      final copy = (await reference.get()).data();
+      final eventId = copy?['eventId'] as String?;
+      if (eventId == null) return;
+      await CalendarService.deleteEventById(
+        eventId,
+        calendarId: copy?['calendarId'] as String?,
+      );
+      await reference.delete();
+    } catch (error) {
+      debugPrint('Invite calendar copy not removed: $error');
     }
   }
 
@@ -205,4 +361,47 @@ class EventInviteService {
       });
     }
   }
+}
+
+/// What to do with your calendar copy of an accepted invite.
+enum CopyAction {
+  /// Still matches the invite.
+  keep,
+
+  /// The sender changed it: replace the copy with the new details.
+  replace,
+
+  /// Cancelled, declined or you're off the invite: take it off your calendar.
+  remove,
+
+  /// The event is over: keep it in your calendar, stop tracking it.
+  forget,
+}
+
+/// Compares a saved [copy] (its title, start, end and allDay at the time)
+/// with its [invite], which is null when the invite is gone or unreadable.
+CopyAction copyAction({
+  required Map<String, dynamic> copy,
+  required EventInvite? invite,
+  required String uid,
+  required DateTime now,
+}) {
+  if (invite == null) {
+    // Gone before it happened (the sender deleted their account or you
+    // were removed) means it's off; gone afterwards is just tidy-up.
+    final end = (copy['end'] as Timestamp?)?.toDate();
+    return end != null && end.isAfter(now)
+        ? CopyAction.remove
+        : CopyAction.forget;
+  }
+  if (!invite.end.isAfter(now)) return CopyAction.forget;
+  if (invite.cancelled || invite.responses[uid] != 'accepted') {
+    return CopyAction.remove;
+  }
+  final same =
+      copy['title'] == invite.title &&
+      copy['allDay'] == invite.allDay &&
+      (copy['start'] as Timestamp?)?.toDate() == invite.start &&
+      (copy['end'] as Timestamp?)?.toDate() == invite.end;
+  return same ? CopyAction.keep : CopyAction.replace;
 }

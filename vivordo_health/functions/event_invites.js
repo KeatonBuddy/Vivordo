@@ -82,9 +82,10 @@ function validatedInviteInput(data, senderUid, now) {
  * @param {object} invite Invite data.
  * @param {string} uid Responder.
  * @param {boolean} accept Going or not.
+ * @param {number} now Epoch ms.
  * @return {object|null} Fields to update.
  */
-function responseUpdate(invite, uid, accept) {
+function responseUpdate(invite, uid, accept, now) {
   if (!invite.recipientUids?.includes(uid)) {
     throw new HttpsError(
         "permission-denied",
@@ -94,9 +95,28 @@ function responseUpdate(invite, uid, accept) {
   if (invite.status !== "active") {
     throw new HttpsError("failed-precondition", "This invite was cancelled.");
   }
+  const end = invite.end?.toMillis?.() ?? invite.end;
+  if (end <= now) {
+    throw new HttpsError("failed-precondition", "This event has ended.");
+  }
   const answer = accept ? "accepted" : "declined";
   if (invite.responses?.[uid] === answer) return null;
   return {[`responses.${uid}`]: answer};
+}
+
+/**
+ * What the sender is told when someone answers or changes their answer.
+ * @param {string} name Responder's username.
+ * @param {string} title Event title.
+ * @param {string} previous Their answer before this one.
+ * @param {boolean} accept Going or not.
+ * @return {string} Push body.
+ */
+function responseMessage(name, title, previous, accept) {
+  if (accept) return `${name} accepted ${title}`;
+  return previous === "accepted" ?
+    `${name} can no longer make ${title}` :
+    `${name} declined ${title}`;
 }
 
 /**
@@ -111,10 +131,12 @@ function removalUpdate(invite, uid) {
   const recipientUids = (invite.recipientUids || [])
       .filter((value) => value !== uid);
   const responses = {...invite.responses};
+  const recipientNames = {...invite.recipientNames};
   delete responses[uid];
+  delete recipientNames[uid];
   return recipientUids.length ?
-    {recipientUids, responses} :
-    {recipientUids, responses, status: "cancelled"};
+    {recipientUids, responses, recipientNames} :
+    {recipientUids, responses, recipientNames, status: "cancelled"};
 }
 
 async function senderInvite(db, uid, data) {
@@ -127,16 +149,37 @@ async function senderInvite(db, uid, data) {
   return snapshot;
 }
 
-// Pushes to everyone on [invite] who said yes.
-async function pushToAccepted(db, invite, body) {
+/**
+ * Who hears about a change or cancellation: everyone still invited who
+ * hasn't declined.
+ * @param {object} invite Invite data.
+ * @return {string[]} uids.
+ */
+function changeAudience(invite) {
+  return (invite.recipientUids || [])
+      .filter((uid) => invite.responses?.[uid] !== "declined");
+}
+
+/**
+ * Whether an edit touches anything friends see.
+ * @param {object} invite Invite data (Timestamps or millis).
+ * @param {object} fields Validated {title, start, end, allDay}.
+ * @return {boolean} True when something changed.
+ */
+function eventChanged(invite, fields) {
+  const millis = (value) => value?.toMillis?.() ?? value;
+  return invite.title !== fields.title || invite.allDay !== fields.allDay ||
+    millis(invite.start) !== fields.start || millis(invite.end) !== fields.end;
+}
+
+async function pushToRecipients(db, invite, title, body, type) {
   const messaging = admin.messaging();
-  await Promise.all(Object.entries(invite.responses || {})
-      .filter(([, answer]) => answer === "accepted")
-      .map(([uid]) => pushToUser(db.collection("users").doc(uid), messaging,
-          "circleNotificationsEnabled", {
-            notification: {title: invite.title, body},
-            data: {screen: "invites", type: "event_invite_changed"},
-          })));
+  await Promise.all(changeAudience(invite).map((uid) => pushToUser(
+      db.collection("users").doc(uid), messaging,
+      "circleNotificationsEnabled", {
+        notification: {title, body},
+        data: {screen: "invites", type},
+      }).catch((error) => console.warn("Invite push failed", error))));
 }
 
 exports.sendEventInvites = onCall(async (request) => {
@@ -159,7 +202,10 @@ exports.sendEventInvites = onCall(async (request) => {
   if (blocks.some((snapshot) => snapshot.exists)) {
     throw new HttpsError("permission-denied", "Cannot invite this user.");
   }
-  const profile = (await db.doc(`users/${uid}/circle/profile`).get()).data();
+  const [senderProfile, ...recipientProfiles] = await db.getAll(
+      ...[uid, ...input.recipientUids].map((person) =>
+        db.doc(`users/${person}/circle/profile`)));
+  const profile = senderProfile.data();
   const fromName = profile?.username || "A Circle friend";
   const now = admin.firestore.Timestamp.now();
   const reference = db.collection("event_invites").doc();
@@ -172,14 +218,18 @@ exports.sendEventInvites = onCall(async (request) => {
     end: admin.firestore.Timestamp.fromMillis(input.end),
     allDay: input.allDay,
     recipientUids: input.recipientUids,
+    // So the sender can see who said what.
+    recipientNames: Object.fromEntries(input.recipientUids.map((friend, i) =>
+      [friend, recipientProfiles[i].data()?.username || "A friend"])),
     responses: Object.fromEntries(
         input.recipientUids.map((friend) => [friend, "pending"])),
     status: "active",
     senderEventId: input.senderEventId,
     createdAt: now,
     updatedAt: now,
-    // A Firestore TTL policy on expireAt deletes answered and past invites.
-    expireAt: admin.firestore.Timestamp.fromMillis(input.end + DAY_MS),
+    // Invites expire when the event ends: the app stops showing them and a
+    // Firestore TTL policy on expireAt deletes them.
+    expireAt: admin.firestore.Timestamp.fromMillis(input.end),
   });
   const messaging = admin.messaging();
   await Promise.all(input.recipientUids.map((friend) => pushToUser(
@@ -208,20 +258,24 @@ exports.respondToEventInvite = onCall(async (request) => {
     if (!snapshot.exists) {
       throw new HttpsError("not-found", "Invite not found.");
     }
-    const update = responseUpdate(snapshot.data(), uid, accept);
+    const update = responseUpdate(snapshot.data(), uid, accept, Date.now());
     if (!update) return null;
     transaction.update(reference, {
       ...update, updatedAt: admin.firestore.Timestamp.now(),
     });
     return snapshot.data();
   });
-  if (invite && accept) {
+  if (invite) {
     const name = (await db.doc(`users/${uid}/circle/profile`).get())
         .data()?.username || "A friend";
     await pushToUser(db.collection("users").doc(invite.fromUid),
         admin.messaging(), "circleNotificationsEnabled", {
-          notification: {title: invite.title, body: `${name} is going`},
-          data: {screen: "invites", type: "event_invite_accepted"},
+          notification: {
+            title: "Event invite",
+            body: responseMessage(name, invite.title,
+                invite.responses?.[uid], accept),
+          },
+          data: {screen: "invites", type: "event_invite_response"},
         }).catch((error) => console.warn("Invite push failed", error));
   }
   return {recorded: invite !== null};
@@ -232,17 +286,21 @@ exports.updateEventInvite = onCall(async (request) => {
   const db = admin.firestore();
   const snapshot = await senderInvite(db, uid, request.data);
   const fields = validatedEventFields(request.data, Date.now());
+  const invite = snapshot.data();
+  if (invite.status !== "active" || !eventChanged(invite, fields)) {
+    return {updated: false};
+  }
   await snapshot.ref.update({
     title: fields.title,
     start: admin.firestore.Timestamp.fromMillis(fields.start),
     end: admin.firestore.Timestamp.fromMillis(fields.end),
     allDay: fields.allDay,
-    expireAt: admin.firestore.Timestamp.fromMillis(fields.end + DAY_MS),
+    expireAt: admin.firestore.Timestamp.fromMillis(fields.end),
     updatedAt: admin.firestore.Timestamp.now(),
   });
-  await pushToAccepted(db, {...snapshot.data(), title: fields.title},
-      "The time or details changed.").catch((error) =>
-    console.warn("Invite push failed", error));
+  await pushToRecipients(db, invite, "Event updated",
+      `${invite.fromName} changed ${fields.title}. Open Vivordo to see ` +
+      "the new details.", "event_invite_changed");
   return {updated: true};
 });
 
@@ -255,8 +313,10 @@ exports.cancelEventInvite = onCall(async (request) => {
     status: "cancelled",
     updatedAt: admin.firestore.Timestamp.now(),
   });
-  await pushToAccepted(db, snapshot.data(), "This event was cancelled.")
-      .catch((error) => console.warn("Invite push failed", error));
+  const invite = snapshot.data();
+  await pushToRecipients(db, invite, "Event cancelled",
+      `${invite.fromName} cancelled ${invite.title}.`,
+      "event_invite_cancelled");
   return {cancelled: true};
 });
 
@@ -309,3 +369,6 @@ exports.deleteUserEventInvites = deleteUserEventInvites;
 exports.validatedInviteInput = validatedInviteInput;
 exports.responseUpdate = responseUpdate;
 exports.removalUpdate = removalUpdate;
+exports.responseMessage = responseMessage;
+exports.changeAudience = changeAudience;
+exports.eventChanged = eventChanged;

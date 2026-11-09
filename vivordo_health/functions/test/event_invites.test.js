@@ -1,7 +1,8 @@
 const {test} = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  validatedInviteInput, responseUpdate, removalUpdate,
+  validatedInviteInput, responseUpdate, removalUpdate, responseMessage,
+  changeAudience, eventChanged,
 } = require("../event_invites");
 
 const now = Date.UTC(2026, 10, 9, 12);
@@ -50,10 +51,55 @@ test("removing people keeps the rest and cancels when nobody is left", () => {
   const invite = {
     fromUid: "a", recipientUids: ["b", "c"],
     responses: {b: "accepted", c: "pending"},
+    recipientNames: {b: "bo", c: "cy"},
   };
-  assert.deepEqual(removalUpdate(invite, "b"),
-      {recipientUids: ["c"], responses: {c: "pending"}});
+  assert.deepEqual(removalUpdate(invite, "b"), {
+    recipientUids: ["c"], responses: {c: "pending"},
+    recipientNames: {c: "cy"},
+  });
   assert.equal(removalUpdate({...invite, recipientUids: ["b"]}, "b").status,
       "cancelled");
   assert.deepEqual(removalUpdate(invite, "a"), {status: "cancelled"});
+});
+
+test("the sender hears about every answer, and a change of mind", () => {
+  assert.equal(responseMessage("bo", "Run club", "pending", true),
+      "bo accepted Run club");
+  assert.equal(responseMessage("bo", "Run club", "pending", false),
+      "bo declined Run club");
+  assert.equal(responseMessage("bo", "Run club", "accepted", false),
+      "bo can no longer make Run club");
+  assert.equal(responseMessage("bo", "Run club", "declined", true),
+      "bo accepted Run club");
+});
+
+test("answers stop once the event has ended", () => {
+  const invite = {
+    recipientUids: ["b"], responses: {b: "pending"}, status: "active",
+    end: now - hour,
+  };
+  assert.throws(() => responseUpdate(invite, "b", true, now), /ended/);
+  assert.deepEqual(responseUpdate({...invite, end: now + hour}, "b", true, now),
+      {"responses.b": "accepted"});
+});
+
+test("changes reach everyone still invited except those who declined", () => {
+  assert.deepEqual(changeAudience({
+    recipientUids: ["a", "b", "c"],
+    responses: {a: "accepted", b: "pending", c: "declined"},
+  }), ["a", "b"]);
+});
+
+test("only edits friends can see count as a change", () => {
+  const invite = {title: "Run", start: now, end: now + hour, allDay: false};
+  const same = {title: "Run", start: now, end: now + hour, allDay: false};
+  assert.equal(eventChanged(invite, same), false);
+  assert.equal(eventChanged(invite, {...same, end: now + 2 * hour}), true);
+  assert.equal(eventChanged(invite, {...same, title: "Run club"}), true);
+  const stamped = {
+    ...invite,
+    start: {toMillis: () => now},
+    end: {toMillis: () => now + hour},
+  };
+  assert.equal(eventChanged(stamped, same), false);
 });

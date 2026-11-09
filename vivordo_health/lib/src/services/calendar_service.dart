@@ -205,6 +205,24 @@ class CalendarService {
     );
   }
 
+  /// Deletes a one-off event known only by its ids, as saved earlier (an
+  /// accepted invite's copy). Outlook ids carry their own account.
+  static Future<void> deleteEventById(
+    String eventId, {
+    String? calendarId,
+  }) async {
+    if (eventId.startsWith('outlook:')) {
+      return OutlookCalendarService.deleteEvent(eventId);
+    }
+    final calendarApi = await _authorizedCalendarApi();
+    await calendarApi.events.delete(
+      calendarId ?? await defaultCalendarId(),
+      eventId,
+    );
+    _eventCalendarIds.remove(eventId);
+    invalidateEventCache();
+  }
+
   static Future<void> _deleteEvent(
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,

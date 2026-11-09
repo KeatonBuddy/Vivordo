@@ -1278,18 +1278,32 @@ class InviteFriendsSection extends StatefulWidget {
 class _InviteFriendsSectionState extends State<InviteFriendsSection> {
   late final Stream<List<CircleProfile>> _friends =
       widget.friends ??
-      (Firebase.apps.isEmpty // tests
+      (Firebase
+              .apps
+              .isEmpty // tests
           ? Stream.value(const [])
           : CircleProfileService.watchFriends());
 
-  void _toggle(String uid) => widget.onChanged(
-    widget.selected.contains(uid)
-        ? [
-            for (final id in widget.selected)
-              if (id != uid) id,
-          ]
-        : [...widget.selected, uid],
-  );
+  final _search = TextEditingController();
+
+  /// At most this many matches show under the search field.
+  static const _maxMatches = 5;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _add(String uid) {
+    widget.onChanged([...widget.selected, uid]);
+    _search.clear();
+  }
+
+  void _remove(String uid) => widget.onChanged([
+    for (final id in widget.selected)
+      if (id != uid) id,
+  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -1300,43 +1314,175 @@ class _InviteFriendsSectionState extends State<InviteFriendsSection> {
         final friends = [...?snapshot.data]
           ..sort((a, b) => a.username.compareTo(b.username));
         if (friends.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 26),
-            Row(
+        final chosen = [
+          for (final friend in friends)
+            if (widget.selected.contains(friend.uid)) friend,
+        ];
+        return ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _search,
+          builder: (context, value, _) {
+            final query = value.text.trim().toLowerCase();
+            final matches = query.isEmpty
+                ? const <CircleProfile>[]
+                : [
+                    for (final friend in friends)
+                      if (!widget.selected.contains(friend.uid) &&
+                          friend.username.toLowerCase().contains(query))
+                        friend,
+                  ].take(_maxMatches).toList();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Expanded(child: _SheetLabel('Invite friends')),
-                if (widget.selected.isNotEmpty)
-                  Text(
-                    '${widget.selected.length} selected',
+                const SizedBox(height: 26),
+                Row(
+                  children: [
+                    const Expanded(child: _SheetLabel('Invite friends')),
+                    if (widget.selected.isNotEmpty)
+                      Text(
+                        '${widget.selected.length} selected',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (chosen.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final friend in chosen)
+                        _FriendChip(
+                          friend: friend,
+                          onRemove: () => _remove(friend.uid),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                TextField(
+                  controller: _search,
+                  textInputAction: TextInputAction.search,
+                  // Usernames aren't words: autocorrect turned "ro" into "to".
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  style: TextStyle(color: colors.textPrimary, fontSize: 16),
+                  decoration: InputDecoration(
+                    hintText: 'Search your Circle',
+                    prefixIcon: Icon(
+                      CupertinoIcons.search,
+                      color: colors.textSecondary,
+                      size: 20,
+                    ),
+                    filled: true,
+                    fillColor: colors.textPrimary.withValues(alpha: .045),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                        color: colors.textPrimary.withValues(alpha: .14),
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(
+                        color: colors.textPrimary.withValues(alpha: .14),
+                      ),
+                    ),
+                  ),
+                ),
+                if (query.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  if (matches.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        'No friends match “${value.text.trim()}”.',
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    )
+                  else
+                    _SheetCard(
+                      children: [
+                        for (final friend in matches)
+                          _FriendRow(
+                            friend: friend,
+                            selected: false,
+                            onTap: () => _add(friend.uid),
+                          ),
+                      ],
+                    ),
+                ],
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    'Friends get the title and time in Vivordo, never your '
+                    'calendar or health data.',
                     style: TextStyle(color: colors.textSecondary, fontSize: 13),
                   ),
+                ),
               ],
-            ),
-            const SizedBox(height: 10),
-            _SheetCard(
-              children: [
-                for (final friend in friends)
-                  _FriendRow(
-                    friend: friend,
-                    selected: widget.selected.contains(friend.uid),
-                    onTap: () => _toggle(friend.uid),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                'Friends get the title and time in Vivordo, never your '
-                'calendar or health data.',
-                style: TextStyle(color: colors.textSecondary, fontSize: 13),
-              ),
-            ),
-          ],
+            );
+          },
         );
       },
+    );
+  }
+}
+
+/// A chosen friend; tapping it takes them off the invite.
+class _FriendChip extends StatelessWidget {
+  const _FriendChip({required this.friend, required this.onRemove});
+
+  final CircleProfile friend;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return Semantics(
+      button: true,
+      label: 'Remove ${friend.username}',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onRemove,
+        borderRadius: BorderRadius.circular(99),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 36),
+          padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
+          decoration: BoxDecoration(
+            color: _purple.withValues(alpha: .14),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CirclePersonAvatar(
+                name: friend.username,
+                uid: friend.uid,
+                size: 28,
+                photoUrl: friend.photoUrl,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                friend.username,
+                style: TextStyle(color: colors.textPrimary, fontSize: 14),
+              ),
+              const SizedBox(width: 6),
+              Icon(CupertinoIcons.xmark, size: 13, color: colors.textSecondary),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
