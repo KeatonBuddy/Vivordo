@@ -28,6 +28,7 @@ class EventInvite {
     this.cancelled = false,
     this.recurrence,
     this.expireAt,
+    this.exceptionsData = const {},
   });
 
   factory EventInvite.fromMap(String id, Map<String, dynamic> data) =>
@@ -48,6 +49,9 @@ class EventInvite {
         cancelled: data['status'] == 'cancelled',
         recurrence: data['recurrence'] as String?,
         expireAt: (data['expireAt'] as Timestamp?)?.toDate(),
+        exceptionsData: Map<String, dynamic>.from(
+          data['exceptions'] as Map? ?? {},
+        ),
       );
 
   final String id;
@@ -74,6 +78,39 @@ class EventInvite {
   /// When the invite lapses: a series' last occurrence (or six months out).
   final DateTime? expireAt;
 
+  /// The sender's changes to single occurrences of a series, as stored
+  /// (see [occurrenceChanges]).
+  final Map<String, dynamic> exceptionsData;
+
+  Map<DateTime, OccurrenceChange> get exceptions =>
+      occurrenceChanges(exceptionsData);
+
+  /// The series' next occurrences from [from], with the sender's single
+  /// changes: cancelled ones left out, moved ones at their new time.
+  List<({DateTime start, DateTime end})> nextOccurrences(
+    DateTime from, {
+    int count = 4,
+  }) {
+    final length = end.difference(start);
+    final changes = exceptions;
+    ({DateTime start, DateTime end})? occurrence(DateTime at) =>
+        switch (changes[at]) {
+          null => (start: at, end: at.add(length)),
+          (
+            cancelled: false,
+            start: final DateTime s,
+            end: final DateTime e,
+            title: _,
+          ) =>
+            (start: s, end: e),
+          _ => null,
+        };
+    return [
+      for (final at in repeat.nextOccurrences(start, from: from, count: count))
+        ?occurrence(at),
+    ];
+  }
+
   EventRepeat get repeat =>
       EventRepeat.parse(recurrence == null ? null : [recurrence!]);
 
@@ -95,6 +132,32 @@ class EventInvite {
       !cancelled && responses[uid] == 'declined' && activeUntil.isAfter(now);
 
   int count(String answer) => responses.values.where((a) => a == answer).length;
+}
+
+/// A change the sender made to one occurrence of a series: [cancelled], or
+/// moved or renamed to [title] at [start]–[end].
+typedef OccurrenceChange = ({
+  bool cancelled,
+  String? title,
+  DateTime? start,
+  DateTime? end,
+});
+
+/// An invite's stored `exceptions` (an occurrence's original start in epoch
+/// ms → its change), keyed by that original start.
+Map<DateTime, OccurrenceChange> occurrenceChanges(Map? data) {
+  DateTime? time(Object? ms) =>
+      ms is num ? DateTime.fromMillisecondsSinceEpoch(ms.toInt()) : null;
+  return {
+    for (final MapEntry(:key, :value) in (data ?? const {}).entries)
+      if (int.tryParse('$key') case final original? when value is Map)
+        DateTime.fromMillisecondsSinceEpoch(original): (
+          cancelled: value['cancelled'] == true,
+          title: value['title'] as String?,
+          start: time(value['start']),
+          end: time(value['end']),
+        ),
+  };
 }
 
 /// Thrown when accepting needs a calendar and none is connected.
@@ -198,15 +261,23 @@ class EventInviteService {
     if (copy?.id != null && uid != null) {
       // Private to you: which calendar event is this invite's copy, so a
       // change from the sender can follow it later.
-      await _firestore
-          .doc('users/$uid/event_invite_copies/${invite.id}')
-          .set(_copyFields(invite, copy!))
-          .catchError((Object e) => debugPrint('Invite copy not saved: $e'));
+      final reference = _firestore.doc(
+        'users/$uid/event_invite_copies/${invite.id}',
+      );
+      final fields = _copyFields(invite, copy!);
+      try {
+        await reference.set(fields);
+        await _applyOccurrenceChanges(reference, fields, invite);
+      } catch (error) {
+        // syncCopies tries again on the next open.
+        debugPrint('Invite copy not saved: $error');
+      }
     }
   }
 
   /// What a calendar copy was made from, so [syncCopies] can tell when the
-  /// sender changed it.
+  /// sender changed it. Single-occurrence changes are recorded once applied
+  /// ([_applyOccurrenceChanges]).
   static Map<String, Object?> _copyFields(
     EventInvite invite,
     gcal.Event copy,
@@ -242,27 +313,31 @@ class EventInviteService {
         return;
       }
       for (final doc in copies.docs) {
-        EventInvite? invite;
         try {
-          final snapshot = await _invites.doc(doc.id).get();
-          if (snapshot.exists) {
-            invite = EventInvite.fromMap(snapshot.id, snapshot.data()!);
+          EventInvite? invite;
+          try {
+            final snapshot = await _invites.doc(doc.id).get();
+            if (snapshot.exists) {
+              invite = EventInvite.fromMap(snapshot.id, snapshot.data()!);
+            }
+          } on FirebaseException catch (error) {
+            // Taken off the invite (unfriended): it no longer applies.
+            if (error.code != 'permission-denied') rethrow;
           }
-        } on FirebaseException catch (error) {
-          // Taken off the invite (unfriended): it no longer applies.
-          if (error.code != 'permission-denied') rethrow;
+          await _applyCopyAction(
+            doc.reference,
+            doc.data(),
+            invite,
+            copyAction(
+              copy: doc.data(),
+              invite: invite,
+              uid: uid,
+              now: DateTime.now(),
+            ),
+          );
+        } catch (error) {
+          debugPrint('Invite calendar copy ${doc.id} not synced: $error');
         }
-        await _applyCopyAction(
-          doc.reference,
-          doc.data(),
-          invite,
-          copyAction(
-            copy: doc.data(),
-            invite: invite,
-            uid: uid,
-            now: DateTime.now(),
-          ),
-        );
       }
     } catch (error) {
       debugPrint('Invite calendar copies not synced: $error');
@@ -276,6 +351,9 @@ class EventInviteService {
     CopyAction action,
   ) async {
     if (action == CopyAction.keep) return;
+    if (action == CopyAction.occurrences) {
+      return _applyOccurrenceChanges(reference, copy, invite!);
+    }
     final eventId = copy['eventId'] as String?;
     if (action != CopyAction.forget && eventId != null) {
       await CalendarService.deleteEventById(
@@ -291,10 +369,38 @@ class EventInviteService {
         recurrence: invite.recurrence ?? 'none',
         isAllDay: invite.allDay,
       );
-      await reference.set(_copyFields(invite, event));
-      return;
+      // Saved before the occurrence changes, so a failure there never
+      // loses track of the new copy.
+      final fields = _copyFields(invite, event);
+      await reference.set(fields);
+      return _applyOccurrenceChanges(reference, fields, invite);
     }
     await reference.delete();
+  }
+
+  /// Moves, renames or cancels the occurrences of your copy the sender
+  /// changed since [copy] was last brought in line, then records them.
+  static Future<void> _applyOccurrenceChanges(
+    DocumentReference<Map<String, dynamic>> reference,
+    Map<String, dynamic> copy,
+    EventInvite invite,
+  ) async {
+    final seriesId = copy['eventId'] as String?;
+    final changes = invite.exceptions;
+    if (seriesId == null || changes.isEmpty) return;
+    final applied = occurrenceChanges(copy['exceptions'] as Map?);
+    for (final MapEntry(key: original, value: change) in changes.entries) {
+      if (applied[original] == change) continue;
+      await CalendarService.changeOccurrence(
+        seriesId,
+        calendarId: copy['calendarId'] as String?,
+        originalStart: original,
+        title: change.title,
+        start: change.cancelled ? null : change.start,
+        end: change.cancelled ? null : change.end,
+      );
+    }
+    await reference.update({'exceptions': invite.exceptionsData});
   }
 
   /// Puts an invite you just declined back to waiting (the toast's Undo).
@@ -312,13 +418,11 @@ class EventInviteService {
         return await _dayFit(invite.start, invite.end);
       }
       // A series: the next few occurrences, each against its own day.
-      final length = invite.end.difference(invite.start);
-      final starts = invite.repeat.nextOccurrences(
-        invite.start,
-        from: DateTime.now().subtract(length),
+      final occurrences = invite.nextOccurrences(
+        DateTime.now().subtract(invite.end.difference(invite.start)),
       );
       final fits = await Future.wait([
-        for (final start in starts) _dayFit(start, start.add(length)),
+        for (final o in occurrences) _dayFit(o.start, o.end),
       ]);
       return seriesFit(fits);
     } catch (error) {
@@ -401,6 +505,37 @@ class EventInviteService {
     }
   }
 
+  /// After you change or delete ([changed] null) one occurrence of a series
+  /// you invited friends to, theirs follows. Timed occurrences only.
+  static Future<void> senderOccurrenceChanged(
+    gcal.Event occurrence, {
+    gcal.Event? changed,
+  }) async {
+    // ponytail: all-day occurrences don't follow; their original start is a
+    // date, which needs a zone to key the change by.
+    final original =
+        occurrence.originalStartTime?.dateTime ?? occurrence.start?.dateTime;
+    final start = changed?.start?.dateTime;
+    final end = changed?.end?.dateTime;
+    if (original == null ||
+        (changed != null && (start == null || end == null))) {
+      return;
+    }
+    for (final doc in await _sentFor(occurrence.recurringEventId)) {
+      await _functions.httpsCallable('updateEventInviteOccurrence').call({
+        'inviteId': doc.id,
+        'originalStart': original.millisecondsSinceEpoch,
+        if (changed == null)
+          'cancelled': true
+        else ...{
+          'title': changed.summary ?? occurrence.summary ?? doc.data()['title'],
+          'start': start!.millisecondsSinceEpoch,
+          'end': end!.millisecondsSinceEpoch,
+        },
+      });
+    }
+  }
+
   /// After you delete an event you invited friends to, the invite is off.
   static Future<void> senderEventDeleted(String? eventId) async {
     for (final doc in await _sentFor(eventId)) {
@@ -418,6 +553,9 @@ enum CopyAction {
 
   /// The sender changed it: replace the copy with the new details.
   replace,
+
+  /// The sender changed single occurrences: change those in the copy.
+  occurrences,
 
   /// Cancelled, declined or you're off the invite: take it off your calendar.
   remove,
@@ -452,5 +590,11 @@ CopyAction copyAction({
       copy['recurrence'] == invite.recurrence &&
       (copy['start'] as Timestamp?)?.toDate() == invite.start &&
       (copy['end'] as Timestamp?)?.toDate() == invite.end;
-  return same ? CopyAction.keep : CopyAction.replace;
+  if (!same) return CopyAction.replace;
+  return mapEquals(
+        occurrenceChanges(copy['exceptions'] as Map?),
+        invite.exceptions,
+      )
+      ? CopyAction.keep
+      : CopyAction.occurrences;
 }

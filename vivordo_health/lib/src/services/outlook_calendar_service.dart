@@ -785,6 +785,58 @@ class OutlookCalendarService {
     CalendarService.invalidateEventCache();
   }
 
+  /// Moves, renames or cancels (a null [start]) the occurrence of
+  /// [seriesId] that originally started at [originalStart]. Graph lists
+  /// occurrences by where they are now, so this looks a month either side.
+  // ponytail: an occurrence moved over a month away isn't found again.
+  static Future<void> changeOccurrence(
+    String seriesId, {
+    required DateTime originalStart,
+    String? title,
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final json = await _send(
+      'GET',
+      _graphUri('/me/events/${_graphId(seriesId)}/instances', {
+        'startDateTime': originalStart
+            .subtract(const Duration(days: 31))
+            .toUtc()
+            .toIso8601String(),
+        'endDateTime': originalStart
+            .add(const Duration(days: 31))
+            .toUtc()
+            .toIso8601String(),
+        r'$select': 'id,originalStart',
+        r'$top': '100',
+      }),
+    );
+    final id = [
+      for (final occurrence in json?['value'] as List? ?? const [])
+        if (DateTime.tryParse(
+              '${(occurrence as Map)['originalStart']}',
+            )?.isAtSameMomentAs(originalStart) ==
+            true)
+          occurrence['id'] as String?,
+    ].nonNulls.firstOrNull;
+    if (id == null) return;
+    final uri = _graphUri('/me/events/${Uri.encodeComponent(id)}');
+    if (start == null || end == null) {
+      await _send('DELETE', uri);
+    } else {
+      final zone = await CalendarService.deviceTimeZone();
+      await _send(
+        'PATCH',
+        uri,
+        body: {
+          if (title?.trim().isNotEmpty == true) 'subject': title!.trim(),
+          ..._times(start, end, allDay: false, zone: zone),
+        },
+      );
+    }
+    CalendarService.invalidateEventCache();
+  }
+
   /// The series [event] is one occurrence of, with its repeat rule; null
   /// when it isn't an occurrence.
   static Future<gcal.Event?> seriesFor(gcal.Event event) async {

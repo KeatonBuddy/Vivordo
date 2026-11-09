@@ -399,6 +399,8 @@ Object.assign(exports, require("./challenges"));
 exports.sendEventInvites = eventInvites.sendEventInvites;
 exports.respondToEventInvite = eventInvites.respondToEventInvite;
 exports.updateEventInvite = eventInvites.updateEventInvite;
+exports.updateEventInviteOccurrence =
+  eventInvites.updateEventInviteOccurrence;
 exports.cancelEventInvite = eventInvites.cancelEventInvite;
 
 // A distinct Secret Manager binding avoids the legacy plain environment

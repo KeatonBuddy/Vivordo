@@ -357,7 +357,7 @@ void main() {
       inviteWhen(series, now: now),
       'Every week on Wed · ${DateFormat.jm().format(first)} – '
       '${DateFormat.jm().format(first.add(const Duration(hours: 1)))}'
-      ' · from Wed, Nov 11',
+      ' · from\u00A0Wed,\u00A0Nov\u00A011',
     );
     // Past its first occurrence, still answerable until the series ends.
     expect(series.pendingFor('me', DateTime(2026, 12, 1)), isTrue);
@@ -412,6 +412,89 @@ void main() {
       expect(action(copyOf(past), past), CopyAction.forget);
       expect(action(copyOf(past), null), CopyAction.forget);
       expect(action({'eventId': 'e1'}, null), CopyAction.forget);
+    });
+
+    test('single changes from the sender change just those occurrences', () {
+      final changed = EventInvite.fromMap('i1', {
+        'fromUid': 'maya',
+        'title': going.title,
+        'start': Timestamp.fromDate(going.start),
+        'end': Timestamp.fromDate(going.end),
+        'recurrence': 'RRULE:FREQ=WEEKLY',
+        'expireAt': Timestamp.fromDate(
+          going.start.add(const Duration(days: 90)),
+        ),
+        'responses': {'me': 'accepted'},
+        'exceptions': {
+          '${going.start.add(const Duration(days: 7)).millisecondsSinceEpoch}':
+              {'cancelled': true},
+        },
+      });
+      final copy = {...copyOf(going), 'recurrence': 'RRULE:FREQ=WEEKLY'};
+      expect(action(copy, changed), CopyAction.occurrences);
+      // Once applied, the copy records them and stays put.
+      expect(
+        action({...copy, 'exceptions': changed.exceptionsData}, changed),
+        CopyAction.keep,
+      );
+    });
+  });
+
+  group('single changes to a series', () {
+    final first = DateTime(2026, 11, 10, 18);
+    final week = const Duration(days: 7);
+    final series = EventInvite.fromMap('s', {
+      'fromUid': 'maya',
+      'title': 'Weekly run',
+      'start': Timestamp.fromDate(first),
+      'end': Timestamp.fromDate(first.add(const Duration(hours: 1))),
+      'recurrence': 'RRULE:FREQ=WEEKLY',
+      'expireAt': Timestamp.fromDate(DateTime(2027, 5, 1)),
+      'exceptions': {
+        '${first.add(week).millisecondsSinceEpoch}': {'cancelled': true},
+        '${first.add(week * 2).millisecondsSinceEpoch}': {
+          'title': 'Weekly run',
+          'start': first
+              .add(week * 2 + const Duration(minutes: 30))
+              .millisecondsSinceEpoch,
+          'end': first
+              .add(week * 2 + const Duration(minutes: 90))
+              .millisecondsSinceEpoch,
+        },
+        'junk': {'cancelled': true},
+      },
+    });
+
+    test('are keyed by where each occurrence began', () {
+      expect(series.exceptions.keys, [first.add(week), first.add(week * 2)]);
+      expect(series.exceptions[first.add(week)]!.cancelled, isTrue);
+    });
+
+    test('the next occurrences skip cancelled ones and use moved times', () {
+      final next = series.nextOccurrences(first);
+      expect(next.map((o) => o.start), [
+        first,
+        first.add(week * 2 + const Duration(minutes: 30)),
+        first.add(week * 3),
+      ]);
+      expect(next[1].end, first.add(week * 2 + const Duration(minutes: 90)));
+    });
+
+    test('show under the time while still ahead', () {
+      final moved = first.add(week * 2 + const Duration(minutes: 30));
+      expect(
+        inviteChanges(series, now: first),
+        'Nov 17 cancelled · Nov 24 moved to ${DateFormat.jm().format(moved)}'
+            .split(' · ')
+            .map((p) => p.replaceAll(' ', '\u00A0'))
+            .join(' · '),
+      );
+      expect(
+        inviteChanges(series, now: first.add(week * 2)),
+        contains('Nov\u00A024'),
+      );
+      expect(inviteChanges(series, now: first.add(week * 3)), isEmpty);
+      expect(inviteWhen(series, now: first).split('\n'), hasLength(2));
     });
   });
 }

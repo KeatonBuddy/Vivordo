@@ -2,7 +2,7 @@ const {test} = require("node:test");
 const assert = require("node:assert/strict");
 const {
   validatedInviteInput, responseUpdate, removalUpdate, responseMessage,
-  changeAudience, eventChanged, seriesEnd,
+  changeAudience, eventChanged, seriesEnd, keptExceptions, occurrenceUpdate,
 } = require("../event_invites");
 
 const now = Date.UTC(2026, 10, 9, 12);
@@ -156,4 +156,60 @@ test("changing the repeat counts as a change", () => {
   const fields = {...invite, recurrence: "RRULE:FREQ=WEEKLY;INTERVAL=2"};
   assert.equal(eventChanged(invite, fields), true);
   assert.equal(eventChanged(invite, {...invite}), false);
+});
+
+test("one occurrence can be moved or cancelled, keyed by its start", () => {
+  const series = {
+    status: "active", recurrence: "RRULE:FREQ=WEEKLY", title: "Run",
+    start: now, end: now + hour, expireAt: now + 60 * 24 * hour,
+  };
+  const week = now + 7 * 24 * hour;
+  assert.deepEqual(occurrenceUpdate(series,
+      {originalStart: week, cancelled: true}, now),
+  {[`exceptions.${week}`]: {cancelled: true}});
+  assert.deepEqual(occurrenceUpdate(series, {
+    originalStart: week, title: " Run ", start: week + hour,
+    end: week + 2 * hour,
+  }, now), {[`exceptions.${week}`]: {
+    title: "Run", start: week + hour, end: week + 2 * hour,
+  }});
+  // Already recorded: nothing to do.
+  assert.equal(occurrenceUpdate({...series,
+    exceptions: {[week]: {cancelled: true}}},
+  {originalStart: week, cancelled: true}, now), null);
+  // Outside the series, on a one-off, or once cancelled.
+  assert.throws(() => occurrenceUpdate(series,
+      {originalStart: now - hour, cancelled: true}, now));
+  assert.throws(() => occurrenceUpdate(series,
+      {originalStart: now + 61 * 24 * hour, cancelled: true}, now));
+  assert.throws(() => occurrenceUpdate({...series, recurrence: null},
+      {originalStart: week, cancelled: true}, now));
+  assert.throws(() => occurrenceUpdate({...series, status: "cancelled"},
+      {originalStart: week, cancelled: true}, now));
+  // Capped, though an existing one can still change.
+  const full = Object.fromEntries(Array.from({length: 100},
+      (_, i) => [String(week + i), {cancelled: true}]));
+  assert.throws(() => occurrenceUpdate({...series, exceptions: full},
+      {originalStart: week + 200, cancelled: true}, now));
+  assert.ok(occurrenceUpdate({...series, exceptions: full}, {
+    originalStart: week, title: "Run", start: week, end: week + hour,
+  }, now));
+});
+
+test("series edits keep occurrence changes only while they line up", () => {
+  const week = now + 7 * 24 * hour;
+  const invite = {
+    start: now, end: now + hour, allDay: false,
+    exceptions: {[week]: {cancelled: true},
+      [week + 7 * 24 * hour]: {cancelled: true}},
+  };
+  const same = {start: now, end: now + hour, allDay: false};
+  // Renamed: all kept. Ended after the first change: the later one goes.
+  assert.deepEqual(keptExceptions(invite, {...same, until: week * 2}),
+      invite.exceptions);
+  assert.deepEqual(keptExceptions(invite, {...same, until: week + hour}),
+      {[week]: {cancelled: true}});
+  // Moved: none line up any more.
+  assert.deepEqual(keptExceptions(invite,
+      {...same, start: now + hour, end: now + 2 * hour, until: week * 2}), {});
 });

@@ -24,10 +24,43 @@ String inviteWhen(EventInvite invite, {DateTime? now}) {
   final day = DateFormat('EEE, MMM d').format(invite.start);
   if (invite.recurrence == null) return '$day · $hours';
   final starts = invite.start.isAfter(now ?? DateTime.now())
-      ? ' · from $day'
+      ? ' · ${_keepTogether('from $day')}'
       : '';
-  return '${invite.repeat.describe()} · $hours$starts';
+  final changes = inviteChanges(invite, now: now);
+  return '${invite.repeat.describe()} · $hours$starts'
+      '${changes.isEmpty ? '' : '\n$changes'}';
 }
+
+/// A series' single changes still ahead, e.g. "Nov 17 cancelled · Nov 24
+/// moved to 7:30 PM" (or to "Wed, Nov 25, 7:30 PM" on another day), at
+/// most three.
+String inviteChanges(EventInvite invite, {DateTime? now}) {
+  final day = DateFormat('MMM d');
+  final moved = DateFormat('EEE, MMM d, h:mm a');
+  final after = now ?? DateTime.now();
+  final length = invite.end.difference(invite.start);
+  final lines = [
+    for (final MapEntry(key: original, value: change)
+        in invite.exceptions.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key)))
+      if ((change.end ?? original.add(length)).isAfter(after))
+        if (change.cancelled)
+          '${day.format(original)} cancelled'
+        else if (change.start != original)
+          '${day.format(original)} moved to '
+              '${(DateUtils.isSameDay(change.start, original) ? DateFormat.jm() : moved).format(change.start!)}'
+        else if (change.title != invite.title)
+          '${day.format(original)} is “${change.title}”',
+  ];
+  return [
+    ...lines.take(3),
+    if (lines.length > 3) '${lines.length - 3} more',
+  ].map(_keepTogether).join(' · ');
+}
+
+/// Non-breaking spaces, so a phrase like "from Mon, Nov 9" wraps as one
+/// piece instead of leaving "9" on a line of its own.
+String _keepTogether(String phrase) => phrase.replaceAll(' ', '\u00A0');
 
 /// "2 going · 1 waiting · 1 can't make it", leaving out the zeros.
 String inviteReplies(EventInvite invite) => [

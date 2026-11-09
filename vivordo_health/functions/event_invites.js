@@ -13,6 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LENGTH_MS = 7 * DAY_MS;
 const MAX_AHEAD_MS = 366 * DAY_MS;
 const OPEN_SERIES_MS = 183 * DAY_MS;
+const MAX_EXCEPTIONS = 100;
 
 function requireAuth(request) {
   if (!request.auth) {
@@ -220,6 +221,71 @@ function eventChanged(invite, fields) {
     (invite.recurrence ?? null) !== (fields.recurrence ?? null);
 }
 
+/**
+ * The occurrence changes still worth keeping after a series edit. Moving the
+ * series moves every occurrence, so the old changes no longer line up;
+ * ending it earlier drops only the changes past the new end.
+ * @param {object} invite Invite data (Timestamps or millis).
+ * @param {object} fields Validated event fields, with until.
+ * @return {object} exceptions map.
+ */
+function keptExceptions(invite, fields) {
+  const millis = (value) => value?.toMillis?.() ?? value;
+  if (invite.allDay !== fields.allDay ||
+      millis(invite.start) !== fields.start ||
+      millis(invite.end) !== fields.end) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(invite.exceptions || {})
+      .filter(([original]) => Number(original) < fields.until));
+}
+
+/**
+ * The update recording a change to one occurrence of a series, keyed by
+ * where it originally started (epoch ms), or null when nothing changed.
+ * @param {object} invite Invite data (Timestamps or millis).
+ * @param {object} data Callable data: originalStart, and cancelled or
+ *   title/start/end.
+ * @param {number} now Epoch ms.
+ * @return {object|null} Fields to update.
+ */
+function occurrenceUpdate(invite, data, now) {
+  const millis = (value) => value?.toMillis?.() ?? value;
+  if (invite.status !== "active" || !invite.recurrence) {
+    throw new HttpsError(
+        "failed-precondition",
+        "Only a repeating invite has occurrences.",
+    );
+  }
+  const original = Number(data?.originalStart);
+  if (!Number.isInteger(original) || original < millis(invite.start) ||
+      original >= millis(invite.expireAt)) {
+    throw new HttpsError(
+        "invalid-argument",
+        "That occurrence isn't part of this event.",
+    );
+  }
+  let change;
+  if (data?.cancelled === true) {
+    change = {cancelled: true};
+  } else {
+    const fields = validatedEventFields(
+        {title: data?.title, start: data?.start, end: data?.end}, now);
+    change = {title: fields.title, start: fields.start, end: fields.end};
+  }
+  const exceptions = invite.exceptions || {};
+  const key = String(original);
+  if (JSON.stringify(exceptions[key]) === JSON.stringify(change)) return null;
+  if (!(key in exceptions) &&
+      Object.keys(exceptions).length >= MAX_EXCEPTIONS) {
+    throw new HttpsError(
+        "resource-exhausted",
+        "Too many single changes to this event.",
+    );
+  }
+  return {[`exceptions.${key}`]: change};
+}
+
 async function pushToRecipients(db, invite, title, body, type) {
   const messaging = admin.messaging();
   await Promise.all(changeAudience(invite).map((uid) => pushToUser(
@@ -346,12 +412,33 @@ exports.updateEventInvite = onCall(async (request) => {
     end: admin.firestore.Timestamp.fromMillis(fields.end),
     allDay: fields.allDay,
     recurrence: fields.recurrence,
+    exceptions: keptExceptions(invite, fields),
     expireAt: admin.firestore.Timestamp.fromMillis(fields.until),
     updatedAt: admin.firestore.Timestamp.now(),
   });
   await pushToRecipients(db, invite, "Event updated",
       `${invite.fromName} changed ${fields.title}. Open Vivordo to see ` +
       "the new details.", "event_invite_changed");
+  return {updated: true};
+});
+
+exports.updateEventInviteOccurrence = onCall(async (request) => {
+  const uid = requireAuth(request);
+  const db = admin.firestore();
+  const snapshot = await senderInvite(db, uid, request.data);
+  const invite = snapshot.data();
+  const update = occurrenceUpdate(invite, request.data, Date.now());
+  if (!update) return {updated: false};
+  await snapshot.ref.update({
+    ...update, updatedAt: admin.firestore.Timestamp.now(),
+  });
+  // No date: the server doesn't know each friend's time zone. The
+  // Invites screen shows which one.
+  await pushToRecipients(db, invite, "Event updated",
+      request.data?.cancelled === true ?
+        `${invite.fromName} cancelled one ${invite.title}.` :
+        `${invite.fromName} changed one ${invite.title}. Open Vivordo to ` +
+        "see which.", "event_invite_changed");
   return {updated: true};
 });
 
@@ -424,3 +511,5 @@ exports.responseMessage = responseMessage;
 exports.changeAudience = changeAudience;
 exports.eventChanged = eventChanged;
 exports.seriesEnd = seriesEnd;
+exports.keptExceptions = keptExceptions;
+exports.occurrenceUpdate = occurrenceUpdate;
