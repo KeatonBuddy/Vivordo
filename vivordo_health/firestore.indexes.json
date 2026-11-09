@@ -125,6 +125,21 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "event_invites",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "insights",
       "fieldPath": "createdAt",
       "indexes": [

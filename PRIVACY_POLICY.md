@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: October 19, 2026**
+**Last updated: November 9, 2026**
 
 ## Introduction
 
@@ -192,6 +192,8 @@ Information is shared with other users only when you intentionally use a sharing
 
 If you set up a Circle profile, your friends in Circle can see your username, bio, and profile photo; each day's steps, active calories, and exercise minutes and your goals for them; workouts and journal entries you choose to share; your posts, comments, and likes; and your progress in challenges you join, with any challenge note you write.
 
+If you invite Circle friends to an event, Vivordo stores the invite on its servers: the event's title, date, and time; your username and profile photo; the friends you invited, by username; and each friend's answer. Everyone on the invite can see these details and answers. Your friends get a notification when you invite them or change or cancel the event, and you get one when they answer. If a friend accepts, Vivordo adds the event to that friend's own Google or Outlook calendar and keeps a private note of which calendar event it added, so it can move or remove it if you change or cancel the event. Invites are deleted automatically after the event ends. When you look at an invite, Vivordo reads your own calendar for that day on your device to show how the invite fits; that view is not stored and is not shared with the person who invited you.
+
 ### Reports and support
 
 If you report a post, comment, profile, or challenge in Circle, Vivordo stores the report (who reported it, what was reported and who wrote it, the reason, and any details you add) and emails it to our support inbox, which is hosted by Google (Gmail), so we can review it within 24 hours. If you send a bug report from Settings, we store it with your email address so we can reply.
@@ -222,7 +224,7 @@ If we discover a security incident, we will investigate and provide notices to a
 
 We retain account information and user content while your account is active and as reasonably necessary to provide Vivordo. Imported WHOOP, Fitbit/Google Health, Apple Health, Bluetooth wearable, and other health information is generally retained until you delete the applicable information, delete your account, or ask us to delete it. OAuth credentials are retained only while the relevant connection remains authorized and are deleted when you disconnect it.
 
-You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; your subscription status and Vivordo AI usage count; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, block list, comments, likes, activity, and challenge participation; your personal stress-scoring state; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
+You can delete your Vivordo account from **Settings → Delete Account**. Vivordo requires you to authenticate again and confirm the irreversible request. Account deletion removes your Firebase authentication account; Vivordo profile; imported and user-entered health and wellness information; derived scores, burnout results, and insights; your subscription status and Vivordo AI usage count; daily records, suggestion history, event reactions, and weekly reviews; Vivordo AI chat history, saved facts, and conversation summaries; journal entries; workouts; goals; questionnaires; device and notification records; Circle profile, friendships, block list, comments, likes, activity, event invites, and challenge participation; your personal stress-scoring state; connected-service credentials; and uploaded profile photo. Vivordo also sends supported revocation requests to connected providers, including WHOOP, Google Health/Fitbit, and Sign in with Apple. The process removes your personal participation from shared challenges while preserving the other participants' data.
 
 After a verified deletion request, we delete or de-identify information under our control within the period required by applicable law, except information we must retain for legal compliance, fraud prevention, dispute resolution, security, or enforcement. This includes Circle reports you filed or that were filed about you, which we keep to enforce our community rules. Information may remain temporarily in encrypted backups until those backups are overwritten through their ordinary lifecycle. We do not use backup copies for ordinary product purposes.
 
