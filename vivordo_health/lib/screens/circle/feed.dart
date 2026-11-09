@@ -761,7 +761,7 @@ Future<bool> _respondToFriendRequest(
   }
 }
 
-enum _ActivityFilter { all, workouts, achievements }
+enum _ActivityFilter { all, workouts, prs, achievements }
 
 /// Your recent posts merged with friends', newest first.
 class _ActivityFeed extends StatefulWidget {
@@ -806,6 +806,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
                 _ActivityFilter.all => true,
                 _ActivityFilter.workouts =>
                   activity.kind != 'achievement' && activity.kind != 'journal',
+                _ActivityFilter.prs => activity.personalRecords.isNotEmpty,
                 _ActivityFilter.achievements => activity.kind == 'achievement',
               },
             )
@@ -823,6 +824,7 @@ class _ActivityFeedState extends State<_ActivityFeed> {
                     label: switch (filter) {
                       _ActivityFilter.all => 'All',
                       _ActivityFilter.workouts => 'Workouts',
+                      _ActivityFilter.prs => 'PRs',
                       _ActivityFilter.achievements => 'Achievements',
                     },
                     selected: _filter == filter,
@@ -834,11 +836,12 @@ class _ActivityFeedState extends State<_ActivityFeed> {
             if (visible.isEmpty)
               _EmptyState(
                 icon: CupertinoIcons.heart,
-                title: all.isEmpty
-                    ? 'No recent activity'
-                    : _filter == _ActivityFilter.workouts
-                    ? 'No workouts yet'
-                    : 'No achievements yet',
+                title: switch (_filter) {
+                  _ when all.isEmpty => 'No recent activity',
+                  _ActivityFilter.workouts => 'No workouts yet',
+                  _ActivityFilter.prs => 'No PRs yet',
+                  _ => 'No achievements yet',
+                },
                 detail: widget.hasFriends
                     ? 'Shared workouts and achievements from your circle show up here.'
                     : 'Add friends to see what they share.',
@@ -959,6 +962,12 @@ class _ActivityPostCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           const _Pill(label: 'You'),
                         ],
+                        if (activity.personalRecords.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          _PersonalRecordPill(
+                            count: activity.personalRecords.length,
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 3),
@@ -1006,6 +1015,10 @@ class _ActivityPostCard extends StatelessWidget {
               _ActivityVisual(activity: activity),
             ],
           ),
+          if (activity.personalRecords.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _PersonalRecordsBox(records: activity.personalRecords),
+          ],
           const SizedBox(height: 12),
           Divider(height: 1, color: colors.border),
           _EngagementBar(activity: activity),
@@ -1449,6 +1462,31 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                         ),
                       ),
                     ],
+                    if (activity.personalRecords.isNotEmpty) ...[
+                      const SizedBox(height: 22),
+                      _SectionHeader(
+                        'Personal records · ${activity.personalRecords.length}',
+                      ),
+                      const SizedBox(height: 10),
+                      for (final record in activity.personalRecords) ...[
+                        _PersonalRecordCard(record: record),
+                        const SizedBox(height: 10),
+                      ],
+                    ],
+                    if (activity.exercises.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const _SectionHeader('All exercises'),
+                      const SizedBox(height: 4),
+                      for (final exercise in activity.exercises)
+                        _ExerciseSummaryRow(
+                          exercise: exercise,
+                          personalRecord: activity.personalRecords.any(
+                            (record) =>
+                                record.name.toLowerCase() ==
+                                exercise.name.toLowerCase(),
+                          ),
+                        ),
+                    ],
                     const SizedBox(height: 18),
                     _buildLikes(context),
                     const SizedBox(height: 18),
@@ -1840,6 +1878,277 @@ class _CommentComposer extends StatelessWidget {
                 onTap: onSend,
               ),
       ],
+    );
+  }
+}
+
+/// "185 lb × 5", or "12 reps" for bodyweight work, in the viewer's units.
+String _liftText(Units units, double? weightLbs, int? reps) =>
+    weightLbs == null || weightLbs <= 0
+    ? '${reps ?? 0} reps'
+    : '${units.formatLift(weightLbs)} × ${reps ?? 0}';
+
+/// How a PR beat the old record: heavier ("+10 lb"), more reps at the same
+/// weight ("+2 reps"), or simply a better set overall.
+String _personalRecordGain(Units units, CirclePersonalRecord record) {
+  final previousWeight = record.previousWeightLbs;
+  final previousReps = record.previousReps;
+  if (previousWeight == null || previousReps == null) return 'New best';
+  final weightGain = record.weightLbs - previousWeight;
+  if (weightGain > 0.05) return '+${units.formatLift(weightGain)}';
+  final repGain = record.reps - previousReps;
+  if (weightGain.abs() <= 0.05 && repGain > 0) {
+    return '+$repGain ${repGain == 1 ? 'rep' : 'reps'}';
+  }
+  return 'New best';
+}
+
+class _PersonalRecordPill extends StatelessWidget {
+  const _PersonalRecordPill({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => _Pill(
+    icon: CupertinoIcons.star_fill,
+    label: count == 1 ? 'PR' : '$count PRs',
+    color: context.circle.gold,
+    background: context.circle.goldTint,
+  );
+}
+
+class _PersonalRecordStar extends StatelessWidget {
+  const _PersonalRecordStar({this.size = 28});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      color: context.circle.goldTint,
+      shape: BoxShape.circle,
+    ),
+    child: Icon(
+      CupertinoIcons.star_fill,
+      size: size * .5,
+      color: context.circle.gold,
+    ),
+  );
+}
+
+/// The PR lifts on a feed post.
+class _PersonalRecordsBox extends StatelessWidget {
+  const _PersonalRecordsBox({required this.records});
+
+  final List<CirclePersonalRecord> records;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = context.watch<ThemeController>().units;
+    final palette = context.circle;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.goldTint.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.gold.withValues(alpha: .3)),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < records.length; index++) ...[
+            if (index > 0)
+              Divider(height: 1, color: palette.gold.withValues(alpha: .2)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              child: Row(
+                children: [
+                  const _PersonalRecordStar(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          records[index].name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.vivordoColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          _liftText(
+                            units,
+                            records[index].weightLbs,
+                            records[index].reps,
+                          ),
+                          style: TextStyle(color: context.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _personalRecordGain(units, records[index]),
+                    style: TextStyle(
+                      color: palette.success,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A PR in the post sheet: today's set next to the record it beat.
+class _PersonalRecordCard extends StatelessWidget {
+  const _PersonalRecordCard({required this.record});
+
+  final CirclePersonalRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = context.watch<ThemeController>().units;
+    final palette = context.circle;
+    final colors = context.vivordoColors;
+    Widget cell(String label, String value, {bool muted = false}) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.card.withValues(alpha: .6),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(color: context.muted, fontSize: 12)),
+            Text(
+              value,
+              style: TextStyle(
+                color: muted ? context.muted : colors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.goldTint.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: palette.gold.withValues(alpha: .3)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const _PersonalRecordStar(size: 34),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  record.name,
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                _personalRecordGain(units, record),
+                style: TextStyle(
+                  color: palette.success,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              cell('Today', _liftText(units, record.weightLbs, record.reps)),
+              if (record.previousReps != null) ...[
+                const SizedBox(width: 8),
+                cell(
+                  'Was',
+                  _liftText(
+                    units,
+                    record.previousWeightLbs,
+                    record.previousReps,
+                  ),
+                  muted: true,
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExerciseSummaryRow extends StatelessWidget {
+  const _ExerciseSummaryRow({
+    required this.exercise,
+    required this.personalRecord,
+  });
+
+  final CircleExerciseSummary exercise;
+  final bool personalRecord;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = context.watch<ThemeController>().units;
+    final sets = '${exercise.sets} ${exercise.sets == 1 ? 'set' : 'sets'}';
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.vivordoColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  exercise.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.vivordoColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (personalRecord) ...[
+                const SizedBox(width: 6),
+                const _PersonalRecordPill(count: 1),
+              ],
+            ],
+          ),
+          Text(
+            exercise.bestReps == null
+                ? sets
+                : '$sets · best ${_liftText(units, exercise.bestWeightLbs, exercise.bestReps)}',
+            style: TextStyle(color: context.muted, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }
