@@ -70,7 +70,7 @@ test("the sender hears about every answer, and a change of mind", () => {
   assert.equal(responseMessage("bo", "Run club", "accepted", false),
       "bo can no longer make Run club");
   assert.equal(responseMessage("bo", "Run club", "declined", true),
-      "bo accepted Run club");
+      "bo can attend Run club after all");
 });
 
 test("answers stop once the event has ended", () => {
@@ -102,4 +102,17 @@ test("only edits friends can see count as a change", () => {
     end: {toMillis: () => now + hour},
   };
   assert.equal(eventChanged(stamped, same), false);
+});
+
+test("undo takes a decline back to waiting, and nothing else", () => {
+  const invite = {
+    recipientUids: ["b"], responses: {b: "declined"}, status: "active",
+    end: now + hour,
+  };
+  assert.deepEqual(responseUpdate(invite, "b", null, now),
+      {"responses.b": "pending"});
+  assert.equal(responseUpdate({...invite, responses: {b: "accepted"}},
+      "b", null, now), null);
+  assert.equal(responseUpdate({...invite, responses: {b: "pending"}},
+      "b", null, now), null);
 });

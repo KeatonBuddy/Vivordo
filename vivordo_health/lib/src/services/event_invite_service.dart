@@ -70,6 +70,11 @@ class EventInvite {
   bool goingFor(String uid, DateTime now) =>
       !cancelled && responses[uid] == 'accepted' && end.isAfter(now);
 
+  /// [uid] said no but it hasn't happened yet, so they can still change
+  /// their mind.
+  bool notGoingFor(String uid, DateTime now) =>
+      !cancelled && responses[uid] == 'declined' && end.isAfter(now);
+
   int count(String answer) => responses.values.where((a) => a == answer).length;
 }
 
@@ -268,6 +273,11 @@ class EventInviteService {
     }
     await reference.delete();
   }
+
+  /// Puts an invite you just declined back to waiting (the toast's Undo).
+  static Future<void> undoDecline(EventInvite invite) => _functions
+      .httpsCallable('respondToEventInvite')
+      .call({'inviteId': invite.id, 'accept': null});
 
   /// How [invite] sits in your day, read from your own calendar on this
   /// device (nothing goes to the sender). Null for all-day invites or when

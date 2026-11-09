@@ -132,6 +132,10 @@ void main() {
   });
 
   testWidgets('accepting an invite answers it as going', (tester) async {
+    // Waiting, Not going and You sent all on one screen.
+    tester.view.physicalSize = const Size(430, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
     final answers = <(String, bool)>[];
     final received = StreamController<List<EventInvite>>();
     await tester.pumpWidget(
@@ -284,6 +288,54 @@ void main() {
     expect(find.textContaining('Your '), findsOneWidget);
     expect(find.text('Lab'), findsOneWidget);
     expect(find.textContaining('Clashes with Lab'), findsOneWidget);
+  });
+
+  testWidgets('a declined invite can be attended after all', (tester) async {
+    final answers = <(String, bool)>[];
+    await tester.pumpWidget(
+      _app(
+        InvitesScreen(
+          uid: 'me',
+          received: Stream.value([
+            _invite(responses: {'me': 'declined'}),
+          ]),
+          sent: Stream.value(const []),
+          respond: (invite, {required accept}) async =>
+              answers.add((invite.id, accept)),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Not going'), findsOneWidget);
+    expect(find.text('You declined'), findsOneWidget);
+    await tester.tap(find.text('I can attend after all'));
+    await tester.pump();
+    expect(answers, [('i1', true)]);
+  });
+
+  testWidgets('declining offers Undo, which puts it back to waiting', (
+    tester,
+  ) async {
+    final undone = <String>[];
+    await tester.pumpWidget(
+      _app(
+        InvitesScreen(
+          uid: 'me',
+          received: Stream.value([_invite()]),
+          sent: Stream.value(const []),
+          respond: (invite, {required accept}) async {},
+          undoDecline: (invite) async => undone.add(invite.id),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Decline'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Declined. maya.k will be told.'), findsOneWidget);
+    await tester.tap(find.text('Undo'));
+    await tester.pump();
+    expect(undone, ['i1']);
   });
 
   group('calendar copies of accepted invites', () {

@@ -38,6 +38,7 @@ class InvitesScreen extends StatefulWidget {
     this.uid,
     this.respond,
     this.loadFit,
+    this.undoDecline,
   });
 
   /// For tests; the invite service otherwise.
@@ -47,6 +48,7 @@ class InvitesScreen extends StatefulWidget {
   final Future<void> Function(EventInvite invite, {required bool accept})?
   respond;
   final Future<InviteFit?> Function(EventInvite invite)? loadFit;
+  final Future<void> Function(EventInvite invite)? undoDecline;
 
   @override
   State<InvitesScreen> createState() => _InvitesScreenState();
@@ -89,6 +91,17 @@ class _InvitesScreenState extends State<InvitesScreen> {
     if (confirmed && mounted) await _answer(invite, false);
   }
 
+  Future<void> _undoDecline(EventInvite invite) async {
+    try {
+      await (widget.undoDecline ?? EventInviteService.undoDecline)(invite);
+    } catch (error) {
+      debugPrint('Invite decline not undone: $error');
+      if (mounted) {
+        showToast(context, "Couldn't undo. Try again.", kind: ToastKind.error);
+      }
+    }
+  }
+
   Future<void> _answer(EventInvite invite, bool accept) async {
     setState(() => _answering[invite.id] = accept);
     try {
@@ -98,11 +111,18 @@ class _InvitesScreenState extends State<InvitesScreen> {
       );
       if (mounted && accept) showToast(context, 'Added to your calendar.');
       if (mounted && !accept) {
+        final wasGoing = invite.responses[_uid] == 'accepted';
         showToast(
           context,
-          invite.responses[_uid] == 'accepted'
+          wasGoing
               ? 'Taken off your calendar.'
               : 'Declined. ${invite.fromName} will be told.',
+          actionLabel: 'Undo',
+          // Back to how it was: going again (back in your calendar) or
+          // waiting for an answer.
+          onAction: () => unawaited(
+            wasGoing ? _answer(invite, true) : _undoDecline(invite),
+          ),
         );
       }
     } on NoCalendarConnected {
@@ -149,6 +169,10 @@ class _InvitesScreenState extends State<InvitesScreen> {
                 for (final invite in received.data ?? const <EventInvite>[])
                   if (uid != null && invite.goingFor(uid, now)) invite,
               ];
+              final notGoing = [
+                for (final invite in received.data ?? const <EventInvite>[])
+                  if (uid != null && invite.notGoingFor(uid, now)) invite,
+              ];
               final yours = [
                 for (final invite in sent.data ?? const <EventInvite>[])
                   if (invite.end.isAfter(now)) invite,
@@ -191,7 +215,10 @@ class _InvitesScreenState extends State<InvitesScreen> {
                       padding: EdgeInsets.all(34),
                       child: Center(child: CupertinoActivityIndicator()),
                     )
-                  else if (waiting.isEmpty && going.isEmpty && yours.isEmpty)
+                  else if (waiting.isEmpty &&
+                      going.isEmpty &&
+                      notGoing.isEmpty &&
+                      yours.isEmpty)
                     const _Empty(
                       title: 'No invites yet',
                       body:
@@ -219,6 +246,16 @@ class _InvitesScreenState extends State<InvitesScreen> {
                           invite: invite,
                           busy: _answering.containsKey(invite.id),
                           onBackOut: () => unawaited(_backOut(invite)),
+                        ),
+                      const SizedBox(height: 14),
+                    ],
+                    if (notGoing.isNotEmpty) ...[
+                      const _Label('Not going'),
+                      for (final invite in notGoing)
+                        _NotGoingCard(
+                          invite: invite,
+                          busy: _answering.containsKey(invite.id),
+                          onAttend: () => unawaited(_answer(invite, true)),
                         ),
                       const SizedBox(height: 14),
                     ],
@@ -787,6 +824,110 @@ class _FitView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// An invite you declined that hasn't happened yet: you can still go.
+class _NotGoingCard extends StatelessWidget {
+  const _NotGoingCard({
+    required this.invite,
+    required this.busy,
+    required this.onAttend,
+  });
+
+  final EventInvite invite;
+  final bool busy;
+  final VoidCallback onAttend;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      invite.title,
+                      style: TextStyle(
+                        color: colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      inviteWhen(invite),
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'From ${invite.fromName}',
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.cardMuted,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  'You declined',
+                  style: TextStyle(
+                    color: colors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: busy ? null : onAttend,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              foregroundColor: _purple,
+              side: const BorderSide(color: _purple, width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: busy
+                ? const CupertinoActivityIndicator()
+                : const Text(
+                    'I can attend after all',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Adds it to your calendar and lets ${invite.fromName} know',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }

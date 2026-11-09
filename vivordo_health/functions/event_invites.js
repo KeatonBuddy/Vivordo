@@ -99,7 +99,11 @@ function responseUpdate(invite, uid, accept, now) {
   if (end <= now) {
     throw new HttpsError("failed-precondition", "This event has ended.");
   }
-  const answer = accept ? "accepted" : "declined";
+  // null undoes a decline straight back to waiting (the decline toast's
+  // Undo); it can't clear an acceptance.
+  if (accept === null && invite.responses?.[uid] !== "declined") return null;
+  const answer = accept === null ? "pending" :
+    accept ? "accepted" : "declined";
   if (invite.responses?.[uid] === answer) return null;
   return {[`responses.${uid}`]: answer};
 }
@@ -113,7 +117,11 @@ function responseUpdate(invite, uid, accept, now) {
  * @return {string} Push body.
  */
 function responseMessage(name, title, previous, accept) {
-  if (accept) return `${name} accepted ${title}`;
+  if (accept) {
+    return previous === "declined" ?
+      `${name} can attend ${title} after all` :
+      `${name} accepted ${title}`;
+  }
   return previous === "accepted" ?
     `${name} can no longer make ${title}` :
     `${name} declined ${title}`;
@@ -248,7 +256,7 @@ exports.respondToEventInvite = onCall(async (request) => {
   const uid = requireAuth(request);
   const inviteId = stringId(request.data?.inviteId, "inviteId");
   const accept = request.data?.accept;
-  if (typeof accept !== "boolean") {
+  if (typeof accept !== "boolean" && accept !== null) {
     throw new HttpsError("invalid-argument", "accept is required.");
   }
   const db = admin.firestore();
@@ -265,7 +273,8 @@ exports.respondToEventInvite = onCall(async (request) => {
     });
     return snapshot.data();
   });
-  if (invite) {
+  // Undoing a decline is quiet: the sender's list just shows waiting again.
+  if (invite && accept !== null) {
     const name = (await db.doc(`users/${uid}/circle/profile`).get())
         .data()?.username || "A friend";
     await pushToUser(db.collection("users").doc(invite.fromUid),
