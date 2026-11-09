@@ -321,9 +321,9 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
   bool _calendarPicked = false;
   List<String> _inviteeUids = const [];
 
-  /// Invites are for new one-off events; repeating ones would need every
-  /// occurrence kept in step.
-  bool get _canInvite => !widget.isEditing && _repeat.unit == null;
+  /// Invites go out with new events, one-off or repeating (one answer covers
+  /// the whole series).
+  bool get _canInvite => !widget.isEditing;
 
   /// What the form held when it opened; any difference asks before closing.
   late final List<Object?> _initialValues;

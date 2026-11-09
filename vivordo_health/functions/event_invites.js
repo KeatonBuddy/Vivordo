@@ -12,6 +12,7 @@ const MAX_TITLE_LENGTH = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_LENGTH_MS = 7 * DAY_MS;
 const MAX_AHEAD_MS = 366 * DAY_MS;
+const OPEN_SERIES_MS = 183 * DAY_MS;
 
 function requireAuth(request) {
   if (!request.auth) {
@@ -41,12 +42,47 @@ function validatedEventFields(data, now) {
   }
   const start = Number(data?.start);
   const end = Number(data?.end);
+  const recurrence = validatedRecurrence(data?.recurrence);
+  // A series is still on until its last occurrence; start/end are its first.
+  const until = recurrence ? Math.max(seriesEnd(recurrence, start), end) : end;
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start ||
-      end - start > MAX_LENGTH_MS || end < now ||
+      end - start > MAX_LENGTH_MS || until < now ||
       start > now + MAX_AHEAD_MS) {
     throw new HttpsError("invalid-argument", "Choose a valid event time.");
   }
-  return {title, start, end, allDay: data?.allDay === true};
+  return {title, start, end, allDay: data?.allDay === true, recurrence, until};
+}
+
+/**
+ * The repeat rule of a repeating event (a Google-style RRULE line), or null
+ * for a one-off.
+ * @param {*} value Callable input.
+ * @return {string|null} The rule.
+ */
+function validatedRecurrence(value) {
+  if (value == null || value === "none") return null;
+  if (typeof value !== "string" || value.length > 300 ||
+      !/^RRULE:[A-Z0-9=;,]+$/.test(value) || !/FREQ=/.test(value)) {
+    throw new HttpsError("invalid-argument", "Choose a valid repeat.");
+  }
+  return value;
+}
+
+/**
+ * When a series stops: the end of its UNTIL day, or six months after it
+ * starts when it never ends (the invite then lapses; calendars keep it).
+ * @param {string} recurrence RRULE line.
+ * @param {number} start First occurrence, epoch ms.
+ * @return {number} Epoch ms.
+ */
+function seriesEnd(recurrence, start) {
+  const match = /UNTIL=(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?/
+      .exec(recurrence);
+  if (!match) return start + OPEN_SERIES_MS;
+  const [, y, mo, d, h, mi, s] = match.map(Number);
+  return match[4] ?
+    Date.UTC(y, mo - 1, d, h, mi, s) :
+    Date.UTC(y, mo - 1, d) + DAY_MS;
 }
 
 /**
@@ -95,7 +131,9 @@ function responseUpdate(invite, uid, accept, now) {
   if (invite.status !== "active") {
     throw new HttpsError("failed-precondition", "This invite was cancelled.");
   }
-  const end = invite.end?.toMillis?.() ?? invite.end;
+  // A series stays answerable until its last occurrence (expireAt).
+  const last = invite.recurrence ? invite.expireAt : invite.end;
+  const end = last?.toMillis?.() ?? last;
   if (end <= now) {
     throw new HttpsError("failed-precondition", "This event has ended.");
   }
@@ -177,7 +215,9 @@ function changeAudience(invite) {
 function eventChanged(invite, fields) {
   const millis = (value) => value?.toMillis?.() ?? value;
   return invite.title !== fields.title || invite.allDay !== fields.allDay ||
-    millis(invite.start) !== fields.start || millis(invite.end) !== fields.end;
+    millis(invite.start) !== fields.start ||
+    millis(invite.end) !== fields.end ||
+    (invite.recurrence ?? null) !== (fields.recurrence ?? null);
 }
 
 async function pushToRecipients(db, invite, title, body, type) {
@@ -225,6 +265,7 @@ exports.sendEventInvites = onCall(async (request) => {
     start: admin.firestore.Timestamp.fromMillis(input.start),
     end: admin.firestore.Timestamp.fromMillis(input.end),
     allDay: input.allDay,
+    recurrence: input.recurrence,
     recipientUids: input.recipientUids,
     // So the sender can see who said what.
     recipientNames: Object.fromEntries(input.recipientUids.map((friend, i) =>
@@ -237,7 +278,7 @@ exports.sendEventInvites = onCall(async (request) => {
     updatedAt: now,
     // Invites expire when the event ends: the app stops showing them and a
     // Firestore TTL policy on expireAt deletes them.
-    expireAt: admin.firestore.Timestamp.fromMillis(input.end),
+    expireAt: admin.firestore.Timestamp.fromMillis(input.until),
   });
   const messaging = admin.messaging();
   await Promise.all(input.recipientUids.map((friend) => pushToUser(
@@ -304,7 +345,8 @@ exports.updateEventInvite = onCall(async (request) => {
     start: admin.firestore.Timestamp.fromMillis(fields.start),
     end: admin.firestore.Timestamp.fromMillis(fields.end),
     allDay: fields.allDay,
-    expireAt: admin.firestore.Timestamp.fromMillis(fields.end),
+    recurrence: fields.recurrence,
+    expireAt: admin.firestore.Timestamp.fromMillis(fields.until),
     updatedAt: admin.firestore.Timestamp.now(),
   });
   await pushToRecipients(db, invite, "Event updated",
@@ -381,3 +423,4 @@ exports.removalUpdate = removalUpdate;
 exports.responseMessage = responseMessage;
 exports.changeAudience = changeAudience;
 exports.eventChanged = eventChanged;
+exports.seriesEnd = seriesEnd;

@@ -70,4 +70,32 @@ void main() {
     expect(fit.windowStart, _at(7));
     expect(fit.windowEnd, _at(17));
   });
+
+  test('a series reports clashes across its next occurrences', () {
+    InviteFit day(int d, {bool clash = false}) => inviteFit(
+      start: DateTime(2026, 11, d, 18),
+      end: DateTime(2026, 11, d, 19),
+      dayEvents: [
+        if (clash)
+          _event(
+            'Gym',
+            DateTime(2026, 11, d, 18, 30),
+            DateTime(2026, 11, d, 19, 30),
+          ),
+      ],
+    );
+    final clashing = seriesFit([day(11), day(18, clash: true), day(25)])!;
+    expect(clashing.warning, isTrue);
+    expect(clashing.start, DateTime(2026, 11, 18, 18));
+    expect(
+      clashing.message,
+      'Clashes on 1 of the next 3: Gym on Wed, Nov 18 from '
+      '${_t(DateTime(2026, 11, 18, 18, 30))} to '
+      '${_t(DateTime(2026, 11, 18, 19))}.',
+    );
+    final clear = seriesFit([day(11), day(18)])!;
+    expect(clear.message, 'Fits well. Nothing clashes on the next 2.');
+    expect(clear.start, DateTime(2026, 11, 11, 18));
+    expect(seriesFit(const []), isNull);
+  });
 }

@@ -182,23 +182,29 @@ class CalendarService {
     return gcal.CalendarApi(authorization.authClient(scopes: scopes));
   }
 
-  /// Deletes [event]. For one occurrence of a repeating event, [scope] can
-  /// widen that to the occurrences after it or to the whole series.
-  /// Friends invited to a one-off event of yours see its change or
-  /// cancellation. Best effort: the calendar change already happened.
+  /// Friends invited to an event of yours see its change or cancellation:
+  /// a one-off, or a whole series. One occurrence on its own doesn't reach
+  /// them yet. Best effort: the calendar change already happened.
   static void _followInvites(gcal.Event event, Future<void> Function() update) {
-    if (event.recurringEventId != null ||
-        (event.recurrence?.isNotEmpty ?? false)) {
-      return;
-    }
+    if (event.recurringEventId != null) return;
     update().catchError((Object e) => debugPrint('Invite not updated: $e'));
   }
 
+  /// Deletes [event]. For one occurrence of a repeating event, [scope] can
+  /// widen that to the occurrences after it or to the whole series.
   static Future<void> deleteEvent(
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,
   }) async {
     await _deleteEvent(event, scope: scope);
+    final series = event.recurringEventId;
+    if (series != null && scope == EventScope.allEvents) {
+      // Deleting every occurrence cancels the series' invite.
+      EventInviteService.senderEventDeleted(
+        series,
+      ).catchError((Object e) => debugPrint('Invite not updated: $e'));
+      return;
+    }
     _followInvites(
       event,
       () => EventInviteService.senderEventDeleted(event.id),

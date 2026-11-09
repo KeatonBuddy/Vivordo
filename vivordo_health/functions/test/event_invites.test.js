@@ -2,7 +2,7 @@ const {test} = require("node:test");
 const assert = require("node:assert/strict");
 const {
   validatedInviteInput, responseUpdate, removalUpdate, responseMessage,
-  changeAudience, eventChanged,
+  changeAudience, eventChanged, seriesEnd,
 } = require("../event_invites");
 
 const now = Date.UTC(2026, 10, 9, 12);
@@ -115,4 +115,45 @@ test("undo takes a decline back to waiting, and nothing else", () => {
       "b", null, now), null);
   assert.equal(responseUpdate({...invite, responses: {b: "pending"}},
       "b", null, now), null);
+});
+
+test("a series stays on until its last occurrence", () => {
+  const start = Date.UTC(2026, 10, 11, 21);
+  assert.equal(seriesEnd("RRULE:FREQ=WEEKLY;UNTIL=20261216T055959Z", start),
+      Date.UTC(2026, 11, 16, 5, 59, 59));
+  assert.equal(seriesEnd("RRULE:FREQ=WEEKLY;UNTIL=20261216", start),
+      Date.UTC(2026, 11, 17));
+  // Never-ending series lapse as invites after six months.
+  assert.equal(seriesEnd("RRULE:FREQ=WEEKLY;BYDAY=WE", start),
+      start + 183 * 24 * hour);
+});
+
+test("repeating invites carry their rule and can start in the past", () => {
+  const input = validatedInviteInput({
+    ...valid,
+    start: now - 30 * 24 * hour, end: now - 30 * 24 * hour + hour,
+    recurrence: "RRULE:FREQ=WEEKLY;BYDAY=WE",
+  }, "a", now);
+  assert.equal(input.recurrence, "RRULE:FREQ=WEEKLY;BYDAY=WE");
+  assert.ok(input.until > now);
+  assert.equal(validatedInviteInput({...valid, recurrence: "none"}, "a", now)
+      .recurrence, null);
+  assert.throws(() => validatedInviteInput(
+      {...valid, recurrence: "RRULE:FREQ=WEEKLY;X=<script>"}, "a", now));
+  // A series that already ended can't be sent.
+  assert.throws(() => validatedInviteInput({
+    ...valid,
+    start: now - 30 * 24 * hour, end: now - 30 * 24 * hour + hour,
+    recurrence: "RRULE:FREQ=DAILY;UNTIL=20200101",
+  }, "a", now));
+});
+
+test("changing the repeat counts as a change", () => {
+  const invite = {
+    title: "Run", start: now, end: now + hour, allDay: false,
+    recurrence: "RRULE:FREQ=WEEKLY",
+  };
+  const fields = {...invite, recurrence: "RRULE:FREQ=WEEKLY;INTERVAL=2"};
+  assert.equal(eventChanged(invite, fields), true);
+  assert.equal(eventChanged(invite, {...invite}), false);
 });

@@ -8,6 +8,8 @@ typedef FitBlock = ({String title, DateTime start, DateTime end});
 /// it clashes with and a line saying whether it fits.
 class InviteFit {
   const InviteFit({
+    required this.start,
+    required this.end,
     required this.windowStart,
     required this.windowEnd,
     required this.events,
@@ -15,6 +17,10 @@ class InviteFit {
     required this.warning,
     required this.message,
   });
+
+  /// The occurrence this is about (a series' next one, or the event).
+  final DateTime start;
+  final DateTime end;
 
   /// The strip's span: a few hours either side of the invite.
   final DateTime windowStart;
@@ -68,6 +74,8 @@ InviteFit inviteFit({
     final first = clashes.first;
     final more = clashes.length > 1 ? ' and ${clashes.length - 1} more' : '';
     return InviteFit(
+      start: start,
+      end: end,
       windowStart: windowStart,
       windowEnd: windowEnd,
       events: events,
@@ -99,11 +107,54 @@ InviteFit inviteFit({
     _ => 'Nothing else is on your calendar that day.',
   };
   return InviteFit(
+    start: start,
+    end: end,
     windowStart: windowStart,
     windowEnd: windowEnd,
     events: events,
     clashes: const [],
     warning: inDip,
     message: inDip ? '$free It lands in $dipNote, though.' : 'Fits well. $free',
+  );
+}
+
+/// One verdict for a series from its next occurrences' [fits]: the first
+/// clash if any (shown in the strip), else the next occurrence.
+InviteFit? seriesFit(List<InviteFit> fits) {
+  if (fits.length < 2) return fits.firstOrNull;
+  final n = fits.length;
+  final clashing = [
+    for (final fit in fits)
+      if (fit.clashes.isNotEmpty) fit,
+  ];
+  InviteFit like(InviteFit fit, String message, bool warning) => InviteFit(
+    start: fit.start,
+    end: fit.end,
+    windowStart: fit.windowStart,
+    windowEnd: fit.windowEnd,
+    events: fit.events,
+    clashes: fit.clashes,
+    warning: warning,
+    message: message,
+  );
+  if (clashing.isNotEmpty) {
+    final first = clashing.first;
+    final clash = first.clashes.first;
+    return like(
+      first,
+      'Clashes on ${clashing.length} of the next $n: ${clash.title} on '
+      '${DateFormat('EEE, MMM d').format(clash.start)} from '
+      '${_time(clash.start)} to ${_time(clash.end)}.',
+      true,
+    );
+  }
+  final dips = fits.where((fit) => fit.warning).length;
+  return like(
+    fits.first,
+    dips == 0
+        ? 'Fits well. Nothing clashes on the next $n.'
+        : 'Nothing clashes on the next $n, but $dips land in your usual '
+              'afternoon dip.',
+    dips > 0,
   );
 }

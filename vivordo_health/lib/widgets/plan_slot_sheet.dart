@@ -109,6 +109,7 @@ Future<String> saveEventDraft(CalendarEventDraft draft) async {
       allDay: draft.isAllDay,
       recipientUids: invitees,
       senderEventId: event.id,
+      recurrence: draft.recurrence == 'none' ? null : draft.recurrence,
     );
     return invitees.length == 1
         ? 'Event added and your friend invited.'

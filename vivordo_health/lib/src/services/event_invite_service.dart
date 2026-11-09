@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:googleapis/calendar/v3.dart' as gcal;
 
 import '../utils/energy_forecast.dart';
+import '../utils/event_repeat.dart';
 import '../utils/invite_fit.dart';
 import 'calendar_service.dart';
 import 'wind_down_reminder.dart';
@@ -25,6 +26,8 @@ class EventInvite {
     this.recipientNames = const {},
     this.responses = const {},
     this.cancelled = false,
+    this.recurrence,
+    this.expireAt,
   });
 
   factory EventInvite.fromMap(String id, Map<String, dynamic> data) =>
@@ -43,6 +46,8 @@ class EventInvite {
         ),
         responses: Map<String, String>.from(data['responses'] as Map? ?? {}),
         cancelled: data['status'] == 'cancelled',
+        recurrence: data['recurrence'] as String?,
+        expireAt: (data['expireAt'] as Timestamp?)?.toDate(),
       );
 
   final String id;
@@ -62,18 +67,32 @@ class EventInvite {
   final Map<String, String> responses;
   final bool cancelled;
 
+  /// The series' RRULE line; null for a one-off. [start]/[end] are then the
+  /// first occurrence.
+  final String? recurrence;
+
+  /// When the invite lapses: a series' last occurrence (or six months out).
+  final DateTime? expireAt;
+
+  EventRepeat get repeat =>
+      EventRepeat.parse(recurrence == null ? null : [recurrence!]);
+
+  /// Until when the invite is still on: the event's end, or a series' last
+  /// occurrence.
+  DateTime get activeUntil => recurrence == null ? end : (expireAt ?? end);
+
   /// Still waiting on [uid]'s answer, and still worth answering.
   bool pendingFor(String uid, DateTime now) =>
-      !cancelled && responses[uid] == 'pending' && end.isAfter(now);
+      !cancelled && responses[uid] == 'pending' && activeUntil.isAfter(now);
 
   /// [uid] said yes and it hasn't happened yet, so they can still back out.
   bool goingFor(String uid, DateTime now) =>
-      !cancelled && responses[uid] == 'accepted' && end.isAfter(now);
+      !cancelled && responses[uid] == 'accepted' && activeUntil.isAfter(now);
 
   /// [uid] said no but it hasn't happened yet, so they can still change
   /// their mind.
   bool notGoingFor(String uid, DateTime now) =>
-      !cancelled && responses[uid] == 'declined' && end.isAfter(now);
+      !cancelled && responses[uid] == 'declined' && activeUntil.isAfter(now);
 
   int count(String answer) => responses.values.where((a) => a == answer).length;
 }
@@ -133,6 +152,7 @@ class EventInviteService {
     required bool allDay,
     required List<String> recipientUids,
     String? senderEventId,
+    String? recurrence,
   }) => _functions.httpsCallable('sendEventInvites').call({
     'title': title,
     'start': start.millisecondsSinceEpoch,
@@ -140,6 +160,7 @@ class EventInviteService {
     'allDay': allDay,
     'recipientUids': recipientUids,
     'senderEventId': senderEventId,
+    'recurrence': recurrence,
   });
 
   /// Accepting adds the event to your default calendar first, so a failed
@@ -157,7 +178,7 @@ class EventInviteService {
         title: invite.title,
         start: invite.start,
         end: invite.end,
-        recurrence: 'none',
+        recurrence: invite.recurrence ?? 'none',
         isAllDay: invite.allDay,
       );
     }
@@ -196,6 +217,8 @@ class EventInviteService {
     'start': Timestamp.fromDate(invite.start),
     'end': Timestamp.fromDate(invite.end),
     'allDay': invite.allDay,
+    'recurrence': invite.recurrence,
+    'activeUntil': Timestamp.fromDate(invite.activeUntil),
     'syncedAt': FieldValue.serverTimestamp(),
   };
 
@@ -265,7 +288,7 @@ class EventInviteService {
         title: invite.title,
         start: invite.start,
         end: invite.end,
-        recurrence: 'none',
+        recurrence: invite.recurrence ?? 'none',
         isAllDay: invite.allDay,
       );
       await reference.set(_copyFields(invite, event));
@@ -284,34 +307,46 @@ class EventInviteService {
   /// no calendar can be read.
   static Future<InviteFit?> fitFor(EventInvite invite) async {
     if (invite.allDay || !await CalendarService.isAnyConnected()) return null;
-    final day = DateTime(
-      invite.start.year,
-      invite.start.month,
-      invite.start.day,
-    );
     try {
-      final (events, forecast) = await (
-        CalendarService.getEventsBetween(day, day.add(const Duration(days: 1))),
-        WindDownReminders.forecastFor(day).catchError((_) => null),
-      ).wait;
-      return inviteFit(
-        start: invite.start,
-        end: invite.end,
-        dip: forecast?.window(EnergyPhase.dip),
-        dayEvents: [
-          for (final event in events)
-            if (event.start?.dateTime != null && event.end?.dateTime != null)
-              (
-                title: event.summary ?? 'Busy',
-                start: event.start!.dateTime!.toLocal(),
-                end: event.end!.dateTime!.toLocal(),
-              ),
-        ],
+      if (invite.recurrence == null) {
+        return await _dayFit(invite.start, invite.end);
+      }
+      // A series: the next few occurrences, each against its own day.
+      final length = invite.end.difference(invite.start);
+      final starts = invite.repeat.nextOccurrences(
+        invite.start,
+        from: DateTime.now().subtract(length),
       );
+      final fits = await Future.wait([
+        for (final start in starts) _dayFit(start, start.add(length)),
+      ]);
+      return seriesFit(fits);
     } catch (error) {
       debugPrint('Invite fit not loaded: $error');
       return null;
     }
+  }
+
+  static Future<InviteFit> _dayFit(DateTime start, DateTime end) async {
+    final day = DateTime(start.year, start.month, start.day);
+    final (events, forecast) = await (
+      CalendarService.getEventsBetween(day, day.add(const Duration(days: 1))),
+      WindDownReminders.forecastFor(day).catchError((_) => null),
+    ).wait;
+    return inviteFit(
+      start: start,
+      end: end,
+      dip: forecast?.window(EnergyPhase.dip),
+      dayEvents: [
+        for (final event in events)
+          if (event.start?.dateTime != null && event.end?.dateTime != null)
+            (
+              title: event.summary ?? 'Busy',
+              start: event.start!.dateTime!.toLocal(),
+              end: event.end!.dateTime!.toLocal(),
+            ),
+      ],
+    );
   }
 
   /// Backing out of an invite you'd accepted takes its event off your
@@ -359,6 +394,9 @@ class EventInviteService {
         'start': start.millisecondsSinceEpoch,
         'end': end.millisecondsSinceEpoch,
         'allDay': event.start?.dateTime == null,
+        'recurrence': event.recurrence
+            ?.where((line) => line.startsWith('RRULE:'))
+            .firstOrNull,
       });
     }
   }
@@ -399,18 +437,19 @@ CopyAction copyAction({
   if (invite == null) {
     // Gone before it happened (the sender deleted their account or you
     // were removed) means it's off; gone afterwards is just tidy-up.
-    final end = (copy['end'] as Timestamp?)?.toDate();
+    final end = ((copy['activeUntil'] ?? copy['end']) as Timestamp?)?.toDate();
     return end != null && end.isAfter(now)
         ? CopyAction.remove
         : CopyAction.forget;
   }
-  if (!invite.end.isAfter(now)) return CopyAction.forget;
+  if (!invite.activeUntil.isAfter(now)) return CopyAction.forget;
   if (invite.cancelled || invite.responses[uid] != 'accepted') {
     return CopyAction.remove;
   }
   final same =
       copy['title'] == invite.title &&
       copy['allDay'] == invite.allDay &&
+      copy['recurrence'] == invite.recurrence &&
       (copy['start'] as Timestamp?)?.toDate() == invite.start &&
       (copy['end'] as Timestamp?)?.toDate() == invite.end;
   return same ? CopyAction.keep : CopyAction.replace;

@@ -14,11 +14,19 @@ import 'circle_screen.dart' show CirclePersonAvatar;
 const _purple = Color(0xFF6B5CE7);
 
 /// When an invite happens, e.g. "Thu, Nov 12 · 6:30 – 7:30 PM".
-String inviteWhen(EventInvite invite) {
-  final day = DateFormat('EEE, MMM d').format(invite.start);
-  if (invite.allDay) return '$day · All day';
+/// A series reads "Every week on Wed · 6:00 PM – 7:00 PM", plus when it
+/// starts if that's still ahead.
+String inviteWhen(EventInvite invite, {DateTime? now}) {
   final time = DateFormat.jm();
-  return '$day · ${time.format(invite.start)} – ${time.format(invite.end)}';
+  final hours = invite.allDay
+      ? 'All day'
+      : '${time.format(invite.start)} – ${time.format(invite.end)}';
+  final day = DateFormat('EEE, MMM d').format(invite.start);
+  if (invite.recurrence == null) return '$day · $hours';
+  final starts = invite.start.isAfter(now ?? DateTime.now())
+      ? ' · from $day'
+      : '';
+  return '${invite.repeat.describe()} · $hours$starts';
 }
 
 /// "2 going · 1 waiting · 1 can't make it", leaving out the zeros.
@@ -175,7 +183,7 @@ class _InvitesScreenState extends State<InvitesScreen> {
               ];
               final yours = [
                 for (final invite in sent.data ?? const <EventInvite>[])
-                  if (invite.end.isAfter(now)) invite,
+                  if (invite.activeUntil.isAfter(now)) invite,
               ];
               final loading = !received.hasData && !received.hasError;
               return ListView(
@@ -678,7 +686,9 @@ class _FitView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Your ${DateFormat('EEEE').format(invite.start)}',
+                invite.recurrence == null
+                    ? 'Your ${DateFormat('EEEE').format(fit.start)}'
+                    : 'Your ${DateFormat('EEEE, MMM d').format(fit.start)}',
                 style: TextStyle(
                   color: colors.textSecondary,
                   fontSize: 12,
@@ -753,11 +763,7 @@ class _FitView extends StatelessWidget {
                             color: colors.textPrimary.withValues(alpha: .12),
                           ),
                         block(
-                          (
-                            title: invite.title,
-                            start: invite.start,
-                            end: invite.end,
-                          ),
+                          (title: invite.title, start: fit.start, end: fit.end),
                           top: 36,
                           color: _purple.withValues(alpha: .25),
                           border: _purple,

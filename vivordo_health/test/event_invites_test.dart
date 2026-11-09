@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:vivordo_health/screens/invites_screen.dart';
 import 'package:vivordo_health/src/services/circle_profile_service.dart';
 import 'package:vivordo_health/src/services/event_invite_service.dart';
@@ -336,6 +337,31 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pump();
     expect(undone, ['i1']);
+  });
+
+  test('a series reads as its rule, and stays on until it ends', () {
+    final now = DateTime(2026, 11, 9, 12);
+    final first = DateTime(2026, 11, 11, 18);
+    final series = EventInvite(
+      id: 's',
+      fromUid: 'maya',
+      fromName: 'maya.k',
+      title: 'Run club',
+      start: first,
+      end: first.add(const Duration(hours: 1)),
+      recurrence: 'RRULE:FREQ=WEEKLY;BYDAY=WE',
+      expireAt: DateTime(2027, 5, 1),
+      responses: const {'me': 'pending'},
+    );
+    expect(
+      inviteWhen(series, now: now),
+      'Every week on Wed · ${DateFormat.jm().format(first)} – '
+      '${DateFormat.jm().format(first.add(const Duration(hours: 1)))}'
+      ' · from Wed, Nov 11',
+    );
+    // Past its first occurrence, still answerable until the series ends.
+    expect(series.pendingFor('me', DateTime(2026, 12, 1)), isTrue);
+    expect(series.pendingFor('me', DateTime(2027, 6, 1)), isFalse);
   });
 
   group('calendar copies of accepted invites', () {
