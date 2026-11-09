@@ -759,7 +759,10 @@ and words, never a score.
   Bed-by advice counts back from it: "Bed by 11:30 PM for 7 h 30 before
   you wake at 7:00 AM" when the usual bedtime leaves less than your need.
 - **Missing last night:** your usual pattern is used and the forecast is
-  marked `estimated`.
+  marked `estimated`. The wake time is the median wake of nights like
+  today (work nights for a work day, weekend nights for a weekend, at
+  least 2), so a Monday isn't estimated from weekend lie-ins; with fewer,
+  your sleep midpoint plus half a usual night.
 - **Usual sleep schedule** (`preferences.sleepSchedule`: `bed`, `wake`, and
   `weekendBed`/`weekendWake` for Friday and Saturday nights when they
   differ; minutes after midnight, `lib/src/utils/sleep_schedule.dart`).

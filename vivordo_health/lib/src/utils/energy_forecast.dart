@@ -241,7 +241,26 @@ EnergyForecast forecastEnergy({
       n.asleepHours ?? _hours(n.end.difference(n.start));
 
   final anchor = date.add(_fromHours(midSleep));
-  final wake = lastNight?.end ?? anchor.add(_fromHours(usualHours / 2));
+
+  // Your usual wake on a day like today (work or weekend): the median wake of
+  // such nights, or your schedule's. The body clock prefers weekends, but a
+  // Monday estimated from them would wake you hours late.
+  bool isFree(DateTime d) => d.weekday >= DateTime.saturday;
+  final usualWakeHours = usual != null
+      ? _hours(usual.end.difference(date))
+      : () {
+          final wakes = [
+            for (final n in recent)
+              if (n != lastNight && isFree(n.end) == isFree(date))
+                _hours(n.end.difference(_midnight(n.end))),
+          ];
+          return history && wakes.length >= 2 ? _median(wakes) : null;
+        }();
+  final wake =
+      lastNight?.end ??
+      (usualWakeHours != null
+          ? date.add(_fromHours(usualWakeHours))
+          : anchor.add(_fromHours(usualHours / 2)));
 
   // Today's body clock: the chronotype, pulled part of the way towards the
   // last few nights' midpoints, the latest counting most.
@@ -269,7 +288,6 @@ EnergyForecast forecastEnergy({
   // Saturday or Sunday, work nights otherwise. The body clock above prefers
   // weekends, but a Sunday that followed it would put bed in the small hours.
   final tomorrow = DateTime(date.year, date.month, date.day + 1);
-  bool isFree(DateTime d) => d.weekday >= DateTime.saturday;
   final alike = recent.where((n) => isFree(n.end) == isFree(tomorrow));
   final usualBedtime = usual != null
       ? schedule!.nightEnding(tomorrow).start
@@ -301,16 +319,6 @@ EnergyForecast forecastEnergy({
 
   // Grogginess: heavier for debt carried into last night and for waking
   // before your usual wake on a day like today.
-  final usualWakeHours = usual != null
-      ? _hours(usual.end.difference(date))
-      : () {
-          final wakes = [
-            for (final n in recent)
-              if (n != lastNight && isFree(n.end) == isFree(date))
-                _hours(n.end.difference(_midnight(n.end))),
-          ];
-          return history && wakes.length >= 2 ? _median(wakes) : null;
-        }();
   final early = lastNight == null || usualWakeHours == null
       ? 0.0
       : (usualWakeHours - _hours(lastNight.end.difference(date))).clamp(

@@ -285,6 +285,39 @@ void main() {
     expect((monday - friday).inMinutes, greaterThanOrEqualTo(15));
   });
 
+  test('without last night, a work day wakes at the usual work-day time', () {
+    // Work nights 1–9 AM, weekend nights 4 AM–1 PM, two weeks to Sunday
+    // Oct 11; Monday Oct 12 has no night yet.
+    final weeks = [
+      for (var i = 0; i < 14; i++)
+        () {
+          final d = DateTime(2026, 10, 11 - i);
+          final free = d.weekday >= DateTime.saturday;
+          return (
+            start: d.add(Duration(hours: free ? 4 : 1)),
+            end: d.add(Duration(hours: free ? 13 : 9)),
+            asleepHours: null,
+          );
+        }(),
+    ];
+    final monday = forecastEnergy(
+      day: DateTime(2026, 10, 12),
+      nights: weeks,
+      sleepNeedHours: 8,
+    );
+    expect(monday.estimated, isTrue);
+    expect(monday.wake, DateTime(2026, 10, 12, 9));
+    final saturday = forecastEnergy(
+      day: DateTime(2026, 10, 10),
+      nights: [
+        for (final n in weeks)
+          if (n.end.isBefore(DateTime(2026, 10, 10))) n,
+      ],
+      sleepNeedHours: 8,
+    );
+    expect(saturday.wake, DateTime(2026, 10, 10, 13));
+  });
+
   test('a night after today is ignored', () {
     final f = forecastEnergy(
       day: day,
