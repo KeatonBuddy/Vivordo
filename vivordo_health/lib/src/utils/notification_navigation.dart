@@ -15,5 +15,6 @@
   'circle' => (tab: 0, push: '/circle'),
   'fitness' => (tab: 3, push: null),
   'calendar' => (tab: 1, push: null),
+  'invites' => (tab: 1, push: '/invites'),
   _ => (tab: 0, push: null),
 };

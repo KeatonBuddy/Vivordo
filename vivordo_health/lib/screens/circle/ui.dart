@@ -671,6 +671,27 @@ class _InitialsAvatar extends StatelessWidget {
   }
 }
 
+/// Circle's avatar (photo, else initials on a pastel) for screens outside
+/// Circle, such as event invites.
+class CirclePersonAvatar extends StatelessWidget {
+  const CirclePersonAvatar({
+    super.key,
+    required this.name,
+    required this.uid,
+    required this.size,
+    this.photoUrl,
+  });
+
+  final String name;
+  final String uid;
+  final double size;
+  final String? photoUrl;
+
+  @override
+  Widget build(BuildContext context) =>
+      _InitialsAvatar(name: name, seed: uid, size: size, photoUrl: photoUrl);
+}
+
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({
     required this.profile,

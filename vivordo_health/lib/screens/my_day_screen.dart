@@ -29,6 +29,7 @@ import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
+import 'invites_screen.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/score_breakdown_sheet.dart';
@@ -1165,9 +1166,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _saveGoogleEvent(CalendarEventDraft draft) async {
     try {
       setState(() => _isLoading = true);
-      await saveEventDraft(draft);
+      final message = await saveEventDraft(draft);
       await _loadTodayEvents();
-      _showMessage('Event added to your calendar.');
+      _showMessage(message);
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
       debugPrint('Create calendar event failed: $error');
@@ -1238,6 +1239,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       key: widget.actionsKey,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const InvitesButton(),
                         IconButton(
                           onPressed: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(

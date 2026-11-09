@@ -3249,9 +3249,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _showHomeCalendarMessage(warning ?? 'Priority added.');
           if (draft.addToCalendar) _refreshHomeCalendarCards();
         case CalendarEventDraft draft:
-          await saveEventDraft(draft);
+          final message = await saveEventDraft(draft);
           _refreshHomeCalendarCards();
-          _showHomeCalendarMessage('Event added to your calendar.');
+          _showHomeCalendarMessage(message);
       }
     } catch (error) {
       debugPrint('Plan opening save failed: $error');

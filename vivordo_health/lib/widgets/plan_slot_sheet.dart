@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../src/services/calendar_service.dart';
 import '../src/services/daily_priority_service.dart';
+import '../src/services/event_invite_service.dart';
 import '../theme/vivordo_theme.dart';
 import 'add_calendar_event_sheet.dart';
 import 'add_priority_sheet.dart';
@@ -87,16 +88,36 @@ Future<String?> addPriorityCalendarEvent(
   }
 }
 
-/// Creates the calendar event in [draft], in Google or Outlook.
-Future<void> saveEventDraft(CalendarEventDraft draft) =>
-    CalendarService.createEvent(
+/// Creates the calendar event in [draft], in Google or Outlook, then
+/// invites its friends. Returns the message to show.
+Future<String> saveEventDraft(CalendarEventDraft draft) async {
+  final event = await CalendarService.createEvent(
+    title: draft.title,
+    start: draft.start,
+    end: draft.end,
+    recurrence: draft.recurrence,
+    isAllDay: draft.isAllDay,
+    calendarId: draft.calendarId,
+  );
+  final invitees = draft.inviteeUids;
+  if (invitees.isEmpty) return 'Event added to your calendar.';
+  try {
+    await EventInviteService.send(
       title: draft.title,
       start: draft.start,
       end: draft.end,
-      recurrence: draft.recurrence,
-      isAllDay: draft.isAllDay,
-      calendarId: draft.calendarId,
+      allDay: draft.isAllDay,
+      recipientUids: invitees,
+      senderEventId: event.id,
     );
+    return invitees.length == 1
+        ? 'Event added and your friend invited.'
+        : 'Event added and ${invitees.length} friends invited.';
+  } catch (error) {
+    debugPrint('Event invites not sent: $error');
+    return "Event added, but the invites couldn't be sent.";
+  }
+}
 
 class _PlanSlotSheet extends StatefulWidget {
   const _PlanSlotSheet({required this.start, this.end});

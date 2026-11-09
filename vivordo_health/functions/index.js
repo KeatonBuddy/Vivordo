@@ -11,6 +11,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const {removalPlan} = require("./circle_removal");
+const eventInvites = require("./event_invites");
 const {
   dueWhoopEndpoints,
   isWhoopAuthorizationFailureCode,
@@ -287,6 +288,7 @@ exports.blockCircleUser = onCall(async (request) => {
   }
   await batch.commit();
   await removeSharedCircleChallenges(uid, target);
+  await eventInvites.removeEventInvitesBetween(uid, target);
   return {blocked: true};
 });
 
@@ -308,6 +310,7 @@ exports.removeCircleFriend = onCall(async (request) => {
     }
   }
   await batch.commit();
+  await eventInvites.removeEventInvitesBetween(uid, target);
   return {removed: true};
 });
 
@@ -391,6 +394,12 @@ exports.unblockCircleUser = onCall(async (request) => {
 // Loading this module after Firebase Admin initialization keeps all functions
 // on the same shared Admin app and Firestore connection pool.
 Object.assign(exports, require("./challenges"));
+
+// Calendar invites between Circle friends.
+exports.sendEventInvites = eventInvites.sendEventInvites;
+exports.respondToEventInvite = eventInvites.respondToEventInvite;
+exports.updateEventInvite = eventInvites.updateEventInvite;
+exports.cancelEventInvite = eventInvites.cancelEventInvite;
 
 // A distinct Secret Manager binding avoids the legacy plain environment
 // variable with the old name on the existing Panda Cloud Run services.
@@ -2524,6 +2533,7 @@ async function deleteVivordoAccountData(uid) {
   await revokeConnectedProviders(uid);
   await deleteCircleRelationships(uid);
   await deleteUserChallenges(uid);
+  await eventInvites.deleteUserEventInvites(uid);
   await deleteGlobalUserReferences(uid);
   await Promise.all([
     db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),

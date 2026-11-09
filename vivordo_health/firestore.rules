@@ -217,6 +217,16 @@ service cloud.firestore {
                             && resource.data.uid == request.auth.uid;
     }
 
+    // ── Event invites between Circle friends ────────────────────────────────
+    // Readable by the sender and the invited friends; only the invite
+    // callables (which check friendships and blocks) write them.
+    match /event_invites/{inviteId} {
+      allow read: if request.auth != null
+                  && (request.auth.uid == resource.data.fromUid
+                      || request.auth.uid in resource.data.recipientUids);
+      allow create, update, delete: if false;
+    }
+
     // ── Circle challenges (Cloud Functions are the only writers) ────────────
     // The canonical challenge contains the complete participant list and is
     // readable only by those participants. All mutations flow through callable

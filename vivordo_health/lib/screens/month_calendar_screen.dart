@@ -268,14 +268,14 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
       case CalendarEventDraft draft:
         try {
           setState(() => _loading = true);
-          await saveEventDraft(draft);
+          final message = await saveEventDraft(draft);
           if (!mounted) return;
           setState(() {
             _visibleMonth = DateTime(draft.date.year, draft.date.month);
             _selectedDay = DateUtils.dateOnly(draft.date);
           });
           await _loadEvents(forceRefresh: true);
-          _showMessage('Event added to your calendar.');
+          _showMessage(message);
         } catch (error) {
           if (mounted) setState(() => _loading = false);
           debugPrint('Create calendar event failed: $error');

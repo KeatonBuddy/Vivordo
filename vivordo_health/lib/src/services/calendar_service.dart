@@ -5,6 +5,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:vivordo_health/src/services/event_invite_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/calendar_snapshot_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
@@ -183,7 +184,28 @@ class CalendarService {
 
   /// Deletes [event]. For one occurrence of a repeating event, [scope] can
   /// widen that to the occurrences after it or to the whole series.
+  /// Friends invited to a one-off event of yours see its change or
+  /// cancellation. Best effort: the calendar change already happened.
+  static void _followInvites(gcal.Event event, Future<void> Function() update) {
+    if (event.recurringEventId != null ||
+        (event.recurrence?.isNotEmpty ?? false)) {
+      return;
+    }
+    update().catchError((Object e) => debugPrint('Invite not updated: $e'));
+  }
+
   static Future<void> deleteEvent(
+    gcal.Event event, {
+    EventScope scope = EventScope.thisEvent,
+  }) async {
+    await _deleteEvent(event, scope: scope);
+    _followInvites(
+      event,
+      () => EventInviteService.senderEventDeleted(event.id),
+    );
+  }
+
+  static Future<void> _deleteEvent(
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,
   }) async {
@@ -436,6 +458,22 @@ class CalendarService {
     required DateTime end,
     required String recurrence,
   }) async {
+    final result = await _updateEventTimeAndRecurrence(
+      event,
+      start: start,
+      end: end,
+      recurrence: recurrence,
+    );
+    _followInvites(result, () => EventInviteService.senderEventChanged(result));
+    return result;
+  }
+
+  static Future<gcal.Event> _updateEventTimeAndRecurrence(
+    gcal.Event event, {
+    required DateTime start,
+    required DateTime end,
+    required String recurrence,
+  }) async {
     if (isOutlook(event)) {
       return OutlookCalendarService.updateEvent(
         event,
@@ -548,6 +586,30 @@ class CalendarService {
   /// Updates the fields Panda is allowed to propose. Null fields are preserved.
   /// With [allEvents], an occurrence's changes go to its whole series.
   static Future<gcal.Event> updateEvent(
+    gcal.Event event, {
+    String? title,
+    DateTime? start,
+    DateTime? end,
+    String? recurrence,
+    String? calendarId,
+    bool? isAllDay,
+    bool allEvents = false,
+  }) async {
+    final result = await _updateEvent(
+      event,
+      title: title,
+      start: start,
+      end: end,
+      recurrence: recurrence,
+      calendarId: calendarId,
+      isAllDay: isAllDay,
+      allEvents: allEvents,
+    );
+    _followInvites(result, () => EventInviteService.senderEventChanged(result));
+    return result;
+  }
+
+  static Future<gcal.Event> _updateEvent(
     gcal.Event event, {
     String? title,
     DateTime? start,

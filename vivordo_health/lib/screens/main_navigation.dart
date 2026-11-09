@@ -24,6 +24,7 @@ import 'my_day_screen.dart';
 import 'month_calendar_screen.dart';
 import 'steps_detail_screen.dart';
 import 'circle_screen.dart';
+import 'invites_screen.dart';
 import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
@@ -74,6 +75,7 @@ class MainNavigationScreen extends StatefulWidget {
     '/steps': (_) => const StepsDetailScreen(),
     '/circle': (_) => const CircleScreen(),
     '/circle/challenges': (_) => const CircleScreen(initialTab: 1),
+    '/invites': (_) => const InvitesScreen(),
   };
 
   @override
