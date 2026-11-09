@@ -544,6 +544,7 @@ test("a full turn returns text, chart, actions and sources as blocks, plus sugge
   assert.match(SYSTEM_PROMPT, /HOW REPLIES LOOK/);
   assert.match(SYSTEM_PROMPT, /\[Proposed changes: \.\.\.\] saying whether each was done/);
   assert.match(SYSTEM_PROMPT, /\[Asked from the "X" insight\]/);
+  assert.match(SYSTEM_PROMPT, /never "I've proposed", "I've prepared" or "I've lined up"/);
   assert.match(SYSTEM_PROMPT, /An event the user plans before it means they'll be up earlier for it/);
   assert.match(SYSTEM_PROMPT, /never "correct" an earlier reply using data about a different one/);
 });
