@@ -118,7 +118,7 @@ void main() {
       sleepNeedHours: 8,
     );
     final text = energyReasons(short).map((r) => r.$2).join('\n');
-    expect(text, contains('You slept 6 h 40, 1 h 20 under your need'));
+    expect(text, contains('You slept 6 h 40 m, 1 h 20 m under your need'));
     expect(text, contains('You woke at 7:00'));
     expect(text, contains('Best for focus:'));
     expect(text, contains('about average'));
@@ -270,7 +270,7 @@ void main() {
     expect(text, startsWith('Today: woke ${t('7:00 AM')}, groggy until'));
     expect(text, contains('peak '));
     expect(text, contains('Bed by '));
-    expect(text, contains('Last night: slept 6 h 40 (needs 8 h).'));
+    expect(text, contains('Last night: slept 6 h 40 m (needs 8 h).'));
     expect(
       text,
       contains(

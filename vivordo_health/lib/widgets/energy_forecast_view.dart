@@ -74,7 +74,7 @@ String _hoursText(double hours) {
   final rest = minutes % 60;
   return rest == 0
       ? '${minutes ~/ 60} h'
-      : '${minutes ~/ 60} h ${rest.toString().padLeft(2, '0')}';
+      : '${minutes ~/ 60} h ${rest.toString().padLeft(2, '0')} m';
 }
 
 /// The peak, dip and second wind as chips. Taps open the "why" sheet.
