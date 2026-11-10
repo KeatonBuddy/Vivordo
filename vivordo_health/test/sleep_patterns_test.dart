@@ -81,6 +81,48 @@ void main() {
     );
   });
 
+  test('three short nights this week are enough to say so', () {
+    final patterns = sleepPatterns(
+      nights: nights(60, (m, i) => night(m, {1, 3, 5}.contains(i) ? 6 : 7.5)),
+      today: today,
+      need: 7.5,
+    );
+    final short = patterns.firstWhere((p) => p.id == 'running_short');
+    expect(
+      short.body,
+      'Under your sleep need on 3 of the last 14 nights, all this week.',
+    );
+  });
+
+  test('long nights after short ones are catching up, not running short', () {
+    final patterns = sleepPatterns(
+      nights: nights(
+        60,
+        (m, i) => night(
+          m,
+          i < 2
+              ? 8.5
+              : i < 5
+              ? 6
+              : 7.5,
+        ),
+      ),
+      today: today,
+      need: 7.5,
+    );
+    expect(ids(patterns), isNot(contains('running_short')));
+    final catching = patterns.firstWhere((p) => p.id == 'catching_up');
+    expect(catching.tone, InsightTone.good);
+    expect(
+      catching.body,
+      '3 short nights in the last 2 weeks, but your last 2 nights ran long '
+      'and are making up for them.',
+    );
+    expect(catching.chart!.highlight, {12, 13});
+    expect(catching.chart!.reference, 7.5);
+    expect(catching.why, isNotNull);
+  });
+
   test(
     'weekend shift on Friday and Saturday nights, not counted as irregular',
     () {

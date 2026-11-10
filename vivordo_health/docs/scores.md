@@ -742,10 +742,18 @@ and words, never a score.
     (a 3 h later weekend wake moved the clock ~40 min in Taylor et al.
     2008). Bedtime, the estimated wake and the sheet's "body clock runs
     late" still use the chronotype.
-  - **Sleep debt:** the last 7 nights, oldest first: a short night adds
+  - **Sleep debt:** the last 14 nights, oldest first: a short night adds
     its shortfall against your need, a long night pays back half its extra
     (one recovery night only partly restores, Banks et al. 2010), never
-    below 0 or above 10 h.
+    below 0 or above 10 h, and what's carried halves every 7 days, so last
+    night counts about twice as much as a night a week ago. It only drives
+    the model (morning sleep pressure, heavier grogginess): it's never
+    shown as hours, since how lost sleep adds up isn't precise enough to
+    count. People see short nights instead (under need by 45 min or more):
+    with 3+ in the last 14 the sheet says how many, and how many this week,
+    or that longer nights since have made up for most of it (debt under
+    1 h). The Sleep screen's "Running short lately" and "Catching up"
+    patterns use the same count (`lib/src/utils/sleep_patterns.dart`).
 - **Windows:**
   - groggy: until grogginess fades;
   - peak: the high point in the first half of the waking day;
@@ -826,7 +834,7 @@ still ahead (Your Day's events and timed priorities) against the forecast.
     More than you've got".
 - **"Your energy today" sheet** (`lib/widgets/energy_forecast_view.dart`):
   the curve, the chips, and plain-language reasons (sleep against need,
-  grogginess, body clock, sleep debt, best focus time).
+  grogginess, body clock, recent short nights, best focus time).
 - **Evening card on My Day,** after your end-of-day time:
   - wind-down time;
   - bed-by (from tomorrow's first timed event);
@@ -855,7 +863,7 @@ forecast they last showed in `latestEnergy` (`energyContext`), and each chat
 message sends it as ENERGY when it's from today:
 - today's wake (or usual wake, marked estimated), groggy end, windows and
   bed-by (Home now also uses tomorrow's first event, like My Day);
-- last night against need, and sleep debt;
+- last night against need, and recent short nights (never hours owed);
 - each clash still ahead, whether it can move and where;
 - after the end-of-day time, tomorrow's windows if in bed by bed-by.
 

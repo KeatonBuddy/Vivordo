@@ -527,10 +527,12 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           : short <= -0.5
           ? 'You slept ${_hoursText(forecast.sleptHours)}, '
                 '${_hoursText(-short)} over your need.'
-                '${forecast.sleepDebtHours >= 1 ? ' Half the extra pays back sleep debt.' : ''}'
+                '${forecast.shortNights > 0 ? ' Longer nights like this make up for short ones.' : ''}'
           : 'You slept ${_hoursText(forecast.sleptHours)}, about what you '
                 'need.',
     ),
+    if (shortNightsText(forecast) case final text?)
+      (CupertinoIcons.hourglass_bottomhalf_fill, text),
     for (final f in forecast.factors)
       (
         f.id == hardTrainingFactor
@@ -562,12 +564,6 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
               : 'about average'} '
           '(you sleep around a midpoint of $midTime).',
     ),
-    if (forecast.sleepDebtHours >= 1 && !forecast.needIsDefault)
-      (
-        CupertinoIcons.hourglass_bottomhalf_fill,
-        "You're carrying about ${_hoursText(forecast.sleepDebtHours)} of "
-            'sleep debt from the last week.',
-      ),
     if (peak != null)
       (
         CupertinoIcons.lightbulb,
@@ -575,6 +571,26 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
             '${dip == null ? '' : ' Save routine tasks for ${energyWindowText(dip)}.'}',
       ),
   ];
+}
+
+/// Recent short nights, as a count rather than hours owed (how lost sleep
+/// adds up isn't precise enough to count): still weighing on today, or
+/// mostly made up by longer nights since. Null under 3 short nights.
+String? shortNightsText(EnergyForecast forecast) {
+  final short = forecast.shortNights;
+  if (forecast.needIsDefault || short < 3) return null;
+  final of = 'of your last ${forecast.recentNights} nights';
+  if (forecast.sleepDebtHours < 1) {
+    return 'You were short on $short $of, but longer nights since have made '
+        'up for most of it.';
+  }
+  final week = forecast.shortNightsThisWeek;
+  return "You've been short on sleep $short $of"
+      '${week == short
+          ? ', all this week'
+          : week > 0
+          ? ', $week of them this week'
+          : ''}. The recent ones weigh most on today.';
 }
 
 /// Tomorrow's forecast if you sleep from [tonight]'s bed-by for your full
@@ -687,8 +703,7 @@ String energyContext({
     if (!today.estimated)
       'Last night: slept ${_hoursText(today.sleptHours)} '
           '(needs ${_hoursText(today.sleepNeedHours)}).',
-    if (today.sleepDebtHours >= 0.25)
-      'Sleep debt: ${_hoursText(today.sleepDebtHours)} over the last 7 nights.',
+    ?shortNightsText(today),
     clashes.isEmpty
         ? 'No hard work still ahead lands in a low-energy window.'
         : 'Clashes: ${clashes.join(' ')}',

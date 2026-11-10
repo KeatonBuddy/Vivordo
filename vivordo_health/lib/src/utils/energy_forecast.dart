@@ -37,6 +37,9 @@ class EnergyForecast {
     required this.sleepDebtHours,
     required this.midSleepHours,
     required this.estimated,
+    this.recentNights = 0,
+    this.shortNights = 0,
+    this.shortNightsThisWeek = 0,
     DateTime? wakeTarget,
     this.needIsDefault = false,
     this.usesSchedule = false,
@@ -67,7 +70,17 @@ class EnergyForecast {
   final List<EnergyWindow> windows;
   final double sleptHours;
   final double sleepNeedHours;
+
+  /// Sleep debt over the last 14 nights, recent nights counting most. Only
+  /// the model uses it: never shown as hours, which aren't precise enough
+  /// to count (docs/scores.md §8).
   final double sleepDebtHours;
+
+  /// Nights tracked in the last 14, and how many of them were short (under
+  /// your need by 45 minutes or more), in all and in the last 7.
+  final int recentNights;
+  final int shortNights;
+  final int shortNightsThisWeek;
 
   /// Your usual sleep midpoint, in hours after midnight (chronotype).
   final double midSleepHours;
@@ -180,8 +193,14 @@ const _minSecondWindRise = 0.04;
 /// Time to get ready between waking and tomorrow's first event.
 const _morningPrep = Duration(minutes: 60);
 const _windDown = Duration(minutes: 60);
-const _debtDays = 7;
+const _debtDays = 14;
 const _maxDebtHours = 10.0;
+
+/// Debt fades: a night a week ago counts half as much as last night.
+const _debtHalfLifeDays = 7.0;
+
+/// A night this far under your need counts as short (as Sleep's patterns).
+const _shortNightHours = 0.75;
 
 /// Share of sleep beyond your need that pays back debt: one long night only
 /// partly makes up for short ones (Banks et al. 2010).
@@ -303,19 +322,38 @@ EnergyForecast forecastEnergy({
         );
 
   // Debt night by night, oldest first: a short night adds what it was short,
-  // a long one pays back part of the extra.
-  double debtOver(Iterable<SleepPeriod> nights) => nights.fold(0.0, (d, n) {
-    final short = need - asleepOf(n);
-    return (d + (short > 0 ? short : short * _debtPaybackShare)).clamp(
-      0.0,
-      _maxDebtHours,
-    );
-  });
-  final week = [
+  // a long one pays back part of the extra, and what's carried fades with
+  // each day that passes.
+  double fade(DateTime from, DateTime to) => math
+      .pow(
+        0.5,
+        _midnight(to).difference(_midnight(from)).inHours /
+            24 /
+            _debtHalfLifeDays,
+      )
+      .toDouble();
+  double debtOver(Iterable<SleepPeriod> nights) {
+    var debt = 0.0;
+    DateTime? previous;
+    for (final n in nights) {
+      if (previous != null) debt *= fade(previous, n.end);
+      final short = need - asleepOf(n);
+      debt = (debt + (short > 0 ? short : short * _debtPaybackShare)).clamp(
+        0.0,
+        _maxDebtHours,
+      );
+      previous = n.end;
+    }
+    return previous == null ? 0 : debt * fade(previous, date);
+  }
+
+  final fortnight = [
     for (final n in recent.reversed)
       if (n.end.isAfter(date.subtract(const Duration(days: _debtDays - 1)))) n,
   ];
-  final debt = debtOver(week);
+  final debt = debtOver(fortnight);
+  bool isShort(SleepPeriod n) => asleepOf(n) <= need - _shortNightHours;
+  final weekStart = date.subtract(const Duration(days: 6));
 
   // Grogginess: heavier for debt carried into last night and for waking
   // before your usual wake on a day like today.
@@ -326,7 +364,7 @@ EnergyForecast forecastEnergy({
           _maxEarlyHours,
         );
   final fromDebt =
-      _inertiaPerDebtHour * debtOver(week.where((n) => n != lastNight));
+      _inertiaPerDebtHour * debtOver(fortnight.where((n) => n != lastNight));
   final fromEarly = _inertiaPerEarlyHour * early;
   final inertiaStart =
       _inertiaStart * math.min(_maxInertiaScale, 1 + fromDebt + fromEarly);
@@ -380,6 +418,11 @@ EnergyForecast forecastEnergy({
     sleepDebtHours: debt,
     midSleepHours: midSleep,
     estimated: lastNight == null,
+    recentNights: fortnight.length,
+    shortNights: fortnight.where(isShort).length,
+    shortNightsThisWeek: fortnight
+        .where((n) => n.end.isAfter(weekStart) && isShort(n))
+        .length,
     wakeTarget: () {
       final usualWake = usual != null
           ? schedule!

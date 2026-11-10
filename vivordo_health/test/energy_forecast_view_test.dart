@@ -298,4 +298,54 @@ void main() {
     expect(usual, contains('No hard work still ahead'));
     expect(usual, isNot(contains('Tomorrow')));
   });
+
+  test('short nights are counted, never shown as hours owed', () {
+    SleepPeriod night(int daysAgo, double hours) {
+      final end = DateTime(2026, 10, 8 - daysAgo, 7);
+      return (
+        start: end.subtract(Duration(minutes: (hours * 60).round())),
+        end: end,
+        asleepHours: null,
+      );
+    }
+
+    String? text(Map<int, double> short, {double rest = 8}) => shortNightsText(
+      forecastEnergy(
+        day: day,
+        nights: [for (var i = 0; i < 14; i++) night(i, short[i] ?? rest)],
+        sleepNeedHours: 8,
+      ),
+    );
+
+    // Three this week and two the week before, still weighing on today.
+    expect(
+      text({0: 6, 2: 6.5, 4: 6, 9: 6, 11: 6.5}),
+      "You've been short on sleep 5 of your last 14 nights, 3 of them this "
+      'week. The recent ones weigh most on today.',
+    );
+    // Short last week, then two long nights: mostly made up.
+    expect(
+      text({0: 9.5, 1: 9.5, 8: 6.5, 9: 6.5, 10: 6.5}),
+      'You were short on 3 of your last 14 nights, but longer nights since '
+      'have made up for most of it.',
+    );
+    // Two short nights say nothing; nor does the 8 h placeholder need.
+    expect(text({0: 6, 1: 6}), isNull);
+    expect(
+      shortNightsText(forecastEnergy(day: day, nights: nights(hours: 6))),
+      isNull,
+    );
+    for (final t in [
+      text({0: 6, 1: 6, 2: 6}),
+      energyContext(
+        today: forecastEnergy(
+          day: day,
+          nights: nights(hours: 6),
+          sleepNeedHours: 8,
+        ),
+      ),
+    ]) {
+      expect(t, isNot(matches(RegExp(r'\d+\s*h\b.*debt|debt.*\d+\s*h'))));
+    }
+  });
 }

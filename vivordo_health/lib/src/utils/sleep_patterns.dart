@@ -157,27 +157,77 @@ List<SleepPattern> sleepPatterns({
       : null;
   final wakeTime = usualWake == null ? 'usual' : _clockOfDay(usualWake);
 
-  // ── Running short ──
+  // ── Running short, or catching up after it ──
   if (need != null) {
     bool short(SleepNight n) => n.hours < need - .75;
+    bool long(SleepNight n) => n.hours >= need + .5;
     final shortCount = tracked.where(short).length;
+    final thisWeek = last14.take(7).whereType<SleepNight>().where(short).length;
     var streak = 0;
     for (final n in tracked) {
       if (!short(n)) break;
       streak++;
     }
-    if (streak >= 3 || shortCount >= 8) {
+    // Long nights since the last short one, last night first.
+    var longRun = 0;
+    for (final n in last14) {
+      if (n == null || !long(n)) break;
+      longRun++;
+    }
+    final oldestFirst = last14.reversed.toList();
+    SleepPatternChart chart(Set<int> highlight) => SleepPatternChart(
+      [for (final n in oldestFirst) n?.hours],
+      labels: [
+        for (var i = 0; i < 14; i++)
+          i == 0
+              ? '2 weeks ago'
+              : i == 13
+              ? 'Last night'
+              : '',
+      ],
+      highlight: highlight,
+      reference: need,
+    );
+    final basis =
+        'Vivordo shows the pattern, not a total of hours owed: how lost '
+        "sleep adds up and pays back isn't precise enough to count. Based on "
+        '${tracked.length} nights.';
+    if (shortCount >= 3 && longRun >= 2) {
+      good.add(
+        SleepPattern(
+          id: 'catching_up',
+          tone: InsightTone.good,
+          title: 'Catching up',
+          body:
+              '$shortCount short nights in the last 2 weeks, but your last '
+              '$longRun nights ran long and are making up for them.',
+          why:
+              'Longer nights after a run of short ones help you recover. It '
+              "takes a few nights, and one lie-in doesn't undo a whole run.",
+          tryThis:
+              'Keep your $wakeTime wake time. Earlier nights catch you up '
+              'better than late mornings.',
+          chart: chart({for (var i = 0; i < longRun; i++) 13 - i}),
+          basis: basis,
+        ),
+      );
+    } else if (streak >= 3 || shortCount >= 8 || thisWeek >= 3) {
       final of = 'on $shortCount of the last ${tracked.length} nights';
-      final oldestFirst = last14.reversed.toList();
       worth.add(
         SleepPattern(
           id: 'running_short',
           tone: InsightTone.concern,
           title: 'Running short lately',
-          body: shortCount >= 8
-              ? 'Under your sleep need $of'
-                    '${streak >= 3 ? ', the last $streak in a row' : ''}.'
-              : 'The last $streak nights were under your sleep need.',
+          body: streak >= 3 && shortCount < 8
+              ? 'The last $streak nights were under your sleep need.'
+              : 'Under your sleep need $of'
+                    '${streak >= 3
+                        ? ', the last $streak in a row'
+                        : thisWeek == shortCount
+                        ? ', all this week'
+                        : thisWeek > 0
+                        ? ', $thisWeek of them this week'
+                        : ''}.',
           why:
               'A run of short nights builds up. Focus and mood can dip '
               'before you feel tired. A lie-in helps a little, but it '
@@ -187,26 +237,11 @@ List<SleepPattern> sleepPatterns({
               'nights, and keep your $wakeTime wake time.',
           action: SleepPatternAction.preferences,
           actionLabel: 'Set up wind-down reminder',
-          chart: SleepPatternChart(
-            [for (final n in oldestFirst) n?.hours],
-            labels: [
-              for (var i = 0; i < 14; i++)
-                i == 0
-                    ? '2 weeks ago'
-                    : i == 13
-                    ? 'Last night'
-                    : '',
-            ],
-            highlight: {
-              for (final (i, n) in oldestFirst.indexed)
-                if (n != null && short(n)) i,
-            },
-            reference: need,
-          ),
-          basis:
-              'Vivordo shows the pattern, not a total of hours owed: how '
-              "lost sleep adds up and pays back isn't precise enough to "
-              'count. Based on ${tracked.length} nights.',
+          chart: chart({
+            for (final (i, n) in oldestFirst.indexed)
+              if (n != null && short(n)) i,
+          }),
+          basis: basis,
         ),
       );
     }

@@ -94,7 +94,9 @@ void main() {
       sleepNeedHours: 8,
     );
     expect(short.sleptHours, 5.5);
-    expect(short.sleepDebtHours, closeTo(2.5 + 6, 0.01));
+    // 2.5 h last night, plus 13 earlier nights an hour short, fading.
+    expect(short.sleepDebtHours, closeTo(9.46, 0.01));
+    expect((short.shortNights, short.shortNightsThisWeek), (14, 7));
     expect(rested.at(at(10))! - short.at(at(10))!, greaterThan(0.08));
     expect(rested.at(at(15))! - short.at(at(15))!, greaterThan(0.08));
   });
@@ -161,24 +163,53 @@ void main() {
     expect((windDown.start, windDown.end), (at(21), at(22)));
   });
 
-  test('sleep debt counts the last 7 nights and is capped', () {
+  test('sleep debt counts the last 14 nights and is capped', () {
     final f = forecastEnergy(
       day: day,
-      nights: nights(hours: 6),
+      nights: nights(count: 20, hours: 6),
       sleepNeedHours: 8,
     );
-    // 7 nights × 2 h short = 14 h, capped at 10; older nights don't count.
     expect(f.sleepDebtHours, 10);
+    expect(f.recentNights, 14);
+    // 14 nights half an hour short, older ones fading.
     final mild = forecastEnergy(
       day: day,
       nights: nights(hours: 7.5),
       sleepNeedHours: 8,
     );
-    expect(mild.sleepDebtHours, 3.5);
+    expect(mild.sleepDebtHours, closeTo(3.98, 0.01));
+    // Half an hour short isn't a short night.
+    expect(mild.shortNights, 0);
+  });
+
+  test('recent short nights weigh more than old ones', () {
+    SleepPeriod shortNight(int daysAgo) {
+      final end = DateTime(2026, 10, 8 - daysAgo, 7);
+      return (
+        start: end.subtract(const Duration(hours: 5)),
+        end: end,
+        asleepHours: null,
+      );
+    }
+
+    EnergyForecast withShort(int daysAgo) => forecastEnergy(
+      day: day,
+      nights: [
+        for (final n in nights())
+          n.end.day == 8 - daysAgo ? shortNight(daysAgo) : n,
+      ],
+      sleepNeedHours: 8,
+    );
+    final lastNight = withShort(0), weekAgo = withShort(7);
+    expect(lastNight.sleepDebtHours, closeTo(3, 0.01));
+    expect(weekAgo.sleepDebtHours, closeTo(1.5, 0.01));
+    expect((weekAgo.shortNights, weekAgo.shortNightsThisWeek), (1, 0));
+    expect(withShort(13).sleepDebtHours, lessThan(1));
   });
 
   test('a long night pays back half its extra, never below zero', () {
-    // Six nights an hour short, then 10 h asleep last night: 6 h − 1 h.
+    // An hour short every night before, then 10 h asleep last night pays
+    // back 1 h of what's carried.
     final f = forecastEnergy(
       day: day,
       nights: [
@@ -187,7 +218,7 @@ void main() {
       ],
       sleepNeedHours: 8,
     );
-    expect(f.sleepDebtHours, closeTo(5, 0.01));
+    expect(f.sleepDebtHours, closeTo(5.96, 0.01));
 
     // Rested going in: the extra doesn't bank.
     final rested = forecastEnergy(
