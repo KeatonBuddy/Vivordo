@@ -6,6 +6,7 @@ const {
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
+const {FieldValue, Timestamp} = require("firebase-admin/firestore");
 
 const CHALLENGE_TYPES = Object.freeze({
   workout_count: {
@@ -154,7 +155,7 @@ function validatedChallengeInput(request, creatorUid) {
 }
 
 function timestampAfter(timestamp, duration) {
-  return admin.firestore.Timestamp.fromMillis(
+  return Timestamp.fromMillis(
       timestamp.toMillis() + duration,
   );
 }
@@ -273,7 +274,7 @@ exports.createChallenge = onCall(async (request) => {
   const challengeReference = db.collection("challenges").doc();
   const challengeId = challengeReference.id;
   const participantUids = [creatorUid, ...input.invitees];
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const pendingExpiresAt = timestampAfter(
       now,
       INVITE_EXPIRY_HOURS * 60 * 60 * 1000,
@@ -395,7 +396,7 @@ exports.respondToChallenge = onCall(async (request) => {
     const declinedUids = [...(challenge.declinedUids || [])];
     if (accept && !acceptedUids.includes(uid)) acceptedUids.push(uid);
     if (!accept && !declinedUids.includes(uid)) declinedUids.push(uid);
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     const activated = pendingUids.length === 0 && acceptedUids.length >= 2;
     const cancelled = pendingUids.length === 0 && acceptedUids.length < 2;
     const status = activated ? "active" : cancelled ? "cancelled" : "pending";
@@ -562,7 +563,7 @@ exports.cancelChallenge = onCall(async (request) => {
       );
     }
     if (!["pending", "active"].includes(challenge.status)) return;
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     transaction.update(challengeReference, {
       status: "cancelled",
       cancelledAt: now,
@@ -737,7 +738,7 @@ exports.challengeMetricProgress = onDocumentWritten(
 
 exports.finalizeChallenges = onSchedule("every 15 minutes", async () => {
   const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const [active, pending] = await Promise.all([
     db.collection("challenges")
         .where("status", "==", "active")
@@ -800,8 +801,8 @@ async function journalEntryExistsForDay(uid, dayKey) {
       Number(match[2]) - 1,
       Number(match[3]),
   );
-  const start = admin.firestore.Timestamp.fromMillis(startMillis);
-  const end = admin.firestore.Timestamp.fromMillis(
+  const start = Timestamp.fromMillis(startMillis);
+  const end = Timestamp.fromMillis(
       startMillis + 24 * 60 * 60 * 1000,
   );
   const snapshot = await admin.firestore().collection("users").doc(uid)
@@ -894,7 +895,7 @@ async function applyContribution({
         0,
         Number(challenge.totalProgress || 0) + delta,
     );
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     const participantData = participantSnapshot.data();
     // Later contributions keep the first completion time.
     const participantCompletedAt = participantData?.completedAt || now;
@@ -973,7 +974,7 @@ async function applyContribution({
         awardedAt: now,
       });
       transaction.set(profileReference(db, uid), {
-        challengeMedalCount: admin.firestore.FieldValue.increment(1),
+        challengeMedalCount: FieldValue.increment(1),
         updatedAt: now,
       }, {merge: true});
     }
@@ -999,7 +1000,7 @@ async function expireChallenge(reference, status) {
     if (!snapshot.exists ||
         !["pending", "active"].includes(snapshot.data().status)) return;
     const challenge = snapshot.data();
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     transaction.update(reference, {
       status,
       expiredAt: now,

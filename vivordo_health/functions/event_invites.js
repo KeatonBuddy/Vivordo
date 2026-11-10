@@ -5,6 +5,7 @@
 // check friendships and blocks the way createChallenge does.
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const {Timestamp} = require("firebase-admin/firestore");
 const {pushToUser} = require("./push");
 
 const MAX_RECIPIENTS = 20;
@@ -321,15 +322,15 @@ exports.sendEventInvites = onCall(async (request) => {
         db.doc(`users/${person}/circle/profile`)));
   const profile = senderProfile.data();
   const fromName = profile?.username || "A Circle friend";
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const reference = db.collection("event_invites").doc();
   await reference.set({
     fromUid: uid,
     fromName,
     fromPhotoUrl: profile?.photoUrl || null,
     title: input.title,
-    start: admin.firestore.Timestamp.fromMillis(input.start),
-    end: admin.firestore.Timestamp.fromMillis(input.end),
+    start: Timestamp.fromMillis(input.start),
+    end: Timestamp.fromMillis(input.end),
     allDay: input.allDay,
     recurrence: input.recurrence,
     recipientUids: input.recipientUids,
@@ -344,7 +345,7 @@ exports.sendEventInvites = onCall(async (request) => {
     updatedAt: now,
     // Invites expire when the event ends: the app stops showing them and a
     // Firestore TTL policy on expireAt deletes them.
-    expireAt: admin.firestore.Timestamp.fromMillis(input.until),
+    expireAt: Timestamp.fromMillis(input.until),
   });
   const messaging = admin.messaging();
   await Promise.all(input.recipientUids.map((friend) => pushToUser(
@@ -376,7 +377,7 @@ exports.respondToEventInvite = onCall(async (request) => {
     const update = responseUpdate(snapshot.data(), uid, accept, Date.now());
     if (!update) return null;
     transaction.update(reference, {
-      ...update, updatedAt: admin.firestore.Timestamp.now(),
+      ...update, updatedAt: Timestamp.now(),
     });
     return snapshot.data();
   });
@@ -408,13 +409,13 @@ exports.updateEventInvite = onCall(async (request) => {
   }
   await snapshot.ref.update({
     title: fields.title,
-    start: admin.firestore.Timestamp.fromMillis(fields.start),
-    end: admin.firestore.Timestamp.fromMillis(fields.end),
+    start: Timestamp.fromMillis(fields.start),
+    end: Timestamp.fromMillis(fields.end),
     allDay: fields.allDay,
     recurrence: fields.recurrence,
     exceptions: keptExceptions(invite, fields),
-    expireAt: admin.firestore.Timestamp.fromMillis(fields.until),
-    updatedAt: admin.firestore.Timestamp.now(),
+    expireAt: Timestamp.fromMillis(fields.until),
+    updatedAt: Timestamp.now(),
   });
   await pushToRecipients(db, invite, "Event updated",
       `${invite.fromName} changed ${fields.title}. Open Vivordo to see ` +
@@ -430,7 +431,7 @@ exports.updateEventInviteOccurrence = onCall(async (request) => {
   const update = occurrenceUpdate(invite, request.data, Date.now());
   if (!update) return {updated: false};
   await snapshot.ref.update({
-    ...update, updatedAt: admin.firestore.Timestamp.now(),
+    ...update, updatedAt: Timestamp.now(),
   });
   // No date: the server doesn't know each friend's time zone. The
   // Invites screen shows which one.
@@ -449,7 +450,7 @@ exports.cancelEventInvite = onCall(async (request) => {
   if (snapshot.data().status === "cancelled") return {cancelled: true};
   await snapshot.ref.update({
     status: "cancelled",
-    updatedAt: admin.firestore.Timestamp.now(),
+    updatedAt: Timestamp.now(),
   });
   const invite = snapshot.data();
   await pushToRecipients(db, invite, "Event cancelled",
