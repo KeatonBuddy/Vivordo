@@ -19,6 +19,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/muscle_sets_card.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key});
@@ -91,6 +92,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _metrics,
         builder: (context, metricsSnapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (_rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.exercise,
+              months: _rangeIndex == 3 ? 6 : 12,
+              header: _rangeSelector(),
+            );
+          }
           if (!metricsSnapshot.hasData &&
               metricsSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CupertinoActivityIndicator());
@@ -254,7 +264,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   }
 
   Widget _rangeSelector() => AppSegmented<int>(
-    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
     onChanged: (index) => setState(() => _rangeIndex = index),
   );
