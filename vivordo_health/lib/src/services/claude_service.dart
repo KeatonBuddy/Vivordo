@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'ai_consent.dart';
+import 'day_help_log.dart';
 import 'panda_prompts.dart';
 
 export 'panda_prompts.dart';
@@ -212,6 +213,7 @@ class ClaudeService {
       // This build can show and save a Vivordo AI routine card.
       'capabilities': const ['workout'],
     });
+    unawaited(markDayHelped(DayHelp.vivordoAi));
     return PandaPrompts.parseTurnReply(jsonEncode(result.data));
   }
 

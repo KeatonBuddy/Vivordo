@@ -4,7 +4,9 @@ import 'package:flutter/cupertino.dart'
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
+import '../src/services/access_recap_service.dart';
 import '../src/services/subscription_service.dart';
+import '../src/utils/access_recap.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/privacy_support_links.dart';
@@ -104,6 +106,7 @@ class _PremiumGateState extends State<PremiumGate> {
                       'trial' => PremiumEnded.trial,
                       _ => PremiumEnded.subscription,
                     },
+                    endedAt: (data?['expiresAt'] as Timestamp?)?.toDate(),
                   ),
           );
         },
@@ -131,14 +134,18 @@ class PaywallScreen extends StatefulWidget {
     super.key,
     required this.uid,
     this.ended,
+    this.endedAt,
     this.loadPlans,
+    this.loadRecap,
   });
 
   final String uid;
   final PremiumEnded? ended;
+  final DateTime? endedAt;
 
-  /// Replaces RevenueCat in tests.
+  /// Replace RevenueCat and the recap's reads in tests.
   final Future<List<PremiumPlan>> Function()? loadPlans;
+  final Future<AccessRecap> Function()? loadRecap;
 
   @override
   State<PaywallScreen> createState() => _PaywallScreenState();
@@ -146,6 +153,18 @@ class PaywallScreen extends StatefulWidget {
 
 class _PaywallScreenState extends State<PaywallScreen> {
   late Future<List<PremiumPlan>> _plans = _load();
+
+  /// Once access has ended: what this person built up, in place of the
+  /// feature list (access_recap.dart).
+  late final Future<AccessRecap>? _recap = widget.ended == null
+      ? null
+      : (widget.loadRecap?.call() ??
+                AccessRecapService.load(
+                  uid: widget.uid,
+                  trial: widget.ended == PremiumEnded.trial,
+                  endedAt: widget.endedAt,
+                ))
+            .timeout(const Duration(seconds: 12));
   bool _yearly = true;
   bool _busy = false;
 
@@ -218,7 +237,10 @@ class _PaywallScreenState extends State<PaywallScreen> {
                     children: [
                       _header(selected),
                       const SizedBox(height: 18),
-                      ..._features,
+                      if (_recap case final recap?)
+                        _RecapOrFeatures(recap)
+                      else
+                        ..._features,
                       if (snapshot.hasError)
                         _LoadFailed(
                           onRetry: () => setState(() {
@@ -413,6 +435,114 @@ String _trialLength((int, String) trial, {bool article = false}) =>
       (1, final unit) => article ? 'a $unit' : '1 $unit',
       (final count, final unit) => '$count ${unit}s',
     };
+
+/// The recap card, or the feature list when the recap has nothing to show
+/// or couldn't load.
+class _RecapOrFeatures extends StatelessWidget {
+  const _RecapOrFeatures(this.recap);
+
+  final Future<AccessRecap> recap;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder(
+    future: recap,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const Padding(
+          padding: EdgeInsets.all(40),
+          child: Center(child: CupertinoActivityIndicator()),
+        );
+      }
+      final data = snapshot.data;
+      if (data == null || data.lines.isEmpty) {
+        return const Column(children: _PaywallScreenState._features);
+      }
+      final colors = context.vivordoColors;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: colors.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: colors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.heading,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: colors.textPrimary,
+              ),
+            ),
+            Text(
+              data.dates,
+              style: TextStyle(fontSize: 12, color: colors.textSecondary),
+            ),
+            for (final line in data.lines) ...[
+              const SizedBox(height: 14),
+              _RecapRow(line),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _RecapRow extends StatelessWidget {
+  const _RecapRow(this.line);
+
+  final RecapLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    final (icon, color) = switch (line.icon) {
+      RecapIcon.capacity => (CupertinoIcons.gauge, colors.success),
+      RecapIcon.focus => (CupertinoIcons.lightbulb, colors.warning),
+      RecapIcon.meetings => (CupertinoIcons.waveform_path_ecg, colors.danger),
+      RecapIcon.planned => (CupertinoIcons.calendar_badge_plus, _purple),
+    };
+    return MergeSemantics(
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 19, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  line.title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                Text(
+                  line.detail,
+                  style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Feature extends StatelessWidget {
   const _Feature(this.text);

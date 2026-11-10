@@ -42,6 +42,7 @@ import '../widgets/swipe_to_delete.dart';
 import '../widgets/habit_chips.dart';
 import '../src/utils/priority_schedule.dart';
 import '../widgets/plan_my_day_sheet.dart';
+import '../src/services/day_help_log.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
@@ -2795,7 +2796,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         if (moved > 0) '$moved moved to tomorrow',
       ].join(' · '),
     );
-    if (!undo) return;
+    if (!undo) {
+      unawaited(markDayHelped(DayHelp.planMyDay));
+      return;
+    }
     try {
       for (final m in moves) {
         // Back to its own day and time (an overdue one to its old day).
