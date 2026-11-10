@@ -742,8 +742,12 @@ class _StepsChartPainter extends CustomPainter {
     }
   }
 
-  static String _compact(double value) =>
-      value >= 1000 ? '${(value / 1000).round()}K' : value.round().toString();
+  /// Axis labels: "2K", or "1.5K" for a gridline between thousands.
+  static String _compact(double value) {
+    if (value < 1000) return value.round().toString();
+    final thousands = (value / 100).round() / 10;
+    return '${thousands % 1 == 0 ? thousands.round() : thousands}K';
+  }
 
   void _text(Canvas canvas, String value, Offset offset, double size) {
     final painter = TextPainter(
