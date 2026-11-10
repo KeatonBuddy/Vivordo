@@ -43,7 +43,11 @@ void main() {
     expect(history.daysIn(DateTime(2026, 8)), {30: 12000, 31: 6000});
     expect(history.between(DateTime(2026, 9), DateTime(2026, 11)), [10000]);
     expect(
-      history.bestSince(DateTime(2026, 8, 31))?.key,
+      history.extremeSince(DateTime(2026, 8), lowest: true)?.key,
+      DateTime(2026, 8, 31),
+    );
+    expect(
+      history.extremeSince(DateTime(2026, 8, 31))?.key,
       DateTime(2026, 10, 2),
     );
   });
@@ -51,7 +55,9 @@ void main() {
   test('no data has no first day or best', () {
     final history = MetricHistory({'2026-10-01': null}, goal: 1);
     expect(history.first, isNull);
-    expect(history.bestSince(DateTime(2026)), isNull);
+    expect(history.extremeSince(DateTime(2026)), isNull);
+    expect(history.goalDays([5, 6]), 2);
+    expect(MetricHistory({}, goal: null).goalDays([5, 6]), 0);
   });
 
   testWidgets('a month shows its days, the best one picked, and moves back', (

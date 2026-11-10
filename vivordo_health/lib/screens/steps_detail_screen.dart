@@ -1,8 +1,5 @@
-import 'dart:ui' as ui;
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
@@ -11,10 +8,8 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
-import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import '../src/utils/chart_text.dart';
 import 'metric_history_screen.dart';
 
 class StepsDetailScreen extends StatefulWidget {
@@ -224,7 +219,7 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
-            _chartCard(data, usual),
+            _chartCard(data, dailyGoal),
           ],
           const SizedBox(height: 16),
           _distanceCard(totalDistance),
@@ -355,31 +350,30 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
     );
   }
 
-  Widget _chartCard(List<_StepDay> data, double? usual) {
-    final maxValue = data.fold<int>(
-      0,
-      (max, day) => day.steps > max ? day.steps : max,
-    );
-    final maxY =
-        (([
-                      maxValue.toDouble(),
-                      usual ?? 0,
-                      1000,
-                    ].reduce((a, b) => a > b ? a : b) *
-                    1.2) /
-                1000)
-            .ceil() *
-        1000.0;
+  Widget _chartCard(List<_StepDay> data, int dailyGoal) {
+    final values = [for (final day in data) day.steps.toDouble()];
+    final best = bestBar(values);
+    final steps = NumberFormat.decimalPattern();
     return _card(
-      padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
+      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
       child: SizedBox(
-        height: 245,
-        child: _StepsChart(
-          values: data.map((day) => day.steps.toDouble()).toList(),
-          labels: data.map((day) => _chartLabel(day.date)).toList(),
-          dates: data.map((day) => day.date).toList(),
-          maxY: maxY,
-          usual: usual,
+        height: 220,
+        child: MetricBarChart(
+          values: values,
+          labels: dayBarLabels([for (final day in data) day.date]),
+          tooltips: [
+            for (final day in data)
+              '${DateFormat('EEE, MMM d').format(day.date)}\n'
+                  '${steps.format(day.steps)} steps',
+          ],
+          best: best,
+          goal: dailyGoal.toDouble(),
+          color: _blue,
+          summary: best == null
+              ? 'Last ${data.length} days: no steps recorded.'
+              : 'Steps for the last ${data.length} days against your goal. '
+                    'Most on ${DateFormat('EEEE, MMMM d').format(data[best].date)} '
+                    'with ${steps.format(data[best].steps)}.',
         ),
       ),
     );
@@ -434,10 +428,6 @@ class _StepsDetailScreenState extends State<StepsDetailScreen> {
       ),
     );
   }
-
-  String _chartLabel(DateTime date) => _rangeIndex == 2
-      ? DateFormat('M/d').format(date)
-      : DateFormat('E').format(date);
 
   Widget _breakdownCard(List<_StepDay> data, _StepDay? best) {
     final ordered = [...data]..sort((a, b) => b.date.compareTo(a.date));
@@ -538,251 +528,4 @@ class _StepDay {
   final DateTime date;
   final int steps;
   final double distanceKm;
-}
-
-class _StepsChart extends StatefulWidget {
-  const _StepsChart({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.maxY,
-    required this.usual,
-  });
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double maxY;
-  final double? usual;
-
-  @override
-  State<_StepsChart> createState() => _StepsChartState();
-}
-
-class _StepsChartState extends State<_StepsChart> {
-  int? selected;
-
-  void _select(double x, double width) {
-    if (widget.values.isEmpty) return;
-    const left = 38.0;
-    final chartWidth = width - left;
-    final index = widget.values.length == 1
-        ? 0
-        : (((x - left) / chartWidth) * (widget.values.length - 1))
-              .round()
-              .clamp(0, widget.values.length - 1);
-    if (selected != index) setState(() => selected = index);
-  }
-
-  @override
-  void didUpdateWidget(covariant _StepsChart oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.values, widget.values)) selected = null;
-  }
-
-  /// What the line shows, for VoiceOver: the period's average and best day.
-  String get _summary {
-    final days = widget.values.where((v) => v > 0).toList();
-    final period = 'Last ${widget.values.length} days';
-    if (days.isEmpty) return '$period: no steps recorded.';
-    final steps = NumberFormat.decimalPattern();
-    final average = days.reduce((a, b) => a + b) / days.length;
-    var best = 0;
-    for (var i = 1; i < widget.values.length; i++) {
-      if (widget.values[i] > widget.values[best]) best = i;
-    }
-    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
-    return '$period: average ${steps.format(average.round())} steps, '
-        'most on ${day.format(widget.dates[best])} with '
-        '${steps.format(widget.values[best].round())}.';
-  }
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: _summary,
-    child: ExcludeSemantics(
-      child: LayoutBuilder(
-        builder: (context, constraints) => GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          onHorizontalDragUpdate: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: _StepsChartPainter(
-              values: widget.values,
-              labels: widget.labels,
-              dates: widget.dates,
-              maxY: widget.maxY,
-              usual: widget.usual,
-              selected: selected,
-              dark: Theme.of(context).brightness == Brightness.dark,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _StepsChartPainter extends CustomPainter {
-  const _StepsChartPainter({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.maxY,
-    required this.usual,
-    required this.selected,
-    required this.dark,
-  });
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double maxY;
-  final double? usual;
-  final int? selected;
-  final bool dark;
-  static const left = 38.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const bottom = 25.0;
-    final height = size.height - bottom;
-    final width = size.width - left;
-    final grid = Paint()
-      ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
-      ..strokeWidth = 1;
-    for (var i = 0; i <= 4; i++) {
-      final y = height * i / 4;
-      canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
-      _text(canvas, _compact(maxY * (1 - i / 4)), Offset(0, y - 6), 10);
-    }
-    if (values.isEmpty) return;
-    final points = List.generate(values.length, (i) {
-      final x = values.length == 1
-          ? left + width / 2
-          : left + width * i / (values.length - 1);
-      return Offset(x, height * (1 - (values[i] / maxY).clamp(0.0, 1.0)));
-    });
-    final usualValue = usual;
-    if (usualValue != null) {
-      final y = height * (1 - (usualValue / maxY).clamp(0.0, 1.0));
-      canvas.drawLine(
-        Offset(left, y),
-        Offset(size.width, y),
-        Paint()
-          ..color = Colors.grey
-          ..strokeWidth = 1.2,
-      );
-    }
-    final line = smoothChartPath(points);
-    final fill = Path.from(line)
-      ..lineTo(points.last.dx, height)
-      ..lineTo(points.first.dx, height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = ui.Gradient.linear(Offset.zero, Offset(0, height), [
-          const Color(0xFF2878E8).withValues(alpha: .24),
-          const Color(0xFF2878E8).withValues(alpha: 0),
-        ]),
-    );
-    canvas.drawPath(
-      line,
-      Paint()
-        ..color = const Color(0xFF2878E8)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    for (var i = 0; i < points.length; i++) {
-      if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
-        _centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
-      }
-    }
-    final index = selected;
-    if (index != null && index < points.length) {
-      final point = points[index];
-      canvas.drawLine(
-        Offset(point.dx, 0),
-        Offset(point.dx, height),
-        Paint()
-          ..color = const Color(0xFF2878E8).withValues(alpha: .2)
-          ..strokeWidth = 1,
-      );
-      final label =
-          '${DateFormat('MMM d').format(dates[index])}\n${NumberFormat.decimalPattern().format(values[index].round())} steps';
-      final painter = TextPainter(
-        textScaler: chartTextScaler,
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            color: dark ? Colors.white : Colors.black,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textAlign: TextAlign.center,
-        textDirection: ui.TextDirection.ltr,
-      )..layout();
-      final boxWidth = painter.width + 18;
-      final boxHeight = painter.height + 14;
-      final x = (point.dx - boxWidth / 2).clamp(left, size.width - boxWidth);
-      final y = (point.dy - boxHeight - 12).clamp(0.0, height - boxHeight);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, y, boxWidth, boxHeight),
-          const Radius.circular(9),
-        ),
-        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
-      );
-      painter.paint(canvas, Offset(x + 9, y + 7));
-    }
-  }
-
-  /// Axis labels: "2K", or "1.5K" for a gridline between thousands.
-  static String _compact(double value) {
-    if (value < 1000) return value.round().toString();
-    final thousands = (value / 100).round() / 10;
-    return '${thousands % 1 == 0 ? thousands.round() : thousands}K';
-  }
-
-  void _text(Canvas canvas, String value, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white54 : Colors.black45,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, offset);
-  }
-
-  void _centerText(Canvas canvas, String value, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white54 : Colors.black45,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, Offset(offset.dx - painter.width / 2, offset.dy));
-  }
-
-  @override
-  bool shouldRepaint(covariant _StepsChartPainter oldDelegate) =>
-      !listEquals(values, oldDelegate.values) ||
-      selected != oldDelegate.selected ||
-      maxY != oldDelegate.maxY ||
-      dark != oldDelegate.dark;
 }

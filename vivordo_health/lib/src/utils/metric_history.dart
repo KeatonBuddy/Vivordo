@@ -9,9 +9,9 @@ typedef MetricPeriod = ({
   int goalDays,
 });
 
-/// One metric's whole history (steps, active calories, exercise minutes) by
-/// day, week and month, for the 6M and Y views. Days without data, or with 0,
-/// are left out, never averaged in as 0.
+/// One metric's whole history by day, week and month, for the 6M and Y
+/// views. Days without data, or with 0, are left out, never averaged in as 0.
+/// [goal] is null for metrics without one (resting heart rate, mood).
 class MetricHistory {
   MetricHistory(Map<String, num?> byDay, {required this.goal})
     : days = {
@@ -22,7 +22,7 @@ class MetricHistory {
       };
 
   final Map<DateTime, double> days;
-  final num goal;
+  final num? goal;
 
   /// The first day with data.
   DateTime? get first => days.keys.minOrNull;
@@ -62,8 +62,14 @@ class MetricHistory {
       average: values.isEmpty ? 0 : total / values.length,
       total: total,
       days: values.length,
-      goalDays: values.where((v) => v >= goal).length,
+      goalDays: goalDays(values),
     );
+  }
+
+  /// How many of [values] met the goal; 0 without one.
+  int goalDays(Iterable<double> values) {
+    final goal = this.goal;
+    return goal == null ? 0 : values.where((v) => v >= goal).length;
   }
 
   /// Days in [month], by day of the month.
@@ -72,11 +78,18 @@ class MetricHistory {
       if (key.year == month.year && key.month == month.month) key.day: value,
   };
 
-  /// The highest day from [from] on.
-  MapEntry<DateTime, double>? bestSince(DateTime from) => days.entries
+  /// The highest day from [from] on, or the lowest.
+  MapEntry<DateTime, double>? extremeSince(
+    DateTime from, {
+    bool lowest = false,
+  }) => days.entries
       .where((e) => !e.key.isBefore(from))
       .fold<MapEntry<DateTime, double>?>(
         null,
-        (best, day) => best == null || day.value > best.value ? day : best,
+        (best, day) =>
+            best == null ||
+                (lowest ? day.value < best.value : day.value > best.value)
+            ? day
+            : best,
       );
 }

@@ -20,6 +20,7 @@ import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
   const HeartRateDetailScreen({super.key});
@@ -172,6 +173,15 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _heartDataStream,
         builder: (context, snapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.heartRate,
+              months: rangeIndex == 3 ? 6 : 12,
+              header: rangeSelector(),
+            );
+          }
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CupertinoActivityIndicator());
@@ -651,7 +661,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   );
 
   Widget rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
+    const labels = ['D', 'W', 'M', '6M', 'Y'];
     return Container(
       height: 52,
       padding: const EdgeInsets.all(3),
@@ -743,12 +753,42 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
+  /// W and M: a bar per day's resting heart rate, like the 6M and Y views.
+  Widget restingBars(List<_HeartDay> days) {
+    final values = [for (final day in days) day.resting ?? 0];
+    final best = bestBar(values, lowest: true);
+    return card(
+      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
+      child: SizedBox(
+        height: 220,
+        child: MetricBarChart(
+          values: values,
+          labels: dayBarLabels([for (final day in days) day.date]),
+          tooltips: [
+            for (final day in days)
+              '${DateFormat('EEE, MMM d').format(day.date)}\n'
+                  '${day.resting?.round() ?? '--'} bpm resting',
+          ],
+          best: best,
+          fromLowest: true,
+          color: HistoryMetric.heartRate.color,
+          summary: best == null
+              ? 'Last ${days.length} days: no resting heart rate.'
+              : 'Resting heart rate for the last ${days.length} days. Lowest '
+                    'on ${DateFormat('EEEE, MMMM d').format(days[best].date)} '
+                    'at ${days[best].resting!.round()} bpm.',
+        ),
+      ),
+    );
+  }
+
   Widget chart(
     List<_HeartDay> days,
     List<_HeartReading> entries,
     double? resting,
   ) {
     final isDay = rangeIndex == 0;
+    if (!isDay) return restingBars(days);
     final scoredDays = isDay
         ? const <_HeartDay>[]
         : days.where((day) => day.resting != null).toList();

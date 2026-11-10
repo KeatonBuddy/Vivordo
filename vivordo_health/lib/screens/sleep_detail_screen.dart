@@ -23,6 +23,7 @@ import 'package:vivordo_health/widgets/daily_tags.dart' show tagLastNightSick;
 import 'package:vivordo_health/widgets/sleep_patterns_section.dart';
 import 'sleep_preferences_screen.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 bool hasRecordedSleep(Map<String, dynamic>? dailyMetrics) {
   final sleep = dailyMetrics?['sleep'];
@@ -318,6 +319,16 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _sleep,
         builder: (context, snapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (_rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.sleep,
+              months: _rangeIndex == 3 ? 6 : 12,
+              header: _rangeSelector(),
+              goal: _sleepNeed,
+            );
+          }
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CupertinoActivityIndicator());
@@ -447,8 +458,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
-            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? 'Heart rate during sleep'
@@ -460,6 +469,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 ? _sleepHeartRateChart(sleepingHeartRate, latest)
                 : _sleepChart(days),
             const SizedBox(height: 24),
+            SleepPatternsSection(patterns: patterns, onAction: _patternAction),
+            const SizedBox(height: 14),
             Text(
               _rangeIndex == 0
                   ? "Last night's sleep stages"
@@ -552,7 +563,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
   }
 
   Widget _rangeSelector() => AppSegmented<int>(
-    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
     onChanged: (index) => setState(() => _rangeIndex = index),
   );

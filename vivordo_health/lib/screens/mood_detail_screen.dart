@@ -13,6 +13,7 @@ import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 class MoodDetailScreen extends StatefulWidget {
   const MoodDetailScreen({super.key});
@@ -157,6 +158,15 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _mood,
         builder: (context, snapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (_rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.mood,
+              months: _rangeIndex == 3 ? 6 : 12,
+              header: _rangeSelector(),
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
             return const Center(child: CupertinoActivityIndicator());
@@ -243,7 +253,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
   }
 
   Widget _rangeSelector() => AppSegmented<int>(
-    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
     onChanged: (index) => setState(() => _rangeIndex = index),
   );
@@ -311,6 +321,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
   }
 
   Widget _chartCard(List<_MoodDay> data, double? usual) {
+    if (_rangeIndex != 0) return _barCard(data);
     const maxY = 100.0;
     return _card(
       padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
@@ -323,6 +334,33 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           maxY: maxY,
           usual: usual,
           showDataPoints: _rangeIndex == 0,
+        ),
+      ),
+    );
+  }
+
+  /// W and M: a bar per day's mood, like the 6M and Y views.
+  Widget _barCard(List<_MoodDay> data) {
+    final values = [for (final day in data) day.moodScore.toDouble()];
+    final best = bestBar(values);
+    return _card(
+      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
+      child: SizedBox(
+        height: 220,
+        child: MetricBarChart(
+          values: values,
+          labels: dayBarLabels([for (final day in data) day.date]),
+          tooltips: [
+            for (final day in data)
+              '${DateFormat('EEE, MMM d').format(day.date)}\n'
+                  '${HistoryMetric.mood.format(day.moodScore.toDouble())}',
+          ],
+          best: best,
+          color: HistoryMetric.mood.color,
+          summary: best == null
+              ? 'Last ${data.length} days: no mood logged.'
+              : 'Mood for the last ${data.length} days. Best on '
+                    '${DateFormat('EEEE, MMMM d').format(data[best].date)}.',
         ),
       ),
     );
