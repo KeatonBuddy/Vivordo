@@ -429,12 +429,12 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
         ? _heartRateDuringSleep(snapshot, latest)
         : const <HeartRateHistoryReading>[];
 
-    // Shown under the number in the card below, not in the floating bar.
     final insight = ScreenInsight(
       'sleep',
       '$_rangeName sleep',
       // What the card can't say: against the need and the usual bedtime.
-      // (This used to be a "Vivordo Insight" section at the foot of the page.)
+      // (This used to be a "Vivordo Insight" section at the foot of the
+      // page, with the bar saying something more general.)
       recorded.isEmpty
           ? 'No sleep data is available for this period. Refresh your connected source before drawing conclusions about recovery.'
           : sleepInsight(
@@ -451,7 +451,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 '${recorded.length} recorded '
                 '${recorded.length == 1 ? 'night' : 'nights'} in this view. '
                 '$planningAdvice',
-      inline: true,
+      source: sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
     );
     final needBar = sleepNeedBar(
       hours: average,
@@ -479,15 +479,7 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
             const SizedBox(height: 18),
             // W and M use the same card as 6M and Y, so the bars morph.
             if (_rangeIndex == 0) ...[
-              _summaryCard(
-                average,
-                total,
-                changeMinutes,
-                latest,
-                needBar,
-                insight,
-                hasWhoopSleepData,
-              ),
+              _summaryCard(average, total, changeMinutes, latest, needBar),
               const SizedBox(height: 24),
               const Text(
                 'Heart rate during sleep',
@@ -502,10 +494,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 unit: '',
                 range: dayRangeText(days.first.date),
                 note: changeMinutes == null ? null : _changeText(changeMinutes),
-                insight: InlineInsight(
-                  insight,
-                  onInfo: () => _showInsightInfo(hasWhoopSleepData),
-                ),
                 chart: _sleepChart(days),
                 caption:
                     'Each bar is a night.'
@@ -579,15 +567,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     onChanged: (index) => setState(() => _rangeIndex = index),
   );
 
-  void _showInsightInfo(bool hasWhoopSleepData) {
-    showInfoSheet(
-      context,
-      icon: CupertinoIcons.sparkles,
-      title: 'About Vivordo Insight',
-      summary: sleepInsightInfoText(hasWhoopSleepData: hasWhoopSleepData),
-    );
-  }
-
   Widget _summaryCard(
     double average,
     double total,
@@ -595,8 +574,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     _SleepValue? latest,
     ({String label, String value, double progress, SleepNeedTone tone})?
     needBar,
-    ScreenInsight insight,
-    bool hasWhoopSleepData,
   ) {
     return _card(
       padding: const EdgeInsets.all(20),
@@ -650,11 +627,6 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-          InlineInsight(
-            insight,
-            onInfo: () => _showInsightInfo(hasWhoopSleepData),
           ),
           const SizedBox(height: 20),
           _needAndTimes(needBar, latest),

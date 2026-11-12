@@ -198,7 +198,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
 
     // Shown in the "Right now" card, not in the floating bar.
     // The card shows the score, how it compares and when it was worked out;
-    // the insight adds what's behind it. The caveats go to Vivordo AI.
+    // the insight (in the bar) adds what's behind it. The caveats go to
+    // Vivordo AI.
     final drivers = [
       for (final (i, d) in today.drivers.take(2).indexed)
         // "Activity and last night's sleep", but "HRV" stays as it is.
@@ -222,7 +223,6 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 'them)'
                 '${today.computedAt == null ? '' : ', calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}'}. '
                 '${drivers.isEmpty ? 'No recorded drivers explain it yet.' : 'Drivers are contributions to the estimate, not proven causes.'}',
-      inline: true,
     );
 
     return SingleChildScrollView(
@@ -231,7 +231,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _rightNow(today, stressAtTimeOfDay(yesterday, now), insight),
+          _rightNow(today, stressAtTimeOfDay(yesterday, now)),
           const SizedBox(height: 14),
           _todaySoFar(today, usualRange, events),
           if (today.drivers.isNotEmpty) ...[
@@ -258,11 +258,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
 
   // ── Right now ──────────────────────────────────────────────────────────────
 
-  Widget _rightNow(
-    StressDay today,
-    double? yesterdayNow,
-    ScreenInsight insight,
-  ) {
+  Widget _rightNow(StressDay today, double? yesterdayNow) {
     final colors = context.vivordoColors;
     final score = today.score;
     final grey = today.lowConfidence;
@@ -476,8 +472,6 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
-          InlineInsight(insight),
         ],
       ),
     );

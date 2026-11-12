@@ -571,12 +571,8 @@ class MetricChartCard extends StatelessWidget {
     required this.chart,
     required this.caption,
     this.note,
-    this.insight,
     this.footer,
   });
-
-  /// The screen's insight, between the number and the chart.
-  final Widget? insight;
   final String label;
   final String number;
   final String unit;
@@ -626,7 +622,6 @@ class MetricChartCard extends StatelessWidget {
           ),
           Text(range, style: TextStyle(color: secondary)),
           if (note != null) ...[const SizedBox(height: 8), note!],
-          if (insight != null) ...[const SizedBox(height: 12), insight!],
           const SizedBox(height: 16),
           SizedBox(height: 170, child: chart),
           const SizedBox(height: 10),

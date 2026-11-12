@@ -938,11 +938,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       FitnessWorkoutTimerState.isRunning,
                     ]),
                     builder: (context, _) => ContextualInsightBar(
-                      // A screen showing its insight itself keeps the bar
-                      // down; the assistant button stays.
-                      insight: _insights.current?.inline == true
-                          ? null
-                          : _insights.current,
+                      insight: _insights.current,
                       suppressed:
                           hideAssistant ||
                           FitnessWorkoutTimerState.isRunning.value,
