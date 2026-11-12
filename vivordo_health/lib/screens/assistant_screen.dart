@@ -9,6 +9,7 @@ import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoButton, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/ai_consent.dart';
@@ -83,6 +84,11 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final _svc = ClaudeService();
   final _input = TextEditingController();
+  // The mic in the input bar: Apple's speech recognition, on the phone only,
+  // typing what's said into the message box to check before sending.
+  final _speech = SpeechToText();
+  bool _listening = false;
+  int _dictation = 0; // bumped to drop results from a finished session
   final _scroll = ScrollController();
   String _uid = '';
   String _name = 'there';
@@ -143,6 +149,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     widget.sheet?.removeListener(_rebuild);
     _workoutOpening?.invalidate();
     _sub?.cancel();
+    _speech.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -396,7 +403,81 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   /// [askedFrom] is the insight card the message was sent from; in the
   /// sheet every message is about that insight.
+  /// Starts or stops dictation into the message box.
+  Future<void> _toggleDictation() async {
+    if (_listening) {
+      await _speech.stop();
+      return;
+    }
+    final ready = await _speech.initialize(
+      onStatus: (status) {
+        final listening = status == SpeechToText.listeningStatus;
+        if (mounted && listening != _listening) {
+          setState(() => _listening = listening);
+        }
+      },
+      onError: (error) {
+        if (mounted) setState(() => _listening = false);
+        // Silence or nothing recognised just ends the session.
+        if (error.errorMsg != 'error_no_match' &&
+            error.errorMsg != 'error_speech_timeout') {
+          _dictationProblem();
+        }
+      },
+    );
+    if (!ready) {
+      _dictationProblem(
+        'To talk to Vivordo AI, allow Microphone and Speech Recognition '
+        'for Vivordo in Settings.',
+      );
+      return;
+    }
+    final session = ++_dictation;
+    final before = _input.text.trim();
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          if (!mounted || session != _dictation) return;
+          final text = [
+            before,
+            result.recognizedWords.trim(),
+          ].where((part) => part.isNotEmpty).join(' ');
+          _input.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+        },
+        listenOptions: SpeechListenOptions(
+          onDevice: true,
+          listenMode: ListenMode.dictation,
+          autoPunctuation: true,
+          cancelOnError: true,
+          pauseFor: const Duration(seconds: 3),
+          listenFor: const Duration(minutes: 1),
+        ),
+      );
+    } catch (_) {
+      // This phone can't recognise speech without sending it to Apple.
+      _dictationProblem();
+    }
+  }
+
+  void _dictationProblem([
+    String message = 'Voice input isn’t available on this iPhone right now.',
+  ]) {
+    if (!mounted) return;
+    setState(() => _listening = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _send([String? preset, String? askedFrom]) async {
+    if (_listening) {
+      _dictation++;
+      await _speech.cancel();
+      if (mounted) setState(() => _listening = false);
+    }
     final text = (preset ?? _input.text).trim();
     askedFrom ??= _asSheet ? _screen?.title : null;
     if (text.isEmpty || _sending || _uid.isEmpty) return;
@@ -1125,8 +1206,20 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   maxLines: 4,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
-                    hintText: 'Ask Vivordo AI anything',
+                    hintText: _listening
+                        ? 'Listening…'
+                        : 'Ask Vivordo AI anything',
                     filled: true,
+                    suffixIcon: IconButton(
+                      tooltip: _listening ? 'Stop listening' : 'Speak',
+                      onPressed: _sending ? null : _toggleDictation,
+                      icon: Icon(
+                        _listening
+                            ? CupertinoIcons.mic_fill
+                            : CupertinoIcons.mic,
+                        color: _listening ? _brand : colors.textSecondary,
+                      ),
+                    ),
                     fillColor: colors.input,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
