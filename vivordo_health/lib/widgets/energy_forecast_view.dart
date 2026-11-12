@@ -253,19 +253,111 @@ class EnergyChips extends StatelessWidget {
 
 /// The energy curve from [from] to [until], with the peak and dip shaded,
 /// drawn over another chart (Home's Your Day bars) or on its own.
-class EnergyCurve extends StatelessWidget {
+class EnergyCurve extends StatefulWidget {
   const EnergyCurve({
     super.key,
     required this.forecast,
     required this.from,
     required this.until,
     this.shadeWindows = true,
+    this.drawIn = false,
+    this.now,
   });
 
   final EnergyForecast forecast;
   final DateTime from;
   final DateTime until;
   final bool shadeWindows;
+
+  /// Home's chart: the line draws along the day the first time it scrolls
+  /// into view each day, rather than at load, when it's below the fold.
+  final bool drawIn;
+
+  /// Marks this moment on the line with a dot that breathes: the one live
+  /// point on a forecast.
+  final DateTime? now;
+
+  @override
+  State<EnergyCurve> createState() => _EnergyCurveState();
+}
+
+class _EnergyCurveState extends State<EnergyCurve>
+    with TickerProviderStateMixin {
+  // ponytail: in memory, so a cold start the same day draws it again;
+  // persist the day if that turns out to be too often.
+  static String? _drawnOn;
+
+  late final _draw = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+    value: 1,
+  );
+  late final _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  );
+  late final _drawCurve = CurvedAnimation(
+    parent: _draw,
+    curve: Curves.easeInOut,
+  );
+  late final _breathCurve = CurvedAnimation(
+    parent: _breath,
+    curve: Curves.easeInOut,
+  );
+  ScrollPosition? _scroll;
+
+  EnergyForecast get forecast => widget.forecast;
+  DateTime get from => widget.from;
+  DateTime get until => widget.until;
+
+  static String _today() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month}-${now.day}';
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final still = MediaQuery.disableAnimationsOf(context);
+    if (widget.now != null && !still) {
+      if (!_breath.isAnimating) _breath.repeat(reverse: true);
+    } else {
+      _breath.stop();
+      _breath.value = 0;
+    }
+    if (!widget.drawIn || still || _drawnOn == _today()) return;
+    // Hidden until it's on screen, then drawn once.
+    if (_scroll == null) _draw.value = 0;
+    final scroll = Scrollable.maybeOf(context)?.position;
+    if (scroll != _scroll) {
+      _scroll?.removeListener(_drawWhenSeen);
+      _scroll = scroll?..addListener(_drawWhenSeen);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _drawWhenSeen());
+  }
+
+  void _drawWhenSeen() {
+    if (!mounted || _drawnOn == _today()) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final middle = box.localToGlobal(box.size.center(Offset.zero)).dy;
+    final screen = MediaQuery.sizeOf(context).height;
+    // Clear of the navigation bar above and the tab bar below.
+    if (middle < 100 || middle > screen - 110) return;
+    _drawnOn = _today();
+    _scroll?.removeListener(_drawWhenSeen);
+    _draw.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _scroll?.removeListener(_drawWhenSeen);
+    _drawCurve.dispose();
+    _breathCurve.dispose();
+    _draw.dispose();
+    _breath.dispose();
+    super.dispose();
+  }
 
   /// What the curve shows, for VoiceOver: the windows it shades.
   String get _summary {
@@ -289,9 +381,20 @@ class EnergyCurve extends StatelessWidget {
     label: _summary,
     child: ExcludeSemantics(
       child: IgnorePointer(
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _EnergyCurvePainter(forecast, from, until, shadeWindows),
+        // Its own layer: the breathing dot repaints only this.
+        child: RepaintBoundary(
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _EnergyCurvePainter(
+              forecast,
+              from,
+              until,
+              widget.shadeWindows,
+              now: widget.now,
+              draw: _drawCurve,
+              breath: _breathCurve,
+            ),
+          ),
         ),
       ),
     ),
@@ -299,12 +402,24 @@ class EnergyCurve extends StatelessWidget {
 }
 
 class _EnergyCurvePainter extends CustomPainter {
-  _EnergyCurvePainter(this.forecast, this.from, this.until, this.shade);
+  _EnergyCurvePainter(
+    this.forecast,
+    this.from,
+    this.until,
+    this.shade, {
+    required this.now,
+    required this.draw,
+    required this.breath,
+  }) : super(repaint: Listenable.merge([draw, breath]));
 
   final EnergyForecast forecast;
   final DateTime from;
   final DateTime until;
   final bool shade;
+  final DateTime? now;
+
+  /// 0 → 1 as the line is drawn along the day; 0 ↔ 1 as the now dot breathes.
+  final Animation<double> draw, breath;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -334,7 +449,9 @@ class _EnergyCurvePainter extends CustomPainter {
         canvas.drawRect(
           Rect.fromLTRB(x(window.start), 0, x(window.end), size.height),
           Paint()
-            ..color = energyPhaseColor(window.phase).withValues(alpha: .10),
+            ..color = energyPhaseColor(
+              window.phase,
+            ).withValues(alpha: .10 * draw.value),
         );
       }
     }
@@ -351,8 +468,19 @@ class _EnergyCurvePainter extends CustomPainter {
         path.lineTo(point.dx, point.dy);
       }
     }
+    var line = path;
+    if (draw.value < 1) {
+      // Only as much of the line as has been drawn so far.
+      line = Path();
+      for (final metric in path.computeMetrics()) {
+        line.addPath(
+          metric.extractPath(0, metric.length * draw.value),
+          Offset.zero,
+        );
+      }
+    }
     canvas.drawPath(
-      path,
+      line,
       Paint()
         ..color = energyHigh
         ..style = PaintingStyle.stroke
@@ -360,6 +488,30 @@ class _EnergyCurvePainter extends CustomPainter {
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
+
+    // Now, on the line, once the line has reached it.
+    final at = now;
+    if (at == null || at.isBefore(from) || at.isAfter(until)) return;
+    final nowX = x(at);
+    if (nowX > size.width * draw.value) return;
+    (DateTime, double)? before, after;
+    for (final point in forecast.curve) {
+      if (!point.$1.isAfter(at)) before = point;
+      if (after == null && !point.$1.isBefore(at)) after = point;
+    }
+    final a = before ?? after, b = after ?? before;
+    if (a == null || b == null) return;
+    final gap = b.$1.difference(a.$1).inSeconds;
+    final energy = gap <= 0
+        ? a.$2
+        : a.$2 + (b.$2 - a.$2) * at.difference(a.$1).inSeconds / gap;
+    final dot = Offset(nowX, y(energy));
+    canvas.drawCircle(
+      dot,
+      5 + 6 * breath.value,
+      Paint()..color = energyHigh.withValues(alpha: .30 * (1 - breath.value)),
+    );
+    canvas.drawCircle(dot, 4, Paint()..color = energyHigh);
   }
 
   @override
@@ -367,7 +519,8 @@ class _EnergyCurvePainter extends CustomPainter {
       !identical(old.forecast, forecast) ||
       old.from != from ||
       old.until != until ||
-      old.shade != shade;
+      old.shade != shade ||
+      old.now != now;
 }
 
 /// "Your energy today": the curve and plain-language reasons.

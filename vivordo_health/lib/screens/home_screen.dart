@@ -2520,6 +2520,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           forecast: energy,
                           from: from,
                           until: until,
+                          drawIn: true,
+                          now: DateTime.now(),
                         ),
                       ),
                     if (nowFraction >= 0 && nowFraction <= 1)
