@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:vivordo_health/src/models/goal_model.dart';
 import 'package:vivordo_health/src/models/user_model.dart';
 import 'package:vivordo_health/src/models/preferences.dart';
+import 'package:vivordo_health/src/services/notification_service.dart';
 
 
 class UserService {
@@ -246,6 +247,7 @@ class UserService {
         'pendingEmailRequestedAt': FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      await NotificationService().prepareForSignOut();
       await FirebaseAuth.instance.signOut();
       return true;
     }

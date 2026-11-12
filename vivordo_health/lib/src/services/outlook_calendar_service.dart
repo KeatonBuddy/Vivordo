@@ -382,7 +382,14 @@ class OutlookCalendarService {
         (decoded['value'] as List? ?? const []).cast<Map<String, dynamic>>(),
       );
       final next = decoded['@odata.nextLink'];
-      page = next is String ? Uri.parse(next) : null;
+      // The next request carries the access token, so it only ever goes to
+      // Microsoft Graph, whatever the response says.
+      final nextPage = next is String ? Uri.tryParse(next) : null;
+      page = nextPage != null &&
+              nextPage.scheme == 'https' &&
+              nextPage.host == page.host
+          ? nextPage
+          : null;
     }
     return items;
   }

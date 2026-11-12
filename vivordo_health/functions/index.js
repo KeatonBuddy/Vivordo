@@ -49,6 +49,8 @@ const {
 } = require("./account_deletion");
 const nodemailer = require("nodemailer");
 const {REPORT_EMAIL, reportEmail} = require("./report_alert");
+const {shortName} = require("./push");
+const rateLimit = require("./rate_limit");
 const {
   hasPremium,
   webhookUserIds,
@@ -142,6 +144,9 @@ exports.rebuildHistory = onCall({timeoutSeconds: 540, memory: "512MiB"},
       const uid = request.auth?.uid;
       if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
       const {rebuildHistory} = require("./history_import");
+      // The import's own cooldown is in the user document, which the
+      // account can write; this cap is the one it can't reset.
+      await rateLimit.requireBudget(admin.firestore(), uid, "history");
       return rebuildHistory(admin.firestore(), uid,
           () => FieldValue.serverTimestamp());
     },
@@ -479,7 +484,8 @@ exports.circleEngagementNotification = onDocumentCreated(
         return;
       }
 
-      const actorName = actorSnapshot.data()?.username || "A Circle friend";
+      const actorName =
+        shortName(actorSnapshot.data()?.username, "A Circle friend");
       const title = "Circle";
       let body;
 
@@ -617,9 +623,16 @@ exports.friendRequestNotification = onDocumentCreated(
 
       const profile = profileSnapshot.data();
       const requesterData = requesterSnapshot.data();
-      const requesterName = profile?.username ||
-        requesterData?.displayName || requesterData?.username ||
-        "A Vivordo user";
+      const requesterName = shortName(profile?.username ||
+        requesterData?.displayName || requesterData?.username,
+      "A Vivordo user");
+      // Deleting and re-sending a request would otherwise push every time.
+      if (!(await rateLimit.spend(
+          admin.firestore(), requesterUid, "friend_requests"))) {
+        console.warn("Friend request notification skipped: daily limit",
+            {requesterUid});
+        return;
+      }
       const title = "New Friend Request";
       const body = `from ${requesterName}`;
       const invalidCodes = new Set([
@@ -2511,6 +2524,13 @@ async function deleteGlobalUserReferences(uid) {
     db.collectionGroup("circle_engagement").where("actorUid", "==", uid),
   ];
   for (const query of queries) await deleteQueryDocuments(query);
+  // Entries for this account left in other people's friends lists (the
+  // account's own list, walked above, may not name them all). Needs the
+  // friends.uid index; without it the rest of the deletion still goes on.
+  await deleteQueryDocuments(
+      db.collectionGroup("friends").where("uid", "==", uid),
+  ).catch((error) =>
+    console.error("[Account deletion] friend mirrors left", error));
 }
 
 async function revokeConnectedProviders(uid) {
@@ -2547,6 +2567,8 @@ async function deleteVivordoAccountData(uid) {
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
     db.collection("ai_usage").doc(`${uid}_tasks`).delete(),
+    ...Object.keys(rateLimit.LIMITS).map((kind) =>
+      db.collection("rate_limits").doc(`${uid}_${kind}`).delete()),
     db.collection("subscriptions").doc(uid).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
@@ -2653,6 +2675,14 @@ exports.reportAlert = onDocumentCreated({
 }, async (event) => {
   const report = event.data?.data();
   if (!report) return;
+  // The report is stored either way; only the email is capped, so one
+  // account can't flood the inbox (or use up Gmail's daily sending limit).
+  if (typeof report.reporterUid !== "string" || !(await rateLimit.spend(
+      admin.firestore(), report.reporterUid, "reports"))) {
+    console.warn("[reportAlert] email skipped: daily limit",
+        event.params.reportId);
+    return;
+  }
   const mail = nodemailer.createTransport({
     service: "gmail",
     auth: {user: REPORT_EMAIL, pass: reportMailPassword.value()},
@@ -2681,7 +2711,10 @@ exports.revenueCatWebhook = onRequest({
     res.status(405).send("POST only");
     return;
   }
-  if (req.get("Authorization") !== revenueCatWebhookAuth.value()) {
+  const given = Buffer.from(req.get("Authorization") ?? "");
+  const expected = Buffer.from(revenueCatWebhookAuth.value());
+  if (given.length !== expected.length ||
+      !crypto.timingSafeEqual(given, expected)) {
     res.status(401).send("Unauthorized");
     return;
   }

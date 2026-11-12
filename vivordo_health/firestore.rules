@@ -50,11 +50,18 @@ service cloud.firestore {
       match /circle/profile {
         allow read: if request.auth != null
                     && circleNotBlocked(request.auth.uid, userId);
+        // Friends' phones load photoUrl, so a new one must be an upload to
+        // the app's own storage, not an arbitrary address.
         allow create: if request.auth != null
                       && request.auth.uid == userId
+                      && (request.resource.data.get('photoUrl', null) == null
+                          || request.resource.data.photoUrl.matches('https://firebasestorage[.]googleapis[.]com/.*'))
                       && request.resource.data.get('challengeMedalCount', 0) == 0;
         allow update: if request.auth != null
                       && request.auth.uid == userId
+                      && (request.resource.data.get('photoUrl', null) == resource.data.get('photoUrl', null)
+                          || request.resource.data.get('photoUrl', null) == null
+                          || request.resource.data.photoUrl.matches('https://firebasestorage[.]googleapis[.]com/.*'))
                       && request.resource.data.get('challengeMedalCount', 0)
                          == resource.data.get('challengeMedalCount', 0);
         allow delete: if request.auth != null && request.auth.uid == userId;
@@ -75,13 +82,16 @@ service cloud.firestore {
 
       match /circle/relationships/friends/{friendId} {
         allow read: if request.auth != null && request.auth.uid == userId;
-        allow create: if request.auth != null
+        // Either side of a friendship is written only by the person accepting
+        // a request that the other one sent them, so nobody can add
+        // themselves to a list (theirs or their own) without that request.
+        allow create, update: if request.auth != null
                       && request.resource.data.uid == friendId
                       && circleNotBlocked(userId, friendId)
-                      && (request.auth.uid == userId
+                      && ((request.auth.uid == userId
+                              && exists(/databases/$(database)/documents/users/$(userId)/circle/relationships/friend_requests/$(friendId)))
                           || (request.auth.uid == friendId
                               && exists(/databases/$(database)/documents/users/$(friendId)/circle/relationships/friend_requests/$(userId))));
-        allow update: if false;
         allow delete: if request.auth != null
                       && (request.auth.uid == userId
                           || request.auth.uid == friendId);
@@ -182,9 +192,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Rules are OR-ed, so anything this allows overrides the stricter
+      // matches above. 'circle' (profile, friends, friend requests) is left
+      // out so only those matches decide it.
       match /{subcollection}/{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId
-          && !(subcollection in ['metric_summaries_daily', 'metrics_summary_migrations', 'scores_daily']);
+          && !(subcollection in ['circle', 'metric_summaries_daily', 'metrics_summary_migrations', 'scores_daily']);
       }
     }
 
@@ -284,13 +297,6 @@ service cloud.firestore {
     match /challenge_medal_awards/{userId}/items/{challengeId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create, update, delete: if false;
-    }
-
-    // ── AI batch tracking (written by Cloud Functions only) ──────────────────
-    // Spans multiple users per nightly batch, so it stays top-level rather
-    // than nested under a single user.
-    match /batch_jobs/{batchId} {
-      allow read: if request.auth != null;
     }
 
     // Private moderation inbox. Only authenticated friends who can see an

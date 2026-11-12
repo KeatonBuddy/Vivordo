@@ -40,7 +40,8 @@ class JournalScreen extends StatefulWidget {
   State<JournalScreen> createState() => _JournalScreenState();
 }
 
-class _JournalScreenState extends State<JournalScreen> {
+class _JournalScreenState extends State<JournalScreen>
+    with WidgetsBindingObserver {
   final _search = TextEditingController();
   Stream<QuerySnapshot<Map<String, dynamic>>>? _stream;
   late DateTime _month;
@@ -80,11 +81,23 @@ class _JournalScreenState extends State<JournalScreen> {
       onError: (Object error) => debugPrint('Weekly reviews: $error'),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkJournalAccess());
+    WidgetsBinding.instance.addObserver(this);
     _loadPrompts();
+  }
+
+  /// A locked journal locks again when the app goes to the background, so it
+  /// isn't left open for whoever picks the phone up next. (`paused`, not
+  /// `inactive`: the Face ID sheet itself makes the app inactive.)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && _journalLocked && mounted) {
+      setState(() => _accessGranted = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     unawaited(_reviewSubscription?.cancel());
     super.dispose();

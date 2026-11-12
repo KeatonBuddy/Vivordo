@@ -6,7 +6,13 @@
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const {Timestamp} = require("firebase-admin/firestore");
-const {pushToUser} = require("./push");
+const {pushToUser, shortName} = require("./push");
+const {requireBudget} = require("./rate_limit");
+
+// Profile photos are uploaded to the app's own storage; anything else in
+// the (owner-written) profile isn't passed on for friends' phones to load.
+const ownPhoto = (url) => typeof url === "string" &&
+  url.startsWith("https://firebasestorage.googleapis.com/") ? url : null;
 
 const MAX_RECIPIENTS = 20;
 const MAX_TITLE_LENGTH = 200;
@@ -302,8 +308,13 @@ exports.sendEventInvites = onCall(async (request) => {
   const nowMs = Date.now();
   const input = validatedInviteInput(request.data, uid, nowMs);
   const db = admin.firestore();
-  const friendships = await db.getAll(...input.recipientUids.map((friend) =>
-    db.doc(`users/${uid}/circle/relationships/friends/${friend}`)));
+  await requireBudget(db, uid, "social");
+  // Both sides: the sender's own list alone is theirs to write.
+  const friendships = await db.getAll(...input.recipientUids.flatMap(
+      (friend) => [
+        db.doc(`users/${uid}/circle/relationships/friends/${friend}`),
+        db.doc(`users/${friend}/circle/relationships/friends/${uid}`),
+      ]));
   if (friendships.some((snapshot) => !snapshot.exists)) {
     throw new HttpsError(
         "permission-denied",
@@ -321,13 +332,13 @@ exports.sendEventInvites = onCall(async (request) => {
       ...[uid, ...input.recipientUids].map((person) =>
         db.doc(`users/${person}/circle/profile`)));
   const profile = senderProfile.data();
-  const fromName = profile?.username || "A Circle friend";
+  const fromName = shortName(profile?.username, "A Circle friend");
   const now = Timestamp.now();
   const reference = db.collection("event_invites").doc();
   await reference.set({
     fromUid: uid,
     fromName,
-    fromPhotoUrl: profile?.photoUrl || null,
+    fromPhotoUrl: ownPhoto(profile?.photoUrl),
     title: input.title,
     start: Timestamp.fromMillis(input.start),
     end: Timestamp.fromMillis(input.end),
@@ -336,7 +347,7 @@ exports.sendEventInvites = onCall(async (request) => {
     recipientUids: input.recipientUids,
     // So the sender can see who said what.
     recipientNames: Object.fromEntries(input.recipientUids.map((friend, i) =>
-      [friend, recipientProfiles[i].data()?.username || "A friend"])),
+      [friend, shortName(recipientProfiles[i].data()?.username, "A friend")])),
     responses: Object.fromEntries(
         input.recipientUids.map((friend) => [friend, "pending"])),
     status: "active",
@@ -368,6 +379,7 @@ exports.respondToEventInvite = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "accept is required.");
   }
   const db = admin.firestore();
+  await requireBudget(db, uid, "social");
   const reference = db.collection("event_invites").doc(inviteId);
   const invite = await db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference);
@@ -383,8 +395,8 @@ exports.respondToEventInvite = onCall(async (request) => {
   });
   // Undoing a decline is quiet: the sender's list just shows waiting again.
   if (invite && accept !== null) {
-    const name = (await db.doc(`users/${uid}/circle/profile`).get())
-        .data()?.username || "A friend";
+    const name = shortName((await db.doc(`users/${uid}/circle/profile`).get())
+        .data()?.username, "A friend");
     await pushToUser(db.collection("users").doc(invite.fromUid),
         admin.messaging(), "circleNotificationsEnabled", {
           notification: {
@@ -401,6 +413,7 @@ exports.respondToEventInvite = onCall(async (request) => {
 exports.updateEventInvite = onCall(async (request) => {
   const uid = requireAuth(request);
   const db = admin.firestore();
+  await requireBudget(db, uid, "social");
   const snapshot = await senderInvite(db, uid, request.data);
   const fields = validatedEventFields(request.data, Date.now());
   const invite = snapshot.data();
@@ -426,6 +439,7 @@ exports.updateEventInvite = onCall(async (request) => {
 exports.updateEventInviteOccurrence = onCall(async (request) => {
   const uid = requireAuth(request);
   const db = admin.firestore();
+  await requireBudget(db, uid, "social");
   const snapshot = await senderInvite(db, uid, request.data);
   const invite = snapshot.data();
   const update = occurrenceUpdate(invite, request.data, Date.now());
@@ -446,6 +460,7 @@ exports.updateEventInviteOccurrence = onCall(async (request) => {
 exports.cancelEventInvite = onCall(async (request) => {
   const uid = requireAuth(request);
   const db = admin.firestore();
+  await requireBudget(db, uid, "social");
   const snapshot = await senderInvite(db, uid, request.data);
   if (snapshot.data().status === "cancelled") return {cancelled: true};
   await snapshot.ref.update({

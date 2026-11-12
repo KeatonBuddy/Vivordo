@@ -6,6 +6,8 @@ const {
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
+const {shortName} = require("./push");
+const {requireBudget} = require("./rate_limit");
 const {FieldValue, Timestamp} = require("firebase-admin/firestore");
 
 const CHALLENGE_TYPES = Object.freeze({
@@ -89,6 +91,10 @@ function uniqueInvitees(rawInvitees, creatorUid) {
       .filter((value) => typeof value === "string")
       .map((value) => value.trim())
       .filter((value) => value && value !== creatorUid))];
+  // These become document ids: a "/" would write to some other path.
+  if (invitees.some((value) => value.includes("/") || value.length > 128)) {
+    throw new HttpsError("invalid-argument", "Choose valid Circle friends.");
+  }
   if (invitees.length === 0 || invitees.length > MAX_INVITEES) {
     throw new HttpsError(
         "invalid-argument",
@@ -240,8 +246,13 @@ exports.createChallenge = onCall(async (request) => {
   const creatorUid = requireAuth(request);
   const input = validatedChallengeInput(request, creatorUid);
   const db = admin.firestore();
+  await requireBudget(db, creatorUid, "social");
   const friendshipSnapshots = await db.getAll(
-      ...input.invitees.map((uid) => friendReference(db, creatorUid, uid)),
+      // Both sides: the creator's own list alone is theirs to write.
+      ...input.invitees.flatMap((uid) => [
+        friendReference(db, creatorUid, uid),
+        friendReference(db, uid, creatorUid),
+      ]),
   );
   if (friendshipSnapshots.some((snapshot) => !snapshot.exists)) {
     throw new HttpsError(
@@ -264,11 +275,12 @@ exports.createChallenge = onCall(async (request) => {
   const profileSnapshots = await db.getAll(
       ...profileUids.map((uid) => profileReference(db, uid)),
   );
-  const creatorName = profileSnapshots[0].data()?.username || "A friend";
+  const creatorName =
+    shortName(profileSnapshots[0].data()?.username, "A friend");
   const participantNames = {};
   profileUids.forEach((uid, index) => {
-    participantNames[uid] = profileSnapshots[index].data()?.username ||
-      "Circle member";
+    participantNames[uid] = shortName(
+        profileSnapshots[index].data()?.username, "Circle member");
   });
 
   const challengeReference = db.collection("challenges").doc();
@@ -344,10 +356,12 @@ exports.createChallenge = onCall(async (request) => {
 
 exports.respondToChallenge = onCall(async (request) => {
   const uid = requireAuth(request);
+  await requireBudget(admin.firestore(), uid, "social");
   const challengeId = typeof request.data?.challengeId === "string" ?
     request.data.challengeId.trim() : "";
   const accept = request.data?.accept;
-  if (!challengeId || typeof accept !== "boolean") {
+  if (!challengeId || challengeId.includes("/") ||
+      typeof accept !== "boolean") {
     throw new HttpsError(
         "invalid-argument",
         "challengeId and accept are required.",
@@ -519,7 +533,8 @@ exports.respondToChallenge = onCall(async (request) => {
 
   if (!response.alreadyProcessed) {
     const responder = await profileReference(db, uid).get();
-    const responderName = responder.data()?.username || "A Circle friend";
+    const responderName =
+      shortName(responder.data()?.username, "A Circle friend");
     await sendChallengeNotification(
         response.creatorUid,
         "Circle",
@@ -543,9 +558,10 @@ exports.respondToChallenge = onCall(async (request) => {
 
 exports.cancelChallenge = onCall(async (request) => {
   const uid = requireAuth(request);
+  await requireBudget(admin.firestore(), uid, "social");
   const challengeId = typeof request.data?.challengeId === "string" ?
     request.data.challengeId.trim() : "";
-  if (!challengeId) {
+  if (!challengeId || challengeId.includes("/")) {
     throw new HttpsError("invalid-argument", "challengeId is required.");
   }
   const db = admin.firestore();

@@ -195,6 +195,18 @@ class NotificationService {
     }
   }
 
+  /// Call before signing out: the push token can only be removed while still
+  /// signed in (the rules reject it afterwards), and left behind, this phone
+  /// keeps getting the account's notifications. Never holds sign-out up for
+  /// long: a Firestore delete doesn't complete while offline.
+  Future<void> prepareForSignOut() async {
+    try {
+      await clearUserReminders().timeout(const Duration(seconds: 4));
+    } catch (error) {
+      debugPrint('NotificationService: sign-out cleanup incomplete: $error');
+    }
+  }
+
   Future<void> clearUserReminders() async {
     await updateRestTimerNotification(null);
     await _removeCurrentFcmToken();

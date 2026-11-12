@@ -1744,6 +1744,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         // Log while still authenticated — Firestore rules
                         // reject writes once signOut() clears the session.
                         await AnalyticsService().logLogout();
+                        await NotificationService().prepareForSignOut();
                         await FirebaseAuth.instance.signOut();
                       },
                       child: const Padding(
