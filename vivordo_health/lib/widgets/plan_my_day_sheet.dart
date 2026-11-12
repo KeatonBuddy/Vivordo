@@ -121,12 +121,12 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
           enabled: onTap != null,
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: selected ? VivordoTheme.brand : null,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: selected ? VivordoTheme.brand : colors.border,
                 ),
@@ -172,7 +172,7 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
                 'Pick a time for each, or leave it for later. Times fit '
                 'around your events, heavy ones in your peak. Only in '
                 'Vivordo; your calendar isn\'t changed.',
-                style: TextStyle(fontSize: 14, color: colors.textSecondary),
+                style: TextStyle(fontSize: 15, color: colors.textSecondary),
               ),
               const SizedBox(height: 12),
               for (final task in _tasks)

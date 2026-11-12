@@ -111,7 +111,7 @@ class TrainingLoadCard extends StatelessWidget {
           // Labels are short; values take the rest, flush right.
           Text(
             label,
-            style: TextStyle(fontSize: 14, color: colors.textPrimary),
+            style: TextStyle(fontSize: 15, color: colors.textPrimary),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -287,7 +287,7 @@ class TrainingLoadAlert extends StatelessWidget {
         padding: EdgeInsets.zero,
         minimumSize: const Size(0, 36),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
       child: Text(label),
     );
@@ -360,7 +360,7 @@ Future<void> showTrainingLoadDetails(
   final plan = view.alert ? _planner(context, view) : null;
   final colors = context.vivordoColors;
   final secondary = TextStyle(
-    fontSize: 14,
+    fontSize: 15,
     height: 1.45,
     color: colors.textSecondary,
   );
@@ -370,7 +370,7 @@ Future<void> showTrainingLoadDetails(
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) => SafeArea(
       child: ConstrainedBox(
@@ -595,7 +595,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                     ),
                     shape: WidgetStatePropertyAll(
                       RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                         side: BorderSide(color: colors.border),
                       ),
                     ),
@@ -645,7 +645,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                         child: Text(
                           option.dateRange,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: FontWeight.w600,
                             color: colors.textPrimary,
                           ),

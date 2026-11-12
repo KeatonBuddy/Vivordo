@@ -113,7 +113,7 @@ class _CircleCard extends StatelessWidget {
       width: double.infinity,
       decoration: BoxDecoration(
         color: color ?? colors.card,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: borderColor ?? colors.border),
         boxShadow: dark || color != null
             ? null
@@ -129,7 +129,7 @@ class _CircleCard extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(padding: padding, child: child),
         ),
       ),
@@ -175,7 +175,7 @@ class _LinkButton extends StatelessWidget {
       foregroundColor: context.circle.accent,
       minimumSize: const Size(44, 36),
       padding: const EdgeInsets.symmetric(horizontal: 6),
-      textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
     ),
     child: Text(label),
   );
@@ -193,7 +193,7 @@ class _CountBadge extends StatelessWidget {
     alignment: Alignment.center,
     decoration: BoxDecoration(
       color: const Color(0xFFD93B41),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Text(
       count > 99 ? '99+' : '$count',
@@ -330,7 +330,7 @@ class _SegmentedTabs extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: colors.border),
       ),
       child: Row(
@@ -412,7 +412,7 @@ class _FilterChip extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: selected ? Colors.white : colors.textPrimary,
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -580,7 +580,7 @@ ButtonStyle _primaryButtonStyle({double height = 50}) => FilledButton.styleFrom(
   disabledForegroundColor: Colors.white70,
   minimumSize: Size(0, height),
   padding: const EdgeInsets.symmetric(horizontal: 16),
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
 );
 
@@ -590,7 +590,7 @@ ButtonStyle _secondaryButtonStyle(BuildContext context, {double height = 50}) =>
       foregroundColor: context.vivordoColors.textPrimary,
       minimumSize: Size(0, height),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
     );
 

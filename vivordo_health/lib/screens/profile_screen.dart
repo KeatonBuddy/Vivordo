@@ -1769,7 +1769,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     style: TextButton.styleFrom(
                       foregroundColor: _red,
                       textStyle: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1821,7 +1821,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         // The Home stress card's gradient, so the two heroes match.
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -1871,7 +1871,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 19,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -1916,7 +1916,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     decoration: BoxDecoration(
       color: _orange.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
     ),
     child: Row(
       children: [
@@ -1927,7 +1927,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             'Verify your new email: $pendingEmail\n'
             'Check your inbox and tap the link.',
             style: TextStyle(
-              fontSize: 12.5,
+              fontSize: 12,
               height: 1.4,
               fontWeight: FontWeight.w500,
               color: context.vivordoColors.textPrimary,
@@ -2211,7 +2211,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             foregroundColor: Colors.white,
                             minimumSize: const Size.fromHeight(50),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             textStyle: const TextStyle(
                               fontSize: 15,
@@ -2375,7 +2375,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                     'Apple controls which data Vivordo can read. Vivordo only '
                     'reads it and never writes to Apple Health.',
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 12,
                       height: 1.4,
                       color: colors.textSecondary,
                     ),
@@ -2422,7 +2422,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
                       style: TextButton.styleFrom(
                         foregroundColor: _SettingsScreenState._red,
                         textStyle: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -2451,7 +2451,7 @@ class _AppleHealthSettingsPageState extends State<_AppleHealthSettingsPage> {
       subtitle: metric.description,
       trailing: Text(
         enabled ? 'Reading' : 'Off',
-        style: TextStyle(fontSize: 14, color: colors.textSecondary),
+        style: TextStyle(fontSize: 15, color: colors.textSecondary),
       ),
     );
   }
@@ -2649,7 +2649,7 @@ class _SettingsRow extends StatelessWidget {
                         Text(
                           subtitle,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             height: 1.35,
                             color: colors.textSecondary,
                           ),
@@ -2676,7 +2676,7 @@ class _SettingsRow extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 12.5,
+                                  fontSize: 12,
                                   color: colors.textSecondary,
                                 ),
                               ),
@@ -2730,7 +2730,7 @@ class _IconBadge extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: color == null ? colors.cardMuted : tint.withValues(alpha: .13),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: child ?? Icon(icon, size: 18, color: tint),
     );
@@ -2795,7 +2795,7 @@ class _ValueChevron extends StatelessWidget {
       Text(
         value,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: 15,
           color: context.vivordoColors.textSecondary,
         ),
       ),
@@ -2828,10 +2828,10 @@ class _TimeChip extends StatelessWidget {
         color: accent
             ? VivordoTheme.brand.withValues(alpha: .12)
             : colors.cardMuted,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             child: Text(
@@ -2956,13 +2956,13 @@ class _PillToggle<T extends Object> extends StatelessWidget {
                           color: value == option
                               ? VivordoTheme.brand
                               : Colors.transparent,
-                          borderRadius: BorderRadius.circular(9),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
                           label,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: value == option
                                 ? Colors.white

@@ -121,7 +121,7 @@ class WhatsNewScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.textPrimary,
-                      fontSize: 33,
+                      fontSize: 34,
                       height: 1.08,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.8,
@@ -148,13 +148,13 @@ class WhatsNewScreen extends StatelessWidget {
                         gradient: const LinearGradient(
                           colors: [Color(0xFF4935F5), VivordoTheme.brand],
                         ),
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(99),
                       ),
                       child: const Text(
                         'My Day update',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -165,7 +165,7 @@ class WhatsNewScreen extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                     decoration: BoxDecoration(
                       color: colors.card,
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: colors.border),
                       boxShadow: [
                         BoxShadow(
@@ -196,7 +196,7 @@ class WhatsNewScreen extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: colors.textSecondary,
-                            fontSize: 14,
+                            fontSize: 15,
                             height: 1.3,
                           ),
                         ),
@@ -217,7 +217,7 @@ class WhatsNewScreen extends StatelessWidget {
                       child: const Text(
                         'Continue to Vivordo',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -285,7 +285,7 @@ class _FeatureRow extends StatelessWidget {
                   feature.description,
                   style: TextStyle(
                     color: colors.textSecondary,
-                    fontSize: 13.5,
+                    fontSize: 13,
                     height: 1.32,
                   ),
                 ),

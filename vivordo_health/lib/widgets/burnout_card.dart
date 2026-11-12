@@ -146,7 +146,7 @@ class BurnoutCard extends StatelessWidget {
     return Material(
       color: colors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: Colors.black.withValues(alpha: .07)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -169,7 +169,7 @@ class BurnoutCard extends StatelessWidget {
                 child: Text(
                   'Burnout check',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: colors.textPrimary,
                   ),
@@ -202,7 +202,7 @@ Future<void> showBurnoutDetails(BuildContext context, BurnoutView view) {
     isScrollControlled: true,
     backgroundColor: context.vivordoColors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) => _BurnoutDetails(
       view: view,

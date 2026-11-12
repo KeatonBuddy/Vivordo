@@ -29,7 +29,7 @@ Future<int?> showPriorityDurationPicker(
               decoration: BoxDecoration(
                 color: colors.card,
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+                  top: Radius.circular(20),
                 ),
                 border: Border.all(
                   color: colors.textPrimary.withValues(alpha: .12),

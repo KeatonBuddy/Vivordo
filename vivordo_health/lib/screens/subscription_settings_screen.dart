@@ -96,7 +96,7 @@ class _SubscriptionSettingsScreenState
                             Text(
                               snapshot.hasData ? summary.title : 'Loading…',
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 17,
                                 fontWeight: FontWeight.w700,
                                 color: colors.textPrimary,
                               ),
@@ -106,7 +106,7 @@ class _SubscriptionSettingsScreenState
                               Text(
                                 line,
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 15,
                                   height: 1.35,
                                   color: colors.textSecondary,
                                 ),

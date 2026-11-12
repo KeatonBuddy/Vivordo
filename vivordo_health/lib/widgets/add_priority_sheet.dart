@@ -360,7 +360,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
         ),
         decoration: BoxDecoration(
           color: colors.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           border: Border.all(color: colors.textPrimary.withValues(alpha: .18)),
           boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 32)],
         ),
@@ -408,7 +408,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           vertical: 18,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(20),
                         ),
                       ),
                     ),
@@ -817,7 +817,7 @@ class _Card extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
       color: context.vivordoColors.textPrimary.withValues(alpha: .035),
-      borderRadius: BorderRadius.circular(17),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(
         color: context.vivordoColors.textPrimary.withValues(alpha: .13),
       ),

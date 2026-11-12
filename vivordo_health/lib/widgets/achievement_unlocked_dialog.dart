@@ -85,7 +85,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: colors.textPrimary,
-                    fontSize: 32,
+                    fontSize: 34,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -.7,
                   ),
@@ -114,7 +114,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   'Earned just now',
-                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 15),
                 ),
                 const SizedBox(height: 22),
                 Container(
@@ -125,7 +125,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF6D55EA).withValues(alpha: .08),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: const Color(0xFF8B70F6).withValues(alpha: .35),
                     ),
@@ -162,7 +162,7 @@ class AchievementUnlockedDialog extends StatelessWidget {
                       backgroundColor: const Color(0xFF6250E8),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(17),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                     ),
                     child: const Text(

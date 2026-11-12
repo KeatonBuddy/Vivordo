@@ -91,12 +91,12 @@ class MetricChartCard extends StatelessWidget {
           '${average == null ? 'unknown' : number(average)} ${unit ?? ''}',
       child: InkWell(
         onTap: onOpen,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: colors.cardMuted,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,7 +307,7 @@ class ActionCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _brand.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -424,7 +424,7 @@ class _RoutineDetails extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '${exercises[i]['name']}',
-                    style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                    style: TextStyle(color: colors.textPrimary, fontSize: 15),
                   ),
                 ),
                 const SizedBox(width: 8),

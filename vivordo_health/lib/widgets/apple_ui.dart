@@ -91,7 +91,7 @@ class AppleAlert extends StatelessWidget {
       backgroundColor: colors.card,
       surfaceTintColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 50),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
@@ -292,7 +292,7 @@ class AppleAlertField extends StatelessWidget {
       keyboardType: keyboardType,
       autofillHints: autofillHints,
       onChanged: onChanged,
-      style: TextStyle(fontSize: 14, color: colors.textPrimary),
+      style: TextStyle(fontSize: 15, color: colors.textPrimary),
       decoration: InputDecoration(
         isDense: true,
         hintText: placeholder,
@@ -551,7 +551,7 @@ Future<T?> showAppleSheet<T>(
   enableDrag: isDismissible,
   backgroundColor: raisedColors(context).page,
   shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+    borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
   ),
   builder: (sheetContext) => RaisedSheetTheme(
     child: Padding(
@@ -1204,7 +1204,7 @@ Future<void> showInfoSheet(
                 height: 48,
                 decoration: BoxDecoration(
                   color: tint.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(13),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: tint, size: 26),
               ),
@@ -1225,7 +1225,7 @@ Future<void> showInfoSheet(
                 summary,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   height: 1.4,
                   color: colors.textSecondary,
                 ),

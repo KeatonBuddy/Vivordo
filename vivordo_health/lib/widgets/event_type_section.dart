@@ -192,7 +192,7 @@ class _EventTypeSectionState extends State<EventTypeSection> {
                         color: score?.category == 'unknown' && !score!.chosen
                             ? _purple
                             : colors.textSecondary,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: score?.category == 'unknown'
                             ? FontWeight.w700
                             : FontWeight.w400,

@@ -295,7 +295,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         Text(
           title,
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: FontWeight.w800,
             height: 1.2,
             color: context.vivordoColors.textPrimary,
@@ -361,7 +361,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
                 foregroundColor: Colors.white,
                 disabledForegroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
               child: _busy
@@ -609,7 +609,7 @@ class _PlanTile extends StatelessWidget {
         button: true,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -617,7 +617,7 @@ class _PlanTile extends StatelessWidget {
               color: selected
                   ? _purple.withValues(alpha: .12)
                   : context.vivordoColors.card,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: selected ? _purple : context.vivordoColors.border,
                 width: selected ? 2 : 1,

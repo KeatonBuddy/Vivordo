@@ -1504,7 +1504,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               child: Material(
                 color: colors.card,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   side: BorderSide(color: Colors.black.withValues(alpha: .07)),
                 ),
                 clipBehavior: Clip.antiAlias,
@@ -1561,7 +1561,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ].join(' · ');
     return Material(
       color: Colors.white.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => showEnergyForecastSheet(context, tonight),
@@ -2193,7 +2193,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ? 'Why you started today where you did ›'
                     : 'Why you started at ${live.morning} ›',
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -3906,7 +3906,7 @@ class _ListAction extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: colors.textSecondary,
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),

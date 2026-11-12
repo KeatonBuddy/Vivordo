@@ -163,7 +163,7 @@ class _SleepPreferencesScreenState extends State<SleepPreferencesScreen> {
                   ),
                   decoration: BoxDecoration(
                     color: colors.card,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: colors.border),
                   ),
                   child: Padding(

@@ -185,7 +185,7 @@ class _WorkoutRestTimerState extends State<WorkoutRestTimer>
                       label,
                       style: TextStyle(
                         color: colors.textPrimary,
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.w800,
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),

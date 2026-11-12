@@ -613,7 +613,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
         ),
         decoration: BoxDecoration(
           color: colors.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           border: Border.all(color: colors.textPrimary.withValues(alpha: .18)),
           boxShadow: const [
             BoxShadow(
@@ -663,13 +663,13 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                           vertical: 18,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(20),
                           borderSide: BorderSide(
                             color: colors.textPrimary.withValues(alpha: .14),
                           ),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(20),
                           borderSide: BorderSide(
                             color: colors.textPrimary.withValues(alpha: .14),
                           ),
@@ -786,7 +786,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                           _repeat.describe(),
                           style: TextStyle(
                             color: colors.textSecondary,
-                            fontSize: 14,
+                            fontSize: 15,
                           ),
                         ),
                       ),
@@ -874,7 +874,7 @@ class _SheetCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: colors.textPrimary.withValues(alpha: .035),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colors.textPrimary.withValues(alpha: .13)),
       ),
       child: Column(
@@ -995,7 +995,7 @@ class _Segmented<T> extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: colors.textPrimary.withValues(alpha: .035),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colors.textPrimary.withValues(alpha: .13)),
       ),
       child: Row(
@@ -1003,7 +1003,7 @@ class _Segmented<T> extends StatelessWidget {
           for (final choice in choices)
             Expanded(
               child: InkWell(
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(12),
                 onTap: () => onChanged(choice.$1),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
@@ -1014,7 +1014,7 @@ class _Segmented<T> extends StatelessWidget {
                             colors: [Color(0xFF494AF5), Color(0xFF6546E7)],
                           )
                         : null,
-                    borderRadius: BorderRadius.circular(13),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     choice.$2,
@@ -1249,7 +1249,7 @@ class _CustomRepeatSheetState extends State<_CustomRepeatSheet> {
         const SizedBox(height: 18),
         Text(
           _repeat.describe(),
-          style: TextStyle(color: colors.textSecondary, fontSize: 14),
+          style: TextStyle(color: colors.textSecondary, fontSize: 15),
         ),
       ],
     );
@@ -1383,13 +1383,13 @@ class _InviteFriendsSectionState extends State<InviteFriendsSection> {
                       vertical: 14,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide(
                         color: colors.textPrimary.withValues(alpha: .14),
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide(
                         color: colors.textPrimary.withValues(alpha: .14),
                       ),
@@ -1405,7 +1405,7 @@ class _InviteFriendsSectionState extends State<InviteFriendsSection> {
                         'No friends match “${value.text.trim()}”.',
                         style: TextStyle(
                           color: colors.textSecondary,
-                          fontSize: 14,
+                          fontSize: 15,
                         ),
                       ),
                     )
@@ -1475,7 +1475,7 @@ class _FriendChip extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 friend.username,
-                style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                style: TextStyle(color: colors.textPrimary, fontSize: 15),
               ),
               const SizedBox(width: 6),
               Icon(CupertinoIcons.xmark, size: 13, color: colors.textSecondary),

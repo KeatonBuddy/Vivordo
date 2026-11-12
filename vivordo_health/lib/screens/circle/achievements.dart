@@ -353,7 +353,7 @@ class _ProfileAchievementsSummary extends StatelessWidget {
           if (recent.isEmpty)
             Text(
               'Earned achievements will appear here.',
-              style: TextStyle(color: context.muted, fontSize: 14),
+              style: TextStyle(color: context.muted, fontSize: 15),
             )
           else
             Row(
@@ -660,7 +660,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
         return Container(
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
             top: false,
@@ -691,7 +691,7 @@ class _AchievementsPageState extends State<_AchievementsPage> {
                         ? '${_tierLabel(achievement.goalTier ?? achievement.tier ?? 'bronze')} goal: ${achievement.requirement}'
                         : achievement.requirement,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: sheetContext.muted, fontSize: 14),
+                    style: TextStyle(color: sheetContext.muted, fontSize: 15),
                   ),
                   const SizedBox(height: 18),
                   Text(
@@ -750,7 +750,7 @@ class _TieredAchievementTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.vivordoColors.textPrimary,
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
           ),

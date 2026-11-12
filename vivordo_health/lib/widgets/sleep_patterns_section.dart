@@ -135,7 +135,7 @@ class _PatternCard extends StatelessWidget {
                         Text(
                           pattern.body,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             height: 1.4,
                             color: colors.textSecondary,
                           ),
@@ -292,7 +292,7 @@ Future<void> _showPattern(
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed: () {

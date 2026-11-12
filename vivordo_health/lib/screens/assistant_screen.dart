@@ -648,7 +648,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   'Vivordo AI',
                   style: TextStyle(
                     color: colors.textPrimary,
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1080,7 +1080,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
             'Hi $_name',
             style: TextStyle(
               color: colors.textPrimary,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1133,7 +1133,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                       vertical: 12,
                     ),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide.none,
                     ),
                   ),

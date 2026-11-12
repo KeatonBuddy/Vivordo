@@ -524,7 +524,7 @@ class _RangePicker extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: _slop + 3),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         onTap: () => onChanged(value),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
@@ -533,7 +533,7 @@ class _RangePicker extends StatelessWidget {
                             color: value == range
                                 ? const Color(0xFF6B5CE7)
                                 : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             value.label,

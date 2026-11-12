@@ -227,7 +227,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
       builder: (context, scrollController) => Container(
         decoration: BoxDecoration(
           color: colors.page,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: StreamBuilder<List<CircleProfile>>(
           stream: _friends,
@@ -332,7 +332,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                           _summary(chosen),
                           style: TextStyle(
                             color: colors.textPrimary,
-                            fontSize: 14,
+                            fontSize: 15,
                             height: 1.4,
                           ),
                         ),
@@ -401,7 +401,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                   text: _numberFormat.format(_goal),
                   style: TextStyle(
                     color: context.vivordoColors.textPrimary,
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                   ),
                   children: [
@@ -409,7 +409,7 @@ class _NewChallengeSheetState extends State<_NewChallengeSheet> {
                       text: ' ${_type.unit}',
                       style: TextStyle(
                         color: context.muted,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -551,7 +551,7 @@ class _TypeTile extends StatelessWidget {
       child: Material(
         color: selected ? context.circle.accentTint : colors.card,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(
             color: selected ? _brand : colors.border,
             width: selected ? 2 : 1,
@@ -559,7 +559,7 @@ class _TypeTile extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: SizedBox(
             height: 60,
             child: Padding(
@@ -580,7 +580,7 @@ class _TypeTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: colors.textPrimary,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -625,11 +625,11 @@ class _TargetPicker extends StatelessWidget {
     return Material(
       color: colors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: colors.border),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         onTap: () async {
           final selection =
               await showModalBottomSheet<_SpecificExerciseSelection>(
@@ -655,7 +655,7 @@ class _TargetPicker extends StatelessWidget {
               children: [
                 Text(
                   'Counts',
-                  style: TextStyle(color: context.muted, fontSize: 14),
+                  style: TextStyle(color: context.muted, fontSize: 15),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -788,11 +788,11 @@ class _MessageField extends StatelessWidget {
         fillColor: colors.input,
         contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           borderSide: BorderSide(color: colors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           borderSide: const BorderSide(color: _brand, width: 1.5),
         ),
       ),
@@ -853,7 +853,7 @@ class _SpecificExerciseSearchSheetState
       heightFactor: .82,
       child: Material(
         color: colors.page,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
@@ -975,7 +975,7 @@ class _ExerciseResultTile extends StatelessWidget {
       child: Material(
         color: colors.card,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(
             color: selected ? _brand : colors.border,
             width: selected ? 2 : 1,
@@ -983,7 +983,7 @@ class _ExerciseResultTile extends StatelessWidget {
         ),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             child: Row(
@@ -1065,11 +1065,11 @@ class _SearchField extends StatelessWidget {
         fillColor: colors.input,
         contentPadding: const EdgeInsets.symmetric(vertical: 14),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: colors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: _brand, width: 1.5),
         ),
       ),

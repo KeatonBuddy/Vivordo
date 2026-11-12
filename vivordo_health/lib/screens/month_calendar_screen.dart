@@ -355,7 +355,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                           ],
                         ),
                         style: const TextStyle(
-                          fontSize: 30,
+                          fontSize: 28,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -599,7 +599,7 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                 DateFormat('EEEE, MMM d').format(day),
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -701,7 +701,7 @@ class _CalendarDayCell extends StatelessWidget {
                           : inMonth
                           ? colors.textPrimary
                           : colors.textSecondary.withValues(alpha: .45),
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: today || selected
                           ? FontWeight.w800
                           : FontWeight.w600,

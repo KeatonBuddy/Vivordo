@@ -117,7 +117,7 @@ class AssistantMemoryScreen extends StatelessWidget {
                 'What Vivordo AI knows',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 26,
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -231,7 +231,7 @@ class _Section extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               color: colors.card,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: colors.border),
             ),
             child: Column(

@@ -521,7 +521,7 @@ class _NeedsYouCardState extends State<_NeedsYouCard> {
                           'Needs you',
                           style: TextStyle(
                             color: context.vivordoColors.textPrimary,
-                            fontSize: 18,
+                            fontSize: 17,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -991,7 +991,7 @@ class _ActivityPostCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: context.muted,
-                        fontSize: 14,
+                        fontSize: 15,
                         height: 1.35,
                       ),
                     ),
@@ -1156,7 +1156,7 @@ class _EngagementButton extends StatelessWidget {
                   label,
                   style: TextStyle(
                     color: color,
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1341,7 +1341,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
         builder: (context, scrollController) => Container(
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
             children: [
@@ -1406,7 +1406,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
                       title,
                       style: TextStyle(
                         color: colors.textPrimary,
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -.3,
                       ),
@@ -1559,7 +1559,7 @@ class _ActivityDetailsSheetState extends State<_ActivityDetailsSheet> {
               if (comments.isEmpty)
                 Text(
                   'Be the first to leave a comment.',
-                  style: TextStyle(color: context.muted, fontSize: 14),
+                  style: TextStyle(color: context.muted, fontSize: 15),
                 )
               else
                 for (final comment in comments)
@@ -1651,7 +1651,7 @@ class _StatChip extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     decoration: BoxDecoration(
       color: background ?? context.vivordoColors.cardMuted,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
     ),
     child: Center(
       widthFactor: 1,
@@ -1747,7 +1747,7 @@ class _CommentRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: context.vivordoColors.textPrimary,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1766,7 +1766,7 @@ class _CommentRow extends StatelessWidget {
                 text,
                 style: TextStyle(
                   color: context.vivordoColors.textPrimary,
-                  fontSize: 14,
+                  fontSize: 15,
                   height: 1.4,
                 ),
               ),
@@ -1848,15 +1848,15 @@ class _CommentComposer extends StatelessWidget {
                 vertical: 13,
               ),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(20),
                 borderSide: BorderSide(color: colors.border),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(20),
                 borderSide: BorderSide(color: colors.border),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(20),
                 borderSide: const BorderSide(color: _brand, width: 1.5),
               ),
             ),
@@ -1952,7 +1952,7 @@ class _PersonalRecordsBox extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: palette.goldTint.withValues(alpha: .55),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: palette.gold.withValues(alpha: .3)),
       ),
       child: Column(
@@ -1976,7 +1976,7 @@ class _PersonalRecordsBox extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: context.vivordoColors.textPrimary,
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -2047,7 +2047,7 @@ class _PersonalRecordCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: palette.goldTint.withValues(alpha: .55),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: palette.gold.withValues(alpha: .3)),
       ),
       child: Column(

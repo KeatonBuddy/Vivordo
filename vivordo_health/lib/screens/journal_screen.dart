@@ -223,7 +223,7 @@ class _JournalScreenState extends State<JournalScreen> {
                 'Journal',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 36,
+                  fontSize: 34,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -275,7 +275,7 @@ class _JournalScreenState extends State<JournalScreen> {
               summary.isEmpty
                   ? 'A private space to reflect on your day'
                   : summary,
-              style: TextStyle(color: colors.textSecondary, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 15),
             ),
           ),
       ],
@@ -463,7 +463,7 @@ class _JournalScreenState extends State<JournalScreen> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -486,7 +486,7 @@ class _JournalScreenState extends State<JournalScreen> {
             prompt,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 19,
+              fontSize: 20,
               height: 1.3,
               fontWeight: FontWeight.w700,
             ),
@@ -643,7 +643,7 @@ class _JournalScreenState extends State<JournalScreen> {
     return _Card(
       padding: EdgeInsets.zero,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         child: Column(
           children: [
             for (var i = 0; i < rows.length; i++) ...[
@@ -813,7 +813,7 @@ class _JournalScreenState extends State<JournalScreen> {
               height: 86,
               decoration: BoxDecoration(
                 color: context.vivordoColors.card,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(
                 CupertinoIcons.lock_fill,
@@ -824,7 +824,7 @@ class _JournalScreenState extends State<JournalScreen> {
             const SizedBox(height: 22),
             Text(
               _accessChecked ? 'Journal Locked' : 'Opening Journal…',
-              style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             Text(
@@ -844,7 +844,7 @@ class _JournalScreenState extends State<JournalScreen> {
                   backgroundColor: _purple,
                   minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
                 icon: const Icon(CupertinoIcons.lock_open),
@@ -989,7 +989,7 @@ class _Card extends StatelessWidget {
     padding: padding,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: child,
@@ -1356,7 +1356,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
             side: BorderSide(color: _red.withValues(alpha: .45)),
             minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
           icon: _deleting

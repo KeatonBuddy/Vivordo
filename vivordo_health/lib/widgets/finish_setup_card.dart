@@ -102,7 +102,7 @@ class _FinishSetupCardState extends State<FinishSetupCard> {
                         'Add your calendar, sleep times and notifications. '
                         'About 2 minutes.',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           height: 1.35,
                           color: colors.textSecondary,
                         ),

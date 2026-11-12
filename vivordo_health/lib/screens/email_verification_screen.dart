@@ -180,7 +180,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 "you're verified.",
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: textGrey,
                   height: 1.5,
                 ),
@@ -195,7 +195,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     backgroundColor: accentPurple,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     elevation: 0,
                   ),

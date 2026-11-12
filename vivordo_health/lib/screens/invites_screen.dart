@@ -238,7 +238,7 @@ class _InvitesScreenState extends State<InvitesScreen> {
                         'Invites',
                         style: TextStyle(
                           color: colors.textPrimary,
-                          fontSize: 36,
+                          fontSize: 34,
                           height: 1,
                           fontWeight: FontWeight.w900,
                         ),
@@ -401,7 +401,7 @@ class _InviteCard extends StatelessWidget {
                       const TextSpan(text: ' invited you'),
                     ],
                   ),
-                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 15),
                 ),
               ),
             ],
@@ -411,14 +411,14 @@ class _InviteCard extends StatelessWidget {
             invite.title,
             style: TextStyle(
               color: colors.textPrimary,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             inviteWhen(invite),
-            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+            style: TextStyle(color: colors.textSecondary, fontSize: 15),
           ),
           FutureBuilder<InviteFit?>(
             future: fit,
@@ -525,7 +525,7 @@ class _SentCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       invite.recipientNames[uid] ?? 'A friend',
-                      style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                      style: TextStyle(color: colors.textPrimary, fontSize: 15),
                     ),
                   ),
                   Text(
@@ -637,7 +637,7 @@ class _Empty extends StatelessWidget {
           Text(
             body,
             textAlign: TextAlign.center,
-            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+            style: TextStyle(color: colors.textSecondary, fontSize: 15),
           ),
         ],
       ),
@@ -713,7 +713,7 @@ class _FitView extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: colors.cardMuted,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

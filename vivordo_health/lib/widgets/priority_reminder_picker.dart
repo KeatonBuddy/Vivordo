@@ -90,7 +90,7 @@ class _CustomReminderState extends State<_CustomReminder> {
               brightness: Theme.of(context).brightness,
               textTheme: CupertinoTextThemeData(
                 pickerTextStyle: TextStyle(
-                  fontSize: 21,
+                  fontSize: 22,
                   color: colors.textPrimary,
                 ),
               ),

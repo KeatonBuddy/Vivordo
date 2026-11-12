@@ -402,7 +402,7 @@ class _WorkoutHeader extends StatelessWidget {
           width: 52,
           height: 52,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             color: visual.color.withValues(alpha: .14),
           ),
           child: Icon(visual.icon, color: visual.color, size: 26),
@@ -460,7 +460,7 @@ class _HeroStats extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: const Color(0xFFAA91FF).withValues(alpha: .6),
         ),
@@ -520,7 +520,7 @@ class _HeroStat extends StatelessWidget {
           ),
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 32,
+            fontSize: 34,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -563,7 +563,7 @@ class _SummaryCard extends StatelessWidget {
             overview.headline,
             style: TextStyle(
               color: isDark ? Colors.white : colors.textPrimary,
-              fontSize: 21,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -594,7 +594,7 @@ class _SummaryCard extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: color.withValues(alpha: .10),
-                        borderRadius: BorderRadius.circular(15),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: color.withValues(alpha: .25)),
                       ),
                       child: Text(
@@ -914,7 +914,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
                       exercise.name,
                       style: TextStyle(
                         color: isDark ? Colors.white : colors.textPrimary,
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -967,7 +967,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
                 Text(
                   _units(context).formatDistance(exercise.distanceKm!),
                   style: const TextStyle(
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -1486,7 +1486,7 @@ class _HeartRatePainter extends CustomPainter {
         trackTop,
         x(span.end) - 1.5,
         trackTop + _trackHeight,
-        const Radius.circular(7),
+        const Radius.circular(8),
       );
       final on = span == active;
       canvas.drawRRect(
@@ -1618,7 +1618,7 @@ class _ProgressiveOverloadRecommendation extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _summaryPurple.withValues(alpha: .09),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _summaryPurple.withValues(alpha: .22)),
       ),
       child: Row(

@@ -382,7 +382,7 @@ class _ProfileHero extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: colors.textPrimary,
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             letterSpacing: -.5,
           ),
@@ -657,7 +657,7 @@ class _FeaturedAchievementsCard extends StatelessWidget {
                 onEdit == null
                     ? 'Nothing featured yet.'
                     : 'Earn an achievement to feature it here.',
-                style: TextStyle(color: context.muted, fontSize: 14),
+                style: TextStyle(color: context.muted, fontSize: 15),
               ),
             )
           else
@@ -838,7 +838,7 @@ class _FeaturedAchievementPickerState
       ),
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
@@ -853,7 +853,7 @@ class _FeaturedAchievementPickerState
                 'Featured achievements',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -885,7 +885,7 @@ class _FeaturedAchievementPickerState
                           ? context.circle.accentTint
                           : colors.cardMuted,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(20),
                         side: BorderSide(
                           color: selected ? _brand : colors.border,
                           width: selected ? 2 : 1,
@@ -898,7 +898,7 @@ class _FeaturedAchievementPickerState
                             _selected.add(achievement.id);
                           }
                         }),
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(20),
                         child: Stack(
                           children: [
                             Padding(

@@ -243,7 +243,7 @@ class _StartChallengeCard extends StatelessWidget {
           'Start a challenge',
           style: TextStyle(
             color: context.vivordoColors.textPrimary,
-            fontSize: 18,
+            fontSize: 17,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -297,10 +297,10 @@ class _PresetButton extends StatelessWidget {
         : _challengeVisual(context, type!.backendType);
     return Material(
       color: colors.cardMuted,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
@@ -319,7 +319,7 @@ class _PresetButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: colors.textPrimary,
-                    fontSize: 14,
+                    fontSize: 15,
                     height: 1.2,
                     fontWeight: FontWeight.w700,
                   ),
@@ -410,7 +410,7 @@ class _ChallengeSummaryCard extends StatelessWidget {
                   text: ' / ${_goalLabel(membership)}',
                   style: TextStyle(
                     color: context.muted,
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -737,7 +737,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
                           '${_numberFormat.format(progress)}/${_numberFormat.format(membership.goal)}',
                           style: TextStyle(
                             color: colors.textPrimary,
-                            fontSize: 32,
+                            fontSize: 34,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -1,
                           ),
@@ -759,7 +759,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: colors.textPrimary,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -990,7 +990,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'Completed activities will appear here.',
-                style: TextStyle(color: context.muted, fontSize: 14),
+                style: TextStyle(color: context.muted, fontSize: 15),
               ),
             )
           else
@@ -1028,7 +1028,7 @@ class _ChallengeDetailPageState extends State<_ChallengeDetailPage> {
             else if (comments.isEmpty)
               Text(
                 'No comments yet. Start the conversation.',
-                style: TextStyle(color: context.muted, fontSize: 14),
+                style: TextStyle(color: context.muted, fontSize: 15),
               )
             else
               for (final comment in comments)
@@ -1171,7 +1171,7 @@ class _InfoCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       decoration: BoxDecoration(
         color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         children: [
@@ -1313,7 +1313,7 @@ class _StandingRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: colors.textPrimary,
-                        fontSize: 14,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1394,7 +1394,7 @@ class _ContributionRow extends StatelessWidget {
                   '$name $action',
                   style: TextStyle(
                     color: context.vivordoColors.textPrimary,
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

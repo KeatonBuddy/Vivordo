@@ -106,7 +106,7 @@ class _GoalsScreenState extends State<GoalsScreen>
               const SizedBox(height: 4),
               const Text(
                 '60-second physiological assessment',
-                style: TextStyle(fontSize: 14, color: textGrey),
+                style: TextStyle(fontSize: 15, color: textGrey),
               ),
               const SizedBox(height: 32),
               if (_scanState == ScanState.idle) _buildIdleState(),
@@ -166,13 +166,13 @@ class _GoalsScreenState extends State<GoalsScreen>
         const Text(
           'Place your finger on the camera',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 10),
         const Text(
           'Cover the rear camera lens gently with your fingertip. Stay still for 60 seconds.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: textGrey, height: 1.5),
+          style: TextStyle(fontSize: 15, color: textGrey, height: 1.5),
         ),
         const SizedBox(height: 36),
         SizedBox(
@@ -249,16 +249,16 @@ class _GoalsScreenState extends State<GoalsScreen>
         const SizedBox(height: 32),
         const Text(
           'Scanning...',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         const Text(
           'Keep your finger still on the camera',
-          style: TextStyle(fontSize: 14, color: textGrey),
+          style: TextStyle(fontSize: 15, color: textGrey),
         ),
         const SizedBox(height: 24),
         ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           child: LinearProgressIndicator(
             value: _progress / 100,
             minHeight: 12,
@@ -283,7 +283,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
           decoration: BoxDecoration(
             color: accentPurple,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: const Column(
             children: [
@@ -311,7 +311,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                     'Low Stress',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -365,7 +365,7 @@ class _GoalsScreenState extends State<GoalsScreen>
             children: [
               Text(
                 'AI Insight',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
               SizedBox(height: 6),
               Text(

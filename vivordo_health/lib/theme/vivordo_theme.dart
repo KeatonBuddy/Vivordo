@@ -208,7 +208,7 @@ abstract final class VivordoTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: colors.card,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       // iOS navigation bars: page colour, no scroll tint, centred bold title,
       // and the chevron back button everywhere.
@@ -232,7 +232,7 @@ abstract final class VivordoTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: colors.card,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.card,
@@ -245,27 +245,27 @@ abstract final class VivordoTheme {
         hintStyle: TextStyle(color: colors.textSecondary),
         border: OutlineInputBorder(
           borderSide: BorderSide(color: colors.border),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         enabledBorder: OutlineInputBorder(
           borderSide: BorderSide(color: colors.border),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         disabledBorder: OutlineInputBorder(
           borderSide: BorderSide(color: colors.border.withValues(alpha: .5)),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         errorBorder: OutlineInputBorder(
           borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderSide: const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         focusedBorder: OutlineInputBorder(
           borderSide: const BorderSide(color: brand, width: 1.5),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
       ),
       textTheme: ThemeData(brightness: brightness).textTheme.apply(
@@ -278,7 +278,7 @@ abstract final class VivordoTheme {
         behavior: SnackBarBehavior.floating,
         insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: brightness == Brightness.dark
             ? const Color(0xFFF0EDF8)
             : const Color(0xFF29272F),
@@ -287,7 +287,7 @@ abstract final class VivordoTheme {
             : const Color(0xFFAFA9EC),
         contentTextStyle: TextStyle(
           fontFamily: 'DMSans',
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: FontWeight.w500,
           color: brightness == Brightness.dark
               ? const Color(0xFF29272F)

@@ -250,7 +250,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 'Priorities',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 32,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -270,7 +270,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
           padding: const EdgeInsets.only(left: 8),
           child: Text(
             summary,
-            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+            style: TextStyle(color: colors.textSecondary, fontSize: 15),
           ),
         ),
         if (total > 0) ...[
@@ -602,7 +602,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
               height: 34,
               decoration: BoxDecoration(
                 color: VivordoTheme.brand.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
                 CupertinoIcons.repeat,

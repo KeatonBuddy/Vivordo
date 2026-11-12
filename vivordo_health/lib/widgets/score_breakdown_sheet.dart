@@ -73,14 +73,14 @@ Future<void> showScoreBreakdown(
               ),
               Text(
                 summary,
-                style: TextStyle(fontSize: 14, color: colors.textSecondary),
+                style: TextStyle(fontSize: 15, color: colors.textSecondary),
               ),
               ?history,
               if (sections.every((section) => section.rows.isEmpty)) ...[
                 const SizedBox(height: 14),
                 Text(
                   empty,
-                  style: TextStyle(fontSize: 14, color: colors.textSecondary),
+                  style: TextStyle(fontSize: 15, color: colors.textSecondary),
                 ),
               ],
               for (final section in sections)
@@ -213,7 +213,7 @@ class _StateChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(99),
       ),
       child: Text(
         state.word,
@@ -360,7 +360,7 @@ class _BreakdownRowView extends StatelessWidget {
                         Text(
                           event.title.isEmpty ? 'Untitled' : event.title,
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
                           ),
                         ),

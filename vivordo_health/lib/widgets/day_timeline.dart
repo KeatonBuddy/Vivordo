@@ -431,7 +431,7 @@ class _DashedBorder extends CustomPainter {
       ..strokeWidth = 1.2;
     final path = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(9)),
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
       );
     for (final metric in path.computeMetrics()) {
       for (var distance = 0.0; distance < metric.length; distance += 8) {

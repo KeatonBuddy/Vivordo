@@ -166,7 +166,7 @@ class _PatternList extends StatelessWidget {
                     height: 32,
                     decoration: BoxDecoration(
                       color: patternStyle(p).accent.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       patternStyle(p).icon,

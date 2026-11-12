@@ -326,7 +326,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: context.vivordoColors.card,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: context.vivordoColors.border),
               ),
               child: Column(
@@ -417,7 +417,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                   backgroundColor: _purple,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
                 child: saving
@@ -436,7 +436,7 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
                             ? 'Create profile'
                             : 'Create Profile',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -546,11 +546,11 @@ class _CreateCircleProfileScreenState extends State<CreateCircleProfileScreen> {
           vertical: 16,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: context.vivordoColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: _purple, width: 1.5),
         ),
       );

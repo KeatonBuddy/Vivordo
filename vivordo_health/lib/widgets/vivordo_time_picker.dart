@@ -38,7 +38,7 @@ Future<TimeOfDay?> showVivordoTimePicker({
           ),
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             border: Border.all(
               color: colors.textPrimary.withValues(alpha: .12),
             ),
@@ -158,7 +158,7 @@ Future<DateTime?> showVivordoDatePicker({
           ),
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             border: Border.all(
               color: colors.textPrimary.withValues(alpha: .12),
             ),
