@@ -290,7 +290,7 @@ void main() {
       );
       expect(
         sleepInsight(nights: lieIn, today: today, rangeDays: 7, need: 7.5).text,
-        contains('Wake time was within an hour of usual on 6 of 7 mornings.'),
+        endsWith('nights, wake time on 6 of 7.'),
       );
     });
 
@@ -319,9 +319,8 @@ void main() {
       );
       expect(
         insight.text,
-        'You averaged 7h 30m a night over 7 nights, 30 min less than your '
-        'need of 8h. Bedtime was within an hour of usual on 6 of 7 '
-        'nights.',
+        '30 min less a night than your need of 8h. Bedtime was within an '
+        'hour of usual on 6 of 7 nights.',
       );
       expect(insight.tone, InsightTone.concern);
     });
