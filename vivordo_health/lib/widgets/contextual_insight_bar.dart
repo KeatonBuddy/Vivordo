@@ -17,7 +17,12 @@ class ScreenInsight {
     this.onAction,
     this.actionLabel,
     this.busy = false,
+    this.inline = false,
   });
+
+  /// The screen shows this itself (see [InlineInsight]), so the floating
+  /// bar stays down. Vivordo AI still gets it as the screen's context.
+  final bool inline;
   final VoidCallback? onAction;
   final String? actionLabel;
   final bool busy;
@@ -117,6 +122,104 @@ void Function(String screen)? vivordoScreenOpener(BuildContext context) =>
         .getInheritedWidgetOfExactType<ScreenInsightScope>()
         ?.controller
         .onOpen;
+
+/// A screen's insight in the page itself, where the floating bar would sit
+/// over the content and cut its sentence short: the whole message, and a
+/// tap opens Vivordo AI about it. Publish the same insight with
+/// `inline: true` so the bar doesn't repeat it.
+class InlineInsight extends StatelessWidget {
+  const InlineInsight(this.insight, {super.key, this.onInfo});
+  final ScreenInsight insight;
+
+  /// Explains where the insight comes from, where a screen has that to say.
+  final VoidCallback? onInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    final ask = vivordoAiAsker(context);
+    final info = onInfo;
+    return Material(
+      color: VivordoTheme.brand.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Semantics(
+              button: ask != null,
+              label: 'Vivordo insight. ${insight.message}',
+              child: ExcludeSemantics(
+                child: InkWell(
+                  onTap: ask == null ? null : () => ask(insight),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      12,
+                      info == null ? 12 : 4,
+                      12,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 1),
+                          child: Icon(
+                            CupertinoIcons.sparkles,
+                            size: 17,
+                            color: VivordoTheme.brand,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                insight.message,
+                                textAlign: TextAlign.start,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (ask != null)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    'Ask Vivordo AI ›',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: VivordoTheme.brand,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (info != null)
+            IconButton(
+              onPressed: info,
+              tooltip: 'About this insight',
+              visualDensity: VisualDensity.compact,
+              iconSize: 18,
+              color: context.vivordoColors.textSecondary,
+              icon: const Icon(CupertinoIcons.info),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 extension ContextualInsightWidget on Widget {
   Widget withScreenInsight(ScreenInsight insight) =>

@@ -196,13 +196,42 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     final usualRange = stressUsualRange(days, todayDate);
     final score = today.score;
 
+    // Shown in the "Right now" card, not in the floating bar.
+    // The card shows the score, how it compares and when it was worked out;
+    // the insight adds what's behind it. The caveats go to Vivordo AI.
+    final drivers = [
+      for (final (i, d) in today.drivers.take(2).indexed)
+        // "Activity and last night's sleep", but "HRV" stays as it is.
+        i == 0 || d.label.length < 2 || d.label[1] == d.label[1].toUpperCase()
+            ? d.label
+            : '${d.label[0].toLowerCase()}${d.label.substring(1)}',
+    ];
+    final insight = ScreenInsight(
+      'stress',
+      "Today's stress estimate",
+      score == null
+          ? "No stress estimate yet today. An empty reading doesn't mean low stress."
+          : drivers.isEmpty
+          ? 'Nothing stands out as moving it yet.'
+          : '${drivers.join(' and ')} ${drivers.length == 1 ? 'is' : 'are'} '
+                'moving it most today.',
+      context: score == null
+          ? null
+          : 'Stress estimate ${score.round()}/100 '
+                '(${stressUsualHeadline(score, today.usual).toLowerCase()} for '
+                'them)'
+                '${today.computedAt == null ? '' : ', calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}'}. '
+                '${drivers.isEmpty ? 'No recorded drivers explain it yet.' : 'Drivers are contributions to the estimate, not proven causes.'}',
+      inline: true,
+    );
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _rightNow(today, stressAtTimeOfDay(yesterday, now)),
+          _rightNow(today, stressAtTimeOfDay(yesterday, now), insight),
           const SizedBox(height: 14),
           _todaySoFar(today, usualRange, events),
           if (today.drivers.isNotEmpty) ...[
@@ -224,34 +253,16 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           _tunedToYou(days),
         ],
       ),
-    ).withScreenInsight(
-      ScreenInsight(
-        'stress',
-        "Today's stress estimate",
-        score == null
-            ? 'There is no stress estimate available for today yet. An empty reading does not mean low stress.'
-            : _words
-            ? 'Your latest stress estimate is ${stressBand(score).toLowerCase()}, '
-                  '${stressUsualHeadlineWords(score, today.usual).toLowerCase()} for you. '
-                  '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
-                  'Want to explore a manageable next step?'
-            : 'Your latest displayed stress estimate is ${score.round()}, '
-                  '${stressUsualHeadline(score, today.usual).toLowerCase()} for you. '
-                  '${today.computedAt == null ? "Its update time is unavailable." : "Calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}."} '
-                  '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
-                  'Want to explore a manageable next step?',
-        // Words mode hides the score on screen; Vivordo AI still gets it.
-        context: _words && score != null
-            ? 'Stress estimate ${score.round()}/100 '
-                  '(${stressUsualHeadline(score, today.usual).toLowerCase()}).'
-            : null,
-      ),
-    );
+    ).withScreenInsight(insight);
   }
 
   // ── Right now ──────────────────────────────────────────────────────────────
 
-  Widget _rightNow(StressDay today, double? yesterdayNow) {
+  Widget _rightNow(
+    StressDay today,
+    double? yesterdayNow,
+    ScreenInsight insight,
+  ) {
     final colors = context.vivordoColors;
     final score = today.score;
     final grey = today.lowConfidence;
@@ -465,6 +476,8 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 ),
             ],
           ),
+          const SizedBox(height: 14),
+          InlineInsight(insight),
         ],
       ),
     );
