@@ -408,11 +408,6 @@ double _median(List<double> values) {
       : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-String _hours(double hours) {
-  final minutes = (hours * 60).round();
-  return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
-}
-
 String _minutes(num minutes) {
   final m = minutes.round();
   if (m < 60) return '${m}m';
@@ -936,7 +931,7 @@ WeeklyReview? buildWeeklyReview(WeeklyReviewInput input) {
       (
         label: 'Sleep',
         value:
-            '${_hours(sleepHours.reduce((a, b) => a + b) / sleepHours.length)} a night'
+            '${hoursMinutes(sleepHours.reduce((a, b) => a + b) / sleepHours.length)} a night'
             '${sleepNights > 0 && onTarget.length + short.length > 0 ? ' · $nightsOnTarget of $sleepNights on target' : ''}',
       ),
     (label: 'Capacity', value: _cap(_vsUsual(capAvg, usual))),

@@ -881,6 +881,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 child: ScreenInsightScope(controller: _insights, child: tabs),
               ),
             ),
+            // A scroll-edge fade: the bar is glass, and text passing right
+            // behind and beside it read as clutter.
+            if (showNavBar)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: _navBarClearance + 26,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          context.vivordoColors.page.withValues(alpha: 0),
+                          context.vivordoColors.page.withValues(alpha: .9),
+                        ],
+                        stops: const [0, .6],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             if (showNavBar)
               ValueListenableBuilder<double>(
                 valueListenable: _insightLift,
@@ -1353,8 +1377,8 @@ class _SheetClipper extends CustomClipper<Path> {
     ..addRRect(
       RRect.fromRectAndCorners(
         Offset.zero & size,
-        topLeft: const Radius.circular(28),
-        topRight: const Radius.circular(28),
+        topLeft: const Radius.circular(20),
+        topRight: const Radius.circular(20),
       ),
     );
 

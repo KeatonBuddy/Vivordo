@@ -118,7 +118,7 @@ void main() {
       sleepNeedHours: 8,
     );
     final text = energyReasons(short).map((r) => r.$2).join('\n');
-    expect(text, contains('You slept 6 h 40 m, 1 h 20 m under your need'));
+    expect(text, contains('You slept 6h 40m, 1h 20m under your need'));
     expect(text, contains('You woke at 7:00'));
     expect(text, contains('Best for focus:'));
     expect(text, contains('about average'));
@@ -130,7 +130,7 @@ void main() {
     );
     expect(
       energyReasons(rested).first.$2,
-      'You slept 8 h, about what you need.',
+      'You slept 8h, about what you need.',
     );
     expect(
       energyReasons(forecastEnergy(day: day, nights: const [])).first.$2,
@@ -168,7 +168,7 @@ void main() {
     expect(
       textbook.first.body,
       startsWith(
-        'Bed by ${t('11:00 PM')} for 8 h before you wake at ${t('7:00 AM')}.',
+        'Bed by ${t('11:00 PM')} for 8h before you wake at ${t('7:00 AM')}.',
       ),
     );
     expect(textbook.first.body, contains("Tomorrow's peak is"));
@@ -189,7 +189,7 @@ void main() {
     expect(
       lateRiser.first.body,
       startsWith(
-        'Bed by ${t('11:00 PM')} for 7 h before you wake at ${t('7:30 AM')}.',
+        'Bed by ${t('11:00 PM')} for 7h before you wake at ${t('7:30 AM')}.',
       ),
     );
     final placeholder = windDownReminders(
@@ -203,7 +203,7 @@ void main() {
           ),
       ],
     );
-    expect(placeholder.first.body, contains('8 h of sleep before you wake'));
+    expect(placeholder.first.body, contains('8h of sleep before you wake'));
     expect(textbook.last.at, DateTime(2026, 10, 14, 22));
 
     // A 6:30 AM start tomorrow pulls only tonight earlier: 6:30 − 1 h prep
@@ -270,7 +270,7 @@ void main() {
     expect(text, startsWith('Today: woke ${t('7:00 AM')}, groggy until'));
     expect(text, contains('peak '));
     expect(text, contains('Bed by '));
-    expect(text, contains('Last night: slept 6 h 40 m (needs 8 h).'));
+    expect(text, contains('Last night: slept 6h 40m (needs 8h).'));
     expect(
       text,
       contains(

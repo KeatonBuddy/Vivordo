@@ -150,7 +150,7 @@ class _HomeCircleProfileButton extends StatelessWidget {
             textScaler: TextScaler.noScaling,
             style: const TextStyle(
               color: _HomeScreenState.accentPurple,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w900,
             ),
           )
@@ -1533,7 +1533,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: _vital(
                 icon: CupertinoIcons.moon_fill,
                 color: accentPurple,
-                value: sleepHours == null ? null : _sleepLabel(sleepHours),
+                value: sleepHours == null ? null : hoursMinutes(sleepHours),
                 label: 'Sleep',
                 loading: loading,
                 onTap: () => _push(const SleepDetailScreen()),
@@ -1602,7 +1602,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 height: 30,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: .13),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: color, size: 17),
               ),
@@ -1613,15 +1613,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (loading)
-                      Container(
-                        width: 34,
-                        height: 15,
-                        margin: const EdgeInsets.only(bottom: 3),
-                        decoration: BoxDecoration(
-                          color: colors.cardMuted,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      )
+                      _LoadingBlock(color: colors.cardMuted)
                     else
                       // Shrinks to fit the narrow column at large text.
                       FittedBox(
@@ -1660,13 +1652,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  String _sleepLabel(double hours) {
-    final minutes = (hours * 60).round();
-    return minutes % 60 == 0
-        ? '${minutes ~/ 60}h'
-        : '${minutes ~/ 60}h ${minutes % 60}m';
-  }
-
   /// A small text button for an empty state's one-tap fix.
   Widget _insightAction(String label, VoidCallback onTap) => TextButton(
     onPressed: onTap,
@@ -1675,7 +1660,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       minimumSize: const Size(0, 34),
       backgroundColor: accentPurple.withValues(alpha: .08),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     child: Text(
       label,
@@ -1857,7 +1842,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11.5, color: colors.textSecondary),
+            style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ],
       ),
@@ -2017,7 +2002,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         '$comments ${comments == 1 ? 'update' : 'updates'}',
                         style: TextStyle(
                           color: colors.textSecondary,
-                          fontSize: 12.5,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -2046,7 +2031,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           '${engagement.likes} new',
                           style: const TextStyle(
                             color: accentPurple,
-                            fontSize: 12.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -2454,7 +2439,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         InkWell(
                           onTap: showEffort,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                           child: _effortSoFarBar(
                             total: effortSoFar,
                             physical: physical,
@@ -2473,7 +2458,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Expanded(
                             child: InkWell(
                               onTap: () => showEffort(words: true),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
                               child: _effortStat(
                                 'So far',
                                 soFar,
@@ -2583,37 +2568,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               spacing: 12,
               runSpacing: 4,
               children: [
-                for (final (label, color, outlined) in [
-                  ('Light', _loadColor(DayLoadLevel.light), false),
-                  ('Focused', _loadColor(DayLoadLevel.focused), false),
-                  ('Heavy', _loadColor(DayLoadLevel.heavy), false),
-                  ('Workout', _workoutTeal, false),
-                  ('Ahead', accentPurple, true),
-                ])
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: outlined ? null : color,
-                          border: outlined
-                              ? Border.all(color: color, width: 1.5)
-                              : null,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
+                // Only what the bars above actually show.
+                for (final (label, color, outlined, shown) in [
+                  for (final level in const [
+                    DayLoadLevel.light,
+                    DayLoadLevel.focused,
+                    DayLoadLevel.heavy,
+                  ])
+                    (
+                      '${level.name[0].toUpperCase()}${level.name.substring(1)}',
+                      _loadColor(level),
+                      false,
+                      effort.hours.any((h) => dayLoadLevel(h.done) == level),
+                    ),
+                  (
+                    'Workout',
+                    _workoutTeal,
+                    false,
+                    effort.hours.any((h) => h.workout > 0),
                   ),
+                  (
+                    'Ahead',
+                    accentPurple,
+                    true,
+                    effort.hours.any((h) => h.ahead > 0),
+                  ),
+                ])
+                  if (shown)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: outlined ? null : color,
+                            border: outlined
+                                ? Border.all(color: color, width: 1.5)
+                                : null,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
               ],
             ),
             if (energy != null) ...[
@@ -2826,7 +2831,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Text(
           '$word ›',
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
             color: colors.textPrimary,
           ),
@@ -3209,7 +3214,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 detail,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12.5, color: colors.textSecondary),
+                style: TextStyle(fontSize: 12, color: colors.textSecondary),
               ),
             ],
           ),
@@ -3308,7 +3313,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           icon: CupertinoIcons.moon_fill,
           color: accentPurple,
           title: _getSleepInsightTitle(sleepHours),
-          subtitle: '${_sleepLabel(sleepHours)} of sleep recorded',
+          subtitle: '${hoursMinutes(sleepHours)} of sleep recorded',
         ),
       // No heart rate on record: nothing for the past hour to summarize.
       if (hasHeartRate)
@@ -3681,14 +3686,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         height: 5,
                         decoration: BoxDecoration(
                           color: accentPurple.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       const SizedBox(height: 24),
                       Text(
                         'How are you feeling?',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w800,
                           color: colors.textPrimary,
                           letterSpacing: -0.6,
@@ -3700,7 +3705,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: colors.textSecondary,
-                          fontSize: 14,
+                          fontSize: 15,
                           height: 1.35,
                         ),
                       ),
@@ -3743,7 +3748,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         label,
                         style: TextStyle(
                           color: colors.textPrimary,
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -3808,7 +3813,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             backgroundColor: accentPurple,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                           ),
                           child: const Text(
@@ -4016,4 +4021,55 @@ class _ScheduleInsight {
   final Color color;
   final String title;
   final String subtitle;
+}
+
+/// A value still loading: a soft block that breathes, so the tile reads as
+/// on its way and not as empty.
+class _LoadingBlock extends StatefulWidget {
+  const _LoadingBlock({required this.color});
+  final Color color;
+
+  @override
+  State<_LoadingBlock> createState() => _LoadingBlockState();
+}
+
+class _LoadingBlockState extends State<_LoadingBlock>
+    with SingleTickerProviderStateMixin {
+  late final _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pulse.value = 1;
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+    opacity: Tween<double>(
+      begin: .45,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
+    child: Container(
+      width: 34,
+      height: 15,
+      margin: const EdgeInsets.only(bottom: 3),
+      decoration: BoxDecoration(
+        color: widget.color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+    ),
+  );
 }

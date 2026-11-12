@@ -89,7 +89,7 @@ class CheckInRow extends StatelessWidget {
     return Material(
       color: colors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: Colors.black.withValues(alpha: .07)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -111,7 +111,7 @@ class CheckInRow extends StatelessWidget {
               const Expanded(
                 child: Text(
                   'Daily check-in',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
               Text(
@@ -171,7 +171,7 @@ class _CheckInQuestions extends StatelessWidget {
         ),
         style: TextStyle(
           color: colors.textPrimary,
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -181,7 +181,7 @@ class _CheckInQuestions extends StatelessWidget {
       children: [
         label(
           'How did you sleep?',
-          minutes > 0 ? '${minutes ~/ 60} h ${minutes % 60} m recorded' : null,
+          minutes > 0 ? '${hoursMinutes(minutes / 60)} recorded' : null,
         ),
         _CheckInOptions(
           labels: sleepCheckInScores.keys.toList(),

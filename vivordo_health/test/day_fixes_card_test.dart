@@ -84,7 +84,7 @@ void main() {
       ),
     );
     expect(find.text('15-min break at ${t('2 PM')}'), findsOneWidget);
-    expect(find.text('After 1 h 45 of back-to-back'), findsOneWidget);
+    expect(find.text('After 1h 45m of back-to-back'), findsOneWidget);
     expect(find.text('Breather'), findsOneWidget);
 
     await tester.pumpWidget(

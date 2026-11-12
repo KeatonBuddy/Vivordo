@@ -1,3 +1,5 @@
+import 'units.dart';
+
 /// Days of history the first (early) burnout check needs: 14 of normal and
 /// the last 7 (functions/burnout.js). The full check follows at about 6
 /// weeks.
@@ -178,12 +180,7 @@ String _join(List<String> words) => words.length < 2
     ? words.join()
     : '${words.sublist(0, words.length - 1).join(', ')} and ${words.last}';
 
-String _hoursMinutes(num minutes) {
-  final m = minutes.round();
-  return m >= 60
-      ? '${m ~/ 60}h ${(m % 60).toString().padLeft(2, '0')}m'
-      : '${m}m';
-}
+String _hoursMinutes(num minutes) => hoursMinutes(minutes / 60);
 
 String? _driverText(Map d) {
   final recent = d['recent'] as num?;

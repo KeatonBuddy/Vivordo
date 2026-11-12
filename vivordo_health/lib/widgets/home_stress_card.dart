@@ -141,7 +141,7 @@ class _HomeStressCardState extends State<HomeStressCard>
       steps: widget.steps,
     );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
@@ -151,7 +151,7 @@ class _HomeStressCardState extends State<HomeStressCard>
             colors: gradientColors,
             stops: [0, 0.58, 1],
           ),
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: lightMode
                 ? const Color(0xFFA99AF7)
@@ -355,7 +355,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  displayedScore == null ? '--' : '${displayedScore.round()}%',
+                  displayedScore == null ? '--' : '${displayedScore.round()}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -436,7 +436,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               },
               style: const TextStyle(
                 color: Color(0xFFDCD6FF),
-                fontSize: 12.5,
+                fontSize: 12,
                 height: 1.3,
               ),
             ),
@@ -506,7 +506,7 @@ class _HomeStressCardState extends State<HomeStressCard>
             action,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 13.5,
+              fontSize: 13,
               height: 1.4,
             ),
           ),
@@ -517,10 +517,10 @@ class _HomeStressCardState extends State<HomeStressCard>
 
   Widget _scanButton(VoidCallback onScan) => Material(
     color: Colors.white,
-    borderRadius: BorderRadius.circular(16),
+    borderRadius: BorderRadius.circular(20),
     child: InkWell(
       onTap: onScan,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: const Padding(
         padding: EdgeInsets.symmetric(vertical: 12),
         child: Row(
@@ -532,7 +532,7 @@ class _HomeStressCardState extends State<HomeStressCard>
               'Take a heart scan',
               style: TextStyle(
                 color: Color(0xFF3C3489),
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
               ),
             ),

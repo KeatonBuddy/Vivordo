@@ -9,6 +9,8 @@ import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
 import 'metric_history_screen.dart';
 
 class ActiveCaloriesDetailScreen extends StatefulWidget {
@@ -21,6 +23,12 @@ class ActiveCaloriesDetailScreen extends StatefulWidget {
 
 class _ActiveCaloriesDetailScreenState
     extends State<ActiveCaloriesDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    MetricHistoryView.preload();
+  }
+
   static const _orange = Color(0xFFFF6A00);
   static const _purple = Color(0xFF5B42F3);
   // Opens on Week; Day is a tap away.
@@ -190,9 +198,6 @@ class _ActiveCaloriesDetailScreenState
         : ((average - usual) / usual * 100).round();
     final goal = dailyGoal * _rangeDays;
     final progress = goal == 0 ? 0.0 : (total / goal).clamp(0.0, 1.0);
-    final best = data.isEmpty
-        ? null
-        : data.reduce((a, b) => a.activeCalories >= b.activeCalories ? a : b);
     final updated = DateFormat('h:mm a').format(DateTime.now());
 
     return SingleChildScrollView(
@@ -210,24 +215,51 @@ class _ActiveCaloriesDetailScreenState
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _summaryCard(total, average, change, goal, progress),
-          if (_rangeIndex != 0) ...[
-            const SizedBox(height: 26),
-            Text(
-              '$_rangeName trend',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (_rangeIndex == 0)
+            _summaryCard(total, average, change, goal, progress)
+          else
+            MetricChartCard(
+              label: 'Daily average',
+              number: NumberFormat.decimalPattern().format(average),
+              unit: 'kcal',
+              range:
+                  '${dayRangeText(data.first.date)} · '
+                  '${NumberFormat.decimalPattern().format(total)} total',
+              note: change == null ? null : _changeText(change),
+              chart: _chartCard(data, dailyGoal),
+              caption:
+                  'Each bar is a day. The dashed line is your goal. The '
+                  'solid bar is your best day.',
+              footer: _goalProgress(goal, progress),
             ),
-            const SizedBox(height: 10),
-            _chartCard(data, dailyGoal),
-          ],
           if (_rangeIndex != 0) ...[
             const SizedBox(height: 26),
             const Text(
-              'Daily breakdown',
+              'By day',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
-            _breakdownCard(data, best),
+            MetricDayBreakdown(
+              month: _rangeIndex == 2,
+              color: _orange,
+              mark: dailyGoal.toDouble(),
+              compact: HistoryMetric.calories.compact,
+              selected: _day,
+              onSelected: _pick,
+              days: [
+                for (final day in data)
+                  (
+                    date: day.date,
+                    value: day.activeCalories.toDouble(),
+                    text:
+                        '${NumberFormat.decimalPattern().format(day.activeCalories)} kcal',
+                    note: _goalNote(day.activeCalories, dailyGoal),
+                    met: day.activeCalories >= dailyGoal,
+                    hours: hours[day.date],
+                  ),
+              ],
+            ),
           ],
           const SizedBox(height: 26),
           const Text(
@@ -254,7 +286,10 @@ class _ActiveCaloriesDetailScreenState
   Widget _rangeSelector() => AppSegmented<int>(
     segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(
@@ -292,7 +327,7 @@ class _ActiveCaloriesDetailScreenState
                           child: Text(
                             NumberFormat.decimalPattern().format(total),
                             style: const TextStyle(
-                              fontSize: 42,
+                              fontSize: 40,
                               height: 1.15,
                               fontWeight: FontWeight.w900,
                             ),
@@ -313,22 +348,7 @@ class _ActiveCaloriesDetailScreenState
                     ),
                     if (change != null) ...[
                       const SizedBox(height: 10),
-                      Text(
-                        _rangeIndex == 0 && change.abs() < 10
-                            ? 'About usual for this time'
-                            : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
-                                  '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
-                        style: TextStyle(
-                          // Below usual by now isn't flagged on Day.
-                          color: _rangeIndex == 0 && change < 10
-                              ? context.vivordoColors.textSecondary
-                              : change >= 0
-                              ? context.vivordoColors.success
-                              : context.vivordoColors.danger,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                      _changeText(change),
                     ],
                   ],
                 ),
@@ -336,97 +356,86 @@ class _ActiveCaloriesDetailScreenState
             ],
           ),
           const SizedBox(height: 22),
-          Row(
-            children: [
-              Text('Goal ${NumberFormat.decimalPattern().format(goal)} kcal'),
-              const Spacer(),
-              Text('${(progress * 100).round()}%'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 9,
-              color: _orange,
-              backgroundColor: context.vivordoColors.cardMuted,
-            ),
-          ),
+          _goalProgress(goal, progress),
         ],
       ),
     );
   }
+
+  Widget _changeText(int change) => Text(
+    _rangeIndex == 0 && change.abs() < 10
+        ? 'About usual for this time'
+        : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
+              '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
+    style: TextStyle(
+      // Below usual by now isn't flagged on Day.
+      color: _rangeIndex == 0 && change < 10
+          ? context.vivordoColors.textSecondary
+          : change >= 0
+          ? context.vivordoColors.success
+          : context.vivordoColors.danger,
+      fontSize: 16,
+      fontWeight: FontWeight.w800,
+    ),
+  );
+
+  Widget _goalProgress(int goal, double progress) => Column(
+    children: [
+      Row(
+        children: [
+          Text('Goal ${NumberFormat.decimalPattern().format(goal)} kcal'),
+          const Spacer(),
+          Text('${(progress * 100).round()}%'),
+        ],
+      ),
+      const SizedBox(height: 8),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: 9,
+          color: _orange,
+          backgroundColor: context.vivordoColors.cardMuted,
+        ),
+      ),
+    ],
+  );
 
   Widget _chartCard(List<_CalorieDay> data, int dailyGoal) {
     final values = [for (final day in data) day.activeCalories.toDouble()];
     final best = bestBar(values);
     final kcal = NumberFormat.decimalPattern();
-    return _card(
-      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
-      child: SizedBox(
-        height: 220,
-        child: MetricBarChart(
-          values: values,
-          labels: dayBarLabels([for (final day in data) day.date]),
-          tooltips: [
-            for (final day in data)
-              '${DateFormat('EEE, MMM d').format(day.date)}\n'
-                  '${kcal.format(day.activeCalories)} kcal',
-          ],
-          best: best,
-          goal: dailyGoal.toDouble(),
-          color: _orange,
-          summary: best == null
-              ? 'Last ${data.length} days: no active calories recorded.'
-              : 'Active calories for the last ${data.length} days against '
-                    'your goal. Most on '
-                    '${DateFormat('EEEE, MMMM d').format(data[best].date)} '
-                    'with ${kcal.format(data[best].activeCalories)} kcal.',
-        ),
-      ),
+    return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
+      values: values,
+      labels: dayBarLabels([for (final day in data) day.date]),
+      tooltips: [
+        for (final day in data)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n'
+              '${kcal.format(day.activeCalories)} kcal',
+      ],
+      best: best,
+      goal: dailyGoal.toDouble(),
+      color: _orange,
+      summary: best == null
+          ? 'Last ${data.length} days: no active calories recorded.'
+          : 'Active calories for the last ${data.length} days against '
+                'your goal. Most on '
+                '${DateFormat('EEEE, MMMM d').format(data[best].date)} '
+                'with ${kcal.format(data[best].activeCalories)} kcal.',
     );
   }
 
-  Widget _breakdownCard(List<_CalorieDay> data, _CalorieDay? best) {
-    final ordered = [...data]..sort((a, b) => b.date.compareTo(a.date));
-    return _card(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Column(
-        children: [
-          for (var i = 0; i < ordered.length; i++) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      DateFormat('EEEE, MMM d').format(ordered[i].date),
-                    ),
-                  ),
-                  Text(
-                    '${NumberFormat.decimalPattern().format(ordered[i].activeCalories)} kcal',
-                    style: const TextStyle(
-                      color: _orange,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (best?.date == ordered[i].date &&
-                      ordered[i].activeCalories > 0) ...[
-                    const SizedBox(width: 10),
-                    _badge('Best day'),
-                  ],
-                ],
-              ),
-            ),
-            if (i != ordered.length - 1)
-              Divider(height: 1, color: context.vivordoColors.border),
-          ],
-        ],
-      ),
-    );
-  }
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
+  String _goalNote(int value, int goal) => value >= goal
+      ? 'Goal met'
+      : '${NumberFormat.decimalPattern().format(goal - value)} short';
 
   Widget _insightCard(DetailInsight insight) {
     final (icon, color) = insightStyle(insight.tone);
@@ -450,7 +459,7 @@ class _ActiveCaloriesDetailScreenState
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -464,21 +473,6 @@ class _ActiveCaloriesDetailScreenState
       shape: BoxShape.circle,
     ),
     child: Icon(icon, color: color, size: 29),
-  );
-
-  Widget _badge(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-    decoration: BoxDecoration(
-      color: const Color(0xFF20B26B).withValues(alpha: .1),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: TextStyle(
-        color: context.vivordoColors.success,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
   );
 }
 

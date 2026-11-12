@@ -235,7 +235,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   '${stressUsualHeadlineWords(score, today.usual).toLowerCase()} for you. '
                   '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
                   'Want to explore a manageable next step?'
-            : 'Your latest displayed stress estimate is ${score.round()}/100, '
+            : 'Your latest displayed stress estimate is ${score.round()}, '
                   '${stressUsualHeadline(score, today.usual).toLowerCase()} for you. '
                   '${today.computedAt == null ? "Its update time is unavailable." : "Calculated ${DateFormat('MMM d, h:mm a').format(today.computedAt!.toLocal())}."} '
                   '${today.drivers.isEmpty ? "There are no recorded drivers to explain it yet." : "Recorded drivers include ${today.drivers.take(2).map((d) => d.label).join(' and ')}; these are contributions to the estimate, not proven causes."} '
@@ -303,7 +303,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                     homeStressSentence(score, usual: today.usual) ??
                         'No reading yet',
                     style: TextStyle(
-                      fontSize: 32,
+                      fontSize: 34,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -.8,
                       color: grey ? colors.textSecondary : colors.textPrimary,
@@ -556,7 +556,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 24),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: colors.border),
               ),
               child: Text(
@@ -710,7 +710,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                   Text(
                     d.label,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -830,7 +830,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                 foregroundColor: Colors.white,
                 minimumSize: const Size.fromHeight(46),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               icon: Icon(
@@ -850,7 +850,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
           const SizedBox(height: 14),
           const Text(
             'How do you feel right now?',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
           Row(
@@ -982,7 +982,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
               Text(
                 stressTrendSentence(stats, unit),
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   height: 1.4,
                   color: colors.textPrimary,
                 ),
@@ -1109,7 +1109,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
         Text(
           value,
           style: TextStyle(
-            fontSize: 18,
+            fontSize: 17,
             fontWeight: FontWeight.w800,
             color: color,
           ),
@@ -1225,7 +1225,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                           child: Text(
                             d.label,
                             style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1233,7 +1233,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
                         Text(
                           '${d.contribution > 0 ? '+' : '−'}${d.contribution.round().abs()}',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: FontWeight.w800,
                             color: d.contribution > 0
                                 ? _up(sheetContext)
@@ -1364,7 +1364,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
             'Built from $history day${history == 1 ? '' : 's'} of your recent '
             'history and $checkIns check-in${checkIns == 1 ? '' : 's'}. Each '
             'check-in nudges which signals count most for you.',
-            style: const TextStyle(fontSize: 14, height: 1.45),
+            style: const TextStyle(fontSize: 15, height: 1.45),
           ),
           const SizedBox(height: 10),
           Row(
@@ -1412,7 +1412,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
   Widget _title(String text) => Text(
     text,
     style: TextStyle(
-      fontSize: 18,
+      fontSize: 17,
       fontWeight: FontWeight.w800,
       color: context.vivordoColors.textPrimary,
     ),
@@ -1428,7 +1428,7 @@ class _StressDetailScreenState extends State<StressDetailScreen> {
     padding: padding,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: borderColor ?? context.vivordoColors.border),
     ),
     child: child,

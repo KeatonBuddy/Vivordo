@@ -243,7 +243,7 @@ void main() {
     );
     expect(
       patterns.firstWhere((p) => p.id == 'mornings').body,
-      'You rated your sleep Good or Great on 10 of 10 mornings after 7h 00m '
+      'You rated your sleep Good or Great on 10 of 10 mornings after 7h '
       'or more, and 0 of 10 after less.',
     );
   });

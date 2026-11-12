@@ -104,4 +104,33 @@ void main() {
     );
     expect(tester.widget<IconButton>(back).onPressed, isNull);
   });
+
+  test('usual range is the middle half, once there are 7 values', () {
+    expect(usualRange([60, 0, 58, 62, 0, 61]), isNull);
+    expect(usualRange([52, 56, 57, 58, 0, 59, 60, 62, 66]), (57, 60));
+  });
+
+  testWidgets('bars morph between ranges of different lengths', (tester) async {
+    Widget chart(List<double> values) => MaterialApp(
+      home: SizedBox(
+        height: 220,
+        child: MetricBarChart(
+          values: values,
+          labels: [for (final _ in values) ''],
+          tooltips: [for (final _ in values) ''],
+          color: Colors.red,
+          summary: '',
+          usual: usualRange(values),
+          fromLowest: true,
+        ),
+      ),
+    );
+    await tester.pumpWidget(chart([for (var i = 0; i < 7; i++) 55.0 + i]));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(chart([for (var i = 0; i < 30; i++) 0, 60]));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpWidget(chart([62]));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }

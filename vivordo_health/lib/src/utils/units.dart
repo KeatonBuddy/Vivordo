@@ -142,6 +142,21 @@ class Units {
 /// "kg" or "lbs", as the app has always written pounds.
 String _massLabel(MassUnit unit) => unit == MassUnit.kg ? 'kg' : 'lbs';
 
+/// 7.07 → "7h 04m", 8 → "8h", 0.75 → "45m": how every screen writes a
+/// length of time.
+String hoursMinutes(double hours) {
+  final minutes = (hours * 60).round();
+  final h = minutes ~/ 60, m = minutes % 60;
+  if (h == 0) return '${m}m';
+  return m == 0 ? '${h}h' : '${h}h ${m.toString().padLeft(2, '0')}m';
+}
+
+/// 8912 → "8,912".
+String formatCount(double value) => value.round().toString().replaceAllMapped(
+  RegExp(r'\B(?=(\d{3})+(?!\d))'),
+  (_) => ',',
+);
+
 /// [value] with up to [decimals] places, trailing zeros dropped: 70.0 →
 /// "70", 61.25 → "61.3".
 String formatNumber(double value, int decimals) {

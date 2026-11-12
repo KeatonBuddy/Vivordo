@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:intl/intl.dart';
 
 import 'day_effort.dart';
+import 'units.dart';
 
 /// One line of a score's breakdown (lib/widgets/score_breakdown_sheet.dart).
 class BreakdownRow {
@@ -134,7 +135,7 @@ String _names(List<String> parts) {
 String _sleepDetail(Map c) {
   final hours = (c['sleepHours'] as num?)?.toDouble();
   if (hours == null) return 'From last night';
-  final asleep = _hoursMinutes(hours);
+  final asleep = hoursMinutes(hours);
   final need = (c['sleepNeed'] as num?)?.toDouble();
   final offset = [
     (c['bedtimeOffsetMin'] as num?)?.abs() ?? 0,
@@ -147,7 +148,7 @@ String _sleepDetail(Map c) {
   final gap = ((hours - need) * 60).round();
   final versus = gap.abs() <= 15
       ? 'about your need'
-      : '${_hoursMinutes(gap.abs() / 60)} ${gap < 0 ? 'under' : 'over'} your need';
+      : '${hoursMinutes(gap.abs() / 60)} ${gap < 0 ? 'under' : 'over'} your need';
   return '$asleep · $versus$clock';
 }
 
@@ -275,7 +276,7 @@ String _chip(String category) => switch (category) {
 String _when(EffortItem item) {
   final minutes = item.event.end.difference(item.event.start).inMinutes;
   return '${DateFormat.jm().format(item.event.start)} · '
-      '${_hoursMinutes(minutes / 60)}';
+      '${hoursMinutes(minutes / 60)}';
 }
 
 /// Demand still ahead, item by item, as [buildDayEffort] prices it: each
@@ -422,14 +423,4 @@ double _median(List<double> values) {
   return sorted.length.isOdd
       ? sorted[mid]
       : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-String _hoursMinutes(double hours) {
-  final minutes = (hours * 60).round();
-  final h = minutes ~/ 60, m = minutes % 60;
-  return h == 0
-      ? '$m min'
-      : m == 0
-      ? '$h h'
-      : '$h h $m';
 }

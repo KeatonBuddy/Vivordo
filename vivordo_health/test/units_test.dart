@@ -56,4 +56,12 @@ void main() {
     expect(formatNumber(100, 0), '100');
     expect(formatNumber(2.50, 2), '2.5');
   });
+
+  test('lengths of time read the same everywhere', () {
+    expect(hoursMinutes(7.07), '7h 04m');
+    expect(hoursMinutes(8), '8h');
+    expect(hoursMinutes(7.999), '8h');
+    expect(hoursMinutes(.75), '45m');
+    expect(formatCount(8912), '8,912');
+  });
 }

@@ -320,7 +320,7 @@ void main() {
       expect(
         insight.text,
         'You averaged 7h 30m a night over 7 nights, 30 min less than your '
-        'need of 8h 00m. Bedtime was within an hour of usual on 6 of 7 '
+        'need of 8h. Bedtime was within an hour of usual on 6 of 7 '
         'nights.',
       );
       expect(insight.tone, InsightTone.concern);
@@ -329,13 +329,13 @@ void main() {
 
   test('Sleep detail\'s bar: the need, or progress towards it', () {
     expect(sleepNeedBar(hours: 9, need: 7.2, nights: 40), (
-      label: 'Your need 7 h 12 m',
-      value: '1 h 48 m over',
+      label: 'Your need 7h 12m',
+      value: '1h 48m over',
       progress: 1.0,
       tone: SleepNeedTone.met,
     ));
     final short = sleepNeedBar(hours: 5.83, need: 7.05, nights: 40)!;
-    expect(short.value, '1 h 13 m short');
+    expect(short.value, '1h 13m short');
     expect(short.tone, SleepNeedTone.short);
     expect(
       sleepNeedBar(hours: 7.1, need: 7.2, nights: 40)!.value,

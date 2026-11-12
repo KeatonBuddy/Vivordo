@@ -2,6 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 
+import 'units.dart';
+
+export 'units.dart' show formatCount, hoursMinutes;
+
 part 'sleep_patterns.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
@@ -389,9 +393,7 @@ enum SleepNeedTone { met, short, learning }
 /// takes. Null when there's nothing to show.
 ({String label, String value, double progress, SleepNeedTone tone})?
 sleepNeedBar({required double hours, double? need, required int nights}) {
-  String spaced(int minutes) => minutes < 60
-      ? '$minutes m'
-      : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m';
+  String spaced(int minutes) => hoursMinutes(minutes / 60);
   if (need == null) {
     if (nights >= 14) return null;
     return (
@@ -607,16 +609,6 @@ DetailInsight exerciseInsight({
 }
 
 // ── Shared ───────────────────────────────────────────────────────────────────
-
-String formatCount(double value) => value.round().toString().replaceAllMapped(
-  RegExp(r'\B(?=(\d{3})+(?!\d))'),
-  (_) => ',',
-);
-
-String hoursMinutes(double hours) {
-  final minutes = (hours * 60).round();
-  return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
-}
 
 /// "25 min" or "1h 10m".
 String _duration(int minutes) => minutes < 60

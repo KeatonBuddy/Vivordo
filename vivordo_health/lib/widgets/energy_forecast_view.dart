@@ -65,16 +65,7 @@ String _bedByHours(EnergyForecast night) {
   final hours = fits > 0 && fits < night.sleepNeedHours
       ? fits
       : night.sleepNeedHours;
-  return '${_hoursText(hours)}${night.needIsDefault ? ' of sleep' : ''}';
-}
-
-String _hoursText(double hours) {
-  final minutes = (hours * 60).round();
-  if (minutes < 60) return '$minutes min';
-  final rest = minutes % 60;
-  return rest == 0
-      ? '${minutes ~/ 60} h'
-      : '${minutes ~/ 60} h ${rest.toString().padLeft(2, '0')} m';
+  return '${hoursMinutes(hours)}${night.needIsDefault ? ' of sleep' : ''}';
 }
 
 /// The peak, dip and second wind as chips. Taps open the "why" sheet.
@@ -95,10 +86,10 @@ class EnergySleepLine extends StatelessWidget {
     final colors = context.vivordoColors;
     return Material(
       color: _energyWindDown.withValues(alpha: .10),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -154,10 +145,10 @@ class EnergyLineInvite extends StatelessWidget {
     final colors = context.vivordoColors;
     return Material(
       color: _energyWindDown.withValues(alpha: .10),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
@@ -201,12 +192,12 @@ class EnergyLineInvite extends StatelessWidget {
     sleep: forecast.estimated
         ? null
         : forecast.needIsDefault
-        ? '${_hoursText(forecast.sleptHours)} asleep'
-        : '${_hoursText(forecast.sleptHours)} asleep · '
+        ? '${hoursMinutes(forecast.sleptHours)} asleep'
+        : '${hoursMinutes(forecast.sleptHours)} asleep · '
               '${short >= 0.25
-                  ? '${_hoursText(short)} under your need'
+                  ? '${hoursMinutes(short)} under your need'
                   : short <= -0.25
-                  ? '${_hoursText(-short)} over your need'
+                  ? '${hoursMinutes(-short)} over your need'
                   : 'about your need'}',
     tags: phrase.isEmpty
         ? null
@@ -389,7 +380,7 @@ Future<void> showEnergyForecastSheet(
   isScrollControlled: true,
   backgroundColor: context.vivordoColors.card,
   shape: const RoundedRectangleBorder(
-    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
   ),
   builder: (_) => _EnergyForecastSheet(forecast: forecast),
 );
@@ -477,7 +468,7 @@ class _EnergyForecastSheet extends StatelessWidget {
                       child: Text(
                         text,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           height: 1.35,
                           color: colors.textPrimary,
                         ),
@@ -519,16 +510,16 @@ List<(IconData, String)> energyReasons(EnergyForecast forecast) {
           ? "Last night's sleep hasn't synced yet, so this uses your usual "
                 'pattern.'
           : forecast.needIsDefault
-          ? 'You slept ${_hoursText(forecast.sleptHours)}.'
+          ? 'You slept ${hoursMinutes(forecast.sleptHours)}.'
           : short >= 0.5
-          ? 'You slept ${_hoursText(forecast.sleptHours)}, '
-                '${_hoursText(short)} under your need, so today\'s peak is a '
+          ? 'You slept ${hoursMinutes(forecast.sleptHours)}, '
+                '${hoursMinutes(short)} under your need, so today\'s peak is a '
                 'little lower and the dip a little deeper.'
           : short <= -0.5
-          ? 'You slept ${_hoursText(forecast.sleptHours)}, '
-                '${_hoursText(-short)} over your need.'
+          ? 'You slept ${hoursMinutes(forecast.sleptHours)}, '
+                '${hoursMinutes(-short)} over your need.'
                 '${forecast.shortNights > 0 ? ' Longer nights like this make up for short ones.' : ''}'
-          : 'You slept ${_hoursText(forecast.sleptHours)}, about what you '
+          : 'You slept ${hoursMinutes(forecast.sleptHours)}, about what you '
                 'need.',
     ),
     if (shortNightsText(forecast) case final text?)
@@ -701,8 +692,8 @@ String energyContext({
         '${groggy == null ? '' : ', groggy until ${time.format(groggy.end)}'}; '
         '${windows(today)}. Bed by ${time.format(today.bedBy)}.',
     if (!today.estimated)
-      'Last night: slept ${_hoursText(today.sleptHours)} '
-          '(needs ${_hoursText(today.sleepNeedHours)}).',
+      'Last night: slept ${hoursMinutes(today.sleptHours)} '
+          '(needs ${hoursMinutes(today.sleepNeedHours)}).',
     ?shortNightsText(today),
     clashes.isEmpty
         ? 'No hard work still ahead lands in a low-energy window.'

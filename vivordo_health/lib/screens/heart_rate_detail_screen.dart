@@ -52,6 +52,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   @override
   void initState() {
     super.initState();
+    MetricHistoryView.preload();
     _heartDataStream = _heartDataSnapshots();
     if (_wearableCollapsed == null) {
       _storage
@@ -196,9 +197,16 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               final hasConnectedWearable =
                   user?['whoopConnected'] == true ||
                   user?['fitbitConnected'] == true;
+              final since = DateUtils.dateOnly(
+                DateTime.now(),
+              ).subtract(const Duration(days: 28));
               return content(
                 currentDays(all),
                 previousDays(all),
+                usual: usualRange([
+                  for (final day in all)
+                    if (!day.date.isBefore(since)) ?day.resting,
+                ]),
                 hasConnectedWearable: hasConnectedWearable,
                 restingNormal: restingNormal({
                   for (final day in all) day.date: ?day.resting,
@@ -214,6 +222,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget content(
     List<_HeartDay> days,
     List<_HeartDay> previous, {
+    required (double, double)? usual,
     required bool hasConnectedWearable,
     double? restingNormal,
   }) {
@@ -302,10 +311,24 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             const SizedBox(height: 18),
           ],
           summary(avg, low, high),
-          section(
-            rangeIndex == 0 ? '$rangeName trend' : 'Resting heart rate trend',
-          ),
-          chart(chartDays, chartEntries, restingAvg),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (rangeIndex == 0) ...[
+            section('$rangeName trend'),
+            chart(chartDays, chartEntries, restingAvg, usual),
+          ] else ...[
+            const SizedBox(height: 18),
+            MetricChartCard(
+              label: 'Average resting',
+              number: restingAvg?.round().toString() ?? '–',
+              unit: restingAvg == null ? '' : 'bpm',
+              range: dayRangeText(chartDays.first.date),
+              chart: restingBars(chartDays, usual),
+              caption:
+                  "Each bar is a day's resting heart rate."
+                  '${usual == null ? '' : ' The band is your usual range over the last 28 days.'}'
+                  ' The solid bar is your lowest day.',
+            ),
+          ],
           section('Heart rate zones'),
           zones(storedReadings),
           if (hrvKind != null && hrvAvg != null) ...[
@@ -572,7 +595,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: context.vivordoColors.textSecondary,
-                    fontSize: 14,
+                    fontSize: 15,
                   ),
                 ),
               ],
@@ -611,7 +634,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(13),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       icon: Icon(
@@ -660,46 +683,11 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     ),
   );
 
-  Widget rangeSelector() {
-    const labels = ['D', 'W', 'M', '6M', 'Y'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
+    value: rangeIndex,
+    onChanged: (index) => setState(() => rangeIndex = index),
+  );
 
   Widget summary(double? avg, int? low, int? high) => card(
     padding: const EdgeInsets.all(20),
@@ -744,7 +732,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           ),
           maxLines: 1,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: red),
         ),
       ],
     ),
@@ -754,31 +741,26 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
   /// W and M: a bar per day's resting heart rate, like the 6M and Y views.
-  Widget restingBars(List<_HeartDay> days) {
+  Widget restingBars(List<_HeartDay> days, (double, double)? usual) {
     final values = [for (final day in days) day.resting ?? 0];
     final best = bestBar(values, lowest: true);
-    return card(
-      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
-      child: SizedBox(
-        height: 220,
-        child: MetricBarChart(
-          values: values,
-          labels: dayBarLabels([for (final day in days) day.date]),
-          tooltips: [
-            for (final day in days)
-              '${DateFormat('EEE, MMM d').format(day.date)}\n'
-                  '${day.resting?.round() ?? '--'} bpm resting',
-          ],
-          best: best,
-          fromLowest: true,
-          color: HistoryMetric.heartRate.color,
-          summary: best == null
-              ? 'Last ${days.length} days: no resting heart rate.'
-              : 'Resting heart rate for the last ${days.length} days. Lowest '
-                    'on ${DateFormat('EEEE, MMMM d').format(days[best].date)} '
-                    'at ${days[best].resting!.round()} bpm.',
-        ),
-      ),
+    return MetricBarChart(
+      values: values,
+      labels: dayBarLabels([for (final day in days) day.date]),
+      tooltips: [
+        for (final day in days)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n'
+              '${day.resting?.round() ?? '--'} bpm resting',
+      ],
+      best: best,
+      usual: usual,
+      fromLowest: true,
+      color: HistoryMetric.heartRate.color,
+      summary: best == null
+          ? 'Last ${days.length} days: no resting heart rate.'
+          : 'Resting heart rate for the last ${days.length} days. Lowest '
+                'on ${DateFormat('EEEE, MMMM d').format(days[best].date)} '
+                'at ${days[best].resting!.round()} bpm.',
     );
   }
 
@@ -786,9 +768,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     List<_HeartDay> days,
     List<_HeartReading> entries,
     double? resting,
+    (double, double)? usual,
   ) {
     final isDay = rangeIndex == 0;
-    if (!isDay) return restingBars(days);
+    if (!isDay) return restingBars(days, usual);
     final scoredDays = isDay
         ? const <_HeartDay>[]
         : days.where((day) => day.resting != null).toList();
@@ -957,7 +940,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                       TextSpan(
                         text: avg.round().toString(),
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -1015,7 +998,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -1351,7 +1334,7 @@ class _HeartChartPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, boxWidth, boxHeight),
-          const Radius.circular(9),
+          const Radius.circular(8),
         ),
         Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
       );
@@ -1583,7 +1566,7 @@ class _PairWearableSheetState extends State<_PairWearableSheet> {
           Text(
             steps,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 15,
               height: 1.3,
               color: colors.textSecondary,
             ),

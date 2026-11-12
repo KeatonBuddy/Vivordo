@@ -11,6 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import '../src/utils/chart_text.dart';
 import 'metric_history_screen.dart';
@@ -23,6 +25,12 @@ class MoodDetailScreen extends StatefulWidget {
 }
 
 class _MoodDetailScreenState extends State<MoodDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    MetricHistoryView.preload();
+  }
+
   static const _moodColor = Color(0xFFF59E0B);
   static const _purple = Color(0xFF5B42F3);
   int _rangeIndex = 0;
@@ -173,9 +181,18 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           }
           final data = _rangeData(snapshot.data);
           final usualValues = _usualValues(snapshot.data);
+          final since = localDayKey(
+            DateTime.now().subtract(const Duration(days: 28)),
+          );
           return _buildContent(
             data,
             usualValues,
+            // The chart's band: the last 28 days, whatever range is showing.
+            usualRange([
+              for (final doc in snapshot.data?.docs ?? const [])
+                if (doc.id.compareTo(since) >= 0)
+                  ?((doc.data()['mood'] as Map?)?['avg'] as num?)?.toDouble(),
+            ]),
             moodInsight(
               values: _dayValues(snapshot.data),
               todayCheckIns: _todayCheckIns(snapshot.data),
@@ -192,6 +209,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
   Widget _buildContent(
     List<_MoodDay> data,
     List<int> usualValues,
+    (double, double)? band,
     DetailInsight insight,
   ) {
     final recorded = data.where((day) => day.moodScore > 0).toList();
@@ -203,9 +221,6 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     final change = usual == null || usual == 0
         ? null
         : ((average - usual) / usual * 100).round();
-    final best = recorded.isEmpty
-        ? null
-        : recorded.reduce((a, b) => a.moodScore >= b.moodScore ? a : b);
     final updated = DateFormat('h:mm a').format(DateTime.now());
 
     return SingleChildScrollView(
@@ -223,22 +238,79 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _summaryCard(average, change, recorded.length),
-          const SizedBox(height: 26),
-          Text(
-            '$_rangeName trend',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          _chartCard(data, usual),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (_rangeIndex == 0) ...[
+            _summaryCard(average, change, recorded.length),
+            const SizedBox(height: 26),
+            Text(
+              '$_rangeName trend',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _chartCard(data, usual, band),
+          ] else
+            MetricChartCard(
+              label: 'Average mood',
+              number: average == 0 ? '–' : '$average',
+              unit: average == 0 ? '' : _moodLabel(average),
+              range:
+                  '${dayRangeText(data.first.date)} · ${recorded.length} '
+                  '${recorded.length == 1 ? 'check-in' : 'check-ins'}',
+              note: change == null
+                  ? null
+                  : Text(
+                      '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs your usual',
+                      style: TextStyle(
+                        color: change >= 0
+                            ? context.vivordoColors.success
+                            : context.vivordoColors.danger,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+              chart: _barCard(data, band),
+              caption:
+                  "Each bar is a day's mood."
+                  '${band == null ? '' : ' The band is your usual range over the last 28 days.'}'
+                  ' The solid bar is your best day.',
+            ),
           if (_rangeIndex != 0) ...[
             const SizedBox(height: 26),
             const Text(
-              'Daily breakdown',
+              'By day',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
-            _breakdownCard(data, best),
+            // No goal for mood: each day's line is its score out of 100.
+            // The tick and the note use the chart's 28-day usual band, so
+            // a day reads the same in W and M.
+            MetricDayBreakdown(
+              month: _rangeIndex == 2,
+              color: _moodColor,
+              mark: band == null ? null : (band.$1 + band.$2) / 2,
+              scaleMax: 100,
+              compact: HistoryMetric.mood.compact,
+              selected: _day,
+              onSelected: _pick,
+              days: [
+                for (final day in data)
+                  (
+                    date: day.date,
+                    value: day.moodScore.toDouble(),
+                    text: day.moodScore == 0
+                        ? 'No entry'
+                        : '${_moodEmoji(day.moodScore)} ${_moodLabel(day.moodScore)}',
+                    note: day.moodScore == 0 || band == null
+                        ? ''
+                        : day.moodScore > band.$2
+                        ? 'Above usual'
+                        : day.moodScore < band.$1
+                        ? 'Below usual'
+                        : 'About usual',
+                    met: false,
+                    hours: null,
+                  ),
+              ],
+            ),
           ],
           const SizedBox(height: 26),
           const Text(
@@ -255,7 +327,10 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
   Widget _rangeSelector() => AppSegmented<int>(
     segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(int average, int? change, int checkIns) {
@@ -320,8 +395,12 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
     );
   }
 
-  Widget _chartCard(List<_MoodDay> data, double? usual) {
-    if (_rangeIndex != 0) return _barCard(data);
+  Widget _chartCard(
+    List<_MoodDay> data,
+    double? usual,
+    (double, double)? band,
+  ) {
+    if (_rangeIndex != 0) return _barCard(data, band);
     const maxY = 100.0;
     return _card(
       padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
@@ -340,29 +419,26 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
   }
 
   /// W and M: a bar per day's mood, like the 6M and Y views.
-  Widget _barCard(List<_MoodDay> data) {
+  Widget _barCard(List<_MoodDay> data, (double, double)? band) {
     final values = [for (final day in data) day.moodScore.toDouble()];
     final best = bestBar(values);
-    return _card(
-      padding: const EdgeInsets.fromLTRB(14, 18, 10, 8),
-      child: SizedBox(
-        height: 220,
-        child: MetricBarChart(
-          values: values,
-          labels: dayBarLabels([for (final day in data) day.date]),
-          tooltips: [
-            for (final day in data)
-              '${DateFormat('EEE, MMM d').format(day.date)}\n'
-                  '${HistoryMetric.mood.format(day.moodScore.toDouble())}',
-          ],
-          best: best,
-          color: HistoryMetric.mood.color,
-          summary: best == null
-              ? 'Last ${data.length} days: no mood logged.'
-              : 'Mood for the last ${data.length} days. Best on '
-                    '${DateFormat('EEEE, MMMM d').format(data[best].date)}.',
-        ),
-      ),
+    return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
+      values: values,
+      labels: dayBarLabels([for (final day in data) day.date]),
+      tooltips: [
+        for (final day in data)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n'
+              '${HistoryMetric.mood.format(day.moodScore.toDouble())}',
+      ],
+      best: best,
+      usual: band,
+      color: HistoryMetric.mood.color,
+      summary: best == null
+          ? 'Last ${data.length} days: no mood logged.'
+          : 'Mood for the last ${data.length} days. Best on '
+                '${DateFormat('EEEE, MMMM d').format(data[best].date)}.',
     );
   }
 
@@ -372,49 +448,11 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
       ? DateFormat('h a').format(date)
       : DateFormat('E').format(date);
 
-  Widget _breakdownCard(List<_MoodDay> data, _MoodDay? best) {
-    final ordered = [...data]..sort((a, b) => b.date.compareTo(a.date));
-    return _card(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Column(
-        children: [
-          for (var i = 0; i < ordered.length; i++) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _rangeIndex == 0
-                          ? DateFormat('h:mm a').format(ordered[i].date)
-                          : DateFormat('EEEE, MMM d').format(ordered[i].date),
-                    ),
-                  ),
-                  Text(
-                    ordered[i].moodScore == 0
-                        ? 'No entry'
-                        : '${_moodEmoji(ordered[i].moodScore)}  ${_moodLabel(ordered[i].moodScore)}',
-                    style: const TextStyle(
-                      color: _moodColor,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (best?.date == ordered[i].date &&
-                      ordered[i].moodScore > 0) ...[
-                    const SizedBox(width: 10),
-                    _badge('Best day'),
-                  ],
-                ],
-              ),
-            ),
-            if (i != ordered.length - 1)
-              Divider(height: 1, color: context.vivordoColors.border),
-          ],
-        ],
-      ),
-    );
-  }
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
 
   Widget _insightCard(DetailInsight insight) {
     final (icon, color) = insightStyle(insight.tone);
@@ -438,7 +476,7 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -452,21 +490,6 @@ class _MoodDetailScreenState extends State<MoodDetailScreen> {
       shape: BoxShape.circle,
     ),
     child: Icon(icon, color: color, size: 29),
-  );
-
-  Widget _badge(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-    decoration: BoxDecoration(
-      color: const Color(0xFF20B26B).withValues(alpha: .1),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: TextStyle(
-        color: context.vivordoColors.success,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
   );
 
   String _moodLabel(int score) => switch (score) {
@@ -708,7 +731,7 @@ class _MoodChartPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, boxWidth, boxHeight),
-          const Radius.circular(9),
+          const Radius.circular(8),
         ),
         Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
       );
