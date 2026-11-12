@@ -32,6 +32,7 @@ class MetricDayBreakdown extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     this.scaleMax,
+    this.scaleMin = 0,
   });
 
   /// Oldest first, like the chart's bars.
@@ -45,6 +46,10 @@ class MetricDayBreakdown extends StatelessWidget {
 
   /// The top of each day's line; null fits it to the day and the mark.
   final double? scaleMax;
+
+  /// Where each day's line and the calendar's depth start from. Resting
+  /// heart rate moves a few beats around 60; from 0 every day looks alike.
+  final double scaleMin;
 
   /// A value short enough for a calendar cell.
   final String Function(double value) compact;
@@ -151,6 +156,7 @@ class MetricDayBreakdown extends StatelessWidget {
                             value: days[i].value,
                             mark: mark,
                             scaleMax: scaleMax,
+                            scaleMin: scaleMin,
                             color: color,
                           ),
                         ],
@@ -239,7 +245,11 @@ class MetricDayBreakdown extends StatelessWidget {
                       color: color.withValues(
                         alpha: day.value <= 0
                             ? .04
-                            : .08 + .34 * day.value / most,
+                            : .08 +
+                                  .34 *
+                                      ((day.value - scaleMin) /
+                                              (most - scaleMin))
+                                          .clamp(0.0, 1.0),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -356,16 +366,19 @@ class _MarkLine extends StatelessWidget {
     required this.value,
     required this.mark,
     required this.scaleMax,
+    required this.scaleMin,
     required this.color,
   });
-  final double value;
+  final double value, scaleMin;
   final double? mark, scaleMax;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     final tick = mark ?? 0;
-    final full = scaleMax ?? (value > tick ? value : tick) * 1.15;
+    final full = (scaleMax ?? (value > tick ? value : tick) * 1.15) - scaleMin;
+    double share(double v) =>
+        full <= 0 ? 0 : ((v - scaleMin) / full).clamp(0.0, 1.0);
     return LayoutBuilder(
       builder: (context, constraints) => SizedBox(
         height: 10,
@@ -381,9 +394,7 @@ class _MarkLine extends StatelessWidget {
             ),
             Container(
               height: 4,
-              width: full <= 0
-                  ? 0
-                  : constraints.maxWidth * (value / full).clamp(0.0, 1.0),
+              width: value <= 0 ? 0 : constraints.maxWidth * share(value),
               decoration: BoxDecoration(
                 color: color,
                 borderRadius: BorderRadius.circular(99),
@@ -391,7 +402,7 @@ class _MarkLine extends StatelessWidget {
             ),
             if (tick > 0 && full > 0)
               Positioned(
-                left: constraints.maxWidth * (tick / full).clamp(0.0, 1.0),
+                left: constraints.maxWidth * share(tick),
                 top: 0,
                 bottom: 0,
                 child: Container(

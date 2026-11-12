@@ -15,6 +15,7 @@ import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
 
 import '../widgets/apple_ui.dart';
 import '../widgets/muscle_sets_card.dart';
@@ -250,6 +251,41 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 restDays,
               ),
             ),
+          if (_rangeIndex != 0) ...[
+            const SizedBox(height: 26),
+            const Text(
+              'By day',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            MetricDayBreakdown(
+              month: _rangeIndex == 2,
+              color: HistoryMetric.exercise.color,
+              mark: goals.exerciseMinutes.toDouble(),
+              compact: HistoryMetric.exercise.compact,
+              selected: _day,
+              onSelected: _pick,
+              days: [
+                for (final day in days)
+                  (
+                    date: day.date,
+                    value: day.minutes.toDouble(),
+                    // The week runs to Sunday: days still to come say so
+                    // rather than reading as missed.
+                    text: day.date.isAfter(today) ? '–' : '${day.minutes} min',
+                    note: day.date.isAfter(today)
+                        ? ''
+                        : day.minutes >= goals.exerciseMinutes
+                        ? 'Goal met'
+                        : '${goals.exerciseMinutes - day.minutes} min short',
+                    met:
+                        !day.date.isAfter(today) &&
+                        day.minutes >= goals.exerciseMinutes,
+                    hours: null,
+                  ),
+              ],
+            ),
+          ],
           MuscleSetsSection(workouts: workouts, rangeIndex: _rangeIndex),
           const SizedBox(height: 24),
           const Text(
@@ -282,10 +318,19 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
   Widget _rangeSelector() => AppSegmented<int>(
     segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(
@@ -432,6 +477,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final values = [for (final day in days) day.minutes.toDouble()];
     final best = bestBar(values);
     return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
       values: values,
       labels: dayBarLabels([for (final day in days) day.date]),
       tooltips: [

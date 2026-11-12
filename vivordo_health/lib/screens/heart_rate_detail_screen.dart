@@ -18,6 +18,8 @@ import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import '../src/utils/chart_text.dart';
 import 'metric_history_screen.dart';
@@ -328,6 +330,13 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   '${usual == null ? '' : ' The band is your usual range over the last 28 days.'}'
                   ' The solid bar is your lowest day.',
             ),
+            const SizedBox(height: 26),
+            const Text(
+              'By day',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _byDay(chartDays, usual),
           ],
           section('Heart rate zones'),
           zones(storedReadings),
@@ -686,7 +695,10 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget rangeSelector() => AppSegmented<int>(
     segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: rangeIndex,
-    onChanged: (index) => setState(() => rangeIndex = index),
+    onChanged: (index) => setState(() {
+      rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget summary(double? avg, int? low, int? high) => card(
@@ -740,11 +752,56 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
+  /// Each day's resting heart rate against the usual band. The line starts
+  /// just under the lowest day, as the chart does.
+  Widget _byDay(List<_HeartDay> days, (double, double)? usual) {
+    final resting = [for (final day in days) ?day.resting];
+    final low = resting.isEmpty ? 0.0 : resting.reduce(math.min) - 5;
+    final high = resting.isEmpty ? 1.0 : resting.reduce(math.max) + 3;
+    return MetricDayBreakdown(
+      month: rangeIndex == 2,
+      color: HistoryMetric.heartRate.color,
+      mark: usual == null ? null : (usual.$1 + usual.$2) / 2,
+      scaleMin: low,
+      scaleMax: high,
+      compact: HistoryMetric.heartRate.compact,
+      selected: _day,
+      onSelected: _pick,
+      days: [
+        for (final day in days)
+          (
+            date: day.date,
+            value: day.resting ?? 0,
+            text: day.resting == null
+                ? 'No reading'
+                : '${day.resting!.round()} bpm',
+            note: day.resting == null || usual == null
+                ? ''
+                : day.resting! > usual.$2
+                ? 'Above usual'
+                : day.resting! < usual.$1
+                ? 'Below usual'
+                : 'About usual',
+            met: false,
+            hours: null,
+          ),
+      ],
+    );
+  }
+
   /// W and M: a bar per day's resting heart rate, like the 6M and Y views.
   Widget restingBars(List<_HeartDay> days, (double, double)? usual) {
     final values = [for (final day in days) day.resting ?? 0];
     final best = bestBar(values, lowest: true);
     return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
       values: values,
       labels: dayBarLabels([for (final day in days) day.date]),
       tooltips: [

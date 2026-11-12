@@ -17,6 +17,8 @@ import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
 import 'package:vivordo_health/src/utils/server_capacity.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import 'package:vivordo_health/widgets/daily_tags.dart' show tagLastNightSick;
@@ -501,6 +503,45 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
                     ' The solid bar is your longest night.',
                 footer: _needAndTimes(needBar, latest),
               ),
+            if (_rangeIndex != 0) ...[
+              const SizedBox(height: 26),
+              const Text(
+                'By night',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              MetricDayBreakdown(
+                month: _rangeIndex == 2,
+                color: HistoryMetric.sleep.color,
+                mark: _sleepNeed,
+                // Nights differ by an hour or so: from 0 they'd all look
+                // alike, so the lines and shades start under the shortest.
+                scaleMin:
+                    [
+                      for (final day in days) ?day.value?.hours,
+                    ].fold<double>(24, math.min).clamp(1.0, 24.0) -
+                    1,
+                compact: HistoryMetric.sleep.compact,
+                selected: _day,
+                onSelected: _pick,
+                days: [
+                  for (final day in days)
+                    (
+                      date: day.date,
+                      value: day.value?.hours ?? 0,
+                      text: day.value == null
+                          ? 'No sleep'
+                          : hoursMinutes(day.value!.hours),
+                      note: _needNote(day.value?.hours),
+                      met:
+                          _sleepNeed != null &&
+                          day.value != null &&
+                          (day.value!.hours - _sleepNeed!) * 60 > -15,
+                      hours: null,
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 24),
             Text(
               _rangeIndex == 0
@@ -561,10 +602,28 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     );
   }
 
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
+  /// A night against the need: within 15 minutes is at it.
+  String _needNote(double? hours) {
+    final need = _sleepNeed;
+    if (hours == null || need == null) return '';
+    final gap = ((hours - need) * 60).round();
+    if (gap.abs() < 15) return 'About your need';
+    return '${hoursMinutes(gap.abs() / 60)} ${gap < 0 ? 'short' : 'over'}';
+  }
+
   Widget _rangeSelector() => AppSegmented<int>(
     segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(
@@ -741,6 +800,8 @@ class _SleepDetailScreenState extends State<SleepDetailScreen> {
     final values = [for (final day in days) day.value?.hours ?? 0.0];
     final best = bestBar(values);
     return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
       values: values,
       labels: dayBarLabels([for (final day in days) day.date]),
       tooltips: [
