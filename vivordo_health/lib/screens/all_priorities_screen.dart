@@ -292,16 +292,15 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
   List<Widget> _planView(_PlanGroups plan) {
     final tomorrow = DateTime(_day.year, _day.month, _day.day + 1);
     return [
-      if (plan.overdue.isNotEmpty) _group('Carried over', plan.overdue),
+      // Today first, then what was carried over, as on My Day.
       _group(
         plan.today.isEmpty
             ? 'Today'
             : 'Today · ${plan.doneToday} of ${plan.today.length}',
         plan.today,
-        empty: plan.overdue.isEmpty
-            ? 'Nothing planned for today.'
-            : 'Nothing else planned for today.',
+        empty: 'Nothing planned for today.',
       ),
+      if (plan.overdue.isNotEmpty) _group('Carried over', plan.overdue),
       for (final entry in plan.later.entries)
         _group(
           DateUtils.isSameDay(entry.key, tomorrow)

@@ -1250,8 +1250,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           tooltip: 'Journal',
+                          // Outlined like its neighbours; filled, it looked
+                          // selected.
                           icon: const Icon(
-                            CupertinoIcons.book_fill,
+                            CupertinoIcons.book,
                             color: MyDayScreen.purple,
                           ),
                         ),
@@ -3290,12 +3292,16 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
               divider,
             ],
             if (hidden > 0) ...[
+              // It opens the Priorities screen, so it says so and points
+              // there, rather than looking like it expands in place.
               _ListAction(
-                icon: CupertinoIcons.ellipsis,
+                icon: CupertinoIcons.list_bullet,
                 label: carried.isEmpty || carriedShown
-                    ? '$hidden more'
-                    : '$hidden more · ${carried.length} carried over',
+                    ? 'See all ${open.length}'
+                    : 'See all ${open.length} · '
+                          '${carried.length} carried over',
                 muted: true,
+                leaves: true,
                 onTap: _openAllPriorities,
               ),
               const Divider(height: 1),
@@ -4000,12 +4006,16 @@ class _ListAction extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.muted = false,
+    this.leaves = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool muted;
+
+  /// It opens another screen: a chevron on the right.
+  final bool leaves;
 
   @override
   Widget build(BuildContext context) {
@@ -4032,6 +4042,12 @@ class _ListAction extends StatelessWidget {
                 ),
               ),
             ),
+            if (leaves)
+              Icon(
+                CupertinoIcons.chevron_right,
+                size: 18,
+                color: colors.textSecondary,
+              ),
           ],
         ),
       ),

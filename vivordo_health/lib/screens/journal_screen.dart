@@ -332,16 +332,45 @@ class _JournalScreenState extends State<JournalScreen>
           ),
           Padding(
             padding: const EdgeInsets.only(right: 10),
+            // A real calendar, weeks from Sunday like My Day's month view,
+            // so weekdays line up and a run of low Mondays shows.
+            child: Row(
+              children: [
+                for (final d in const ['S', 'M', 'T', 'W', 'T', 'F', 'S'])
+                  Expanded(
+                    child: ExcludeSemantics(
+                      child: Text(
+                        d,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
             child: GridView.count(
-              crossAxisCount: 10,
+              crossAxisCount: 7,
               shrinkWrap: true,
               // Without this the grid adds the screen's safe-area inset.
               padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 5,
               crossAxisSpacing: 5,
-              childAspectRatio: 1.15,
+              childAspectRatio: 1.35,
               children: [
+                for (
+                  var blank = DateTime(_month.year, _month.month).weekday % 7;
+                  blank > 0;
+                  blank--
+                )
+                  const SizedBox.shrink(),
                 for (var d = 1; d <= days; d++)
                   _dayCell(
                     DateTime(_month.year, _month.month, d),
