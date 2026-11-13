@@ -5,6 +5,7 @@ import '../widgets/visible_stream_builder.dart';
 import '../src/services/metrics_repository.dart';
 import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
+import '../widgets/duo_layout.dart';
 import '../widgets/meeting_patterns_view.dart';
 import '../widgets/finish_setup_card.dart';
 import '../src/services/meeting_patterns_service.dart';
@@ -1225,9 +1226,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              child: _buildSections(
+                sleepNights: sleepNights,
+                healthExerciseMinutes: healthExerciseMinutes,
+                activeCalories: activeCalories,
+                sleepHours: sleepHours,
+                latestHeartRate: latestHeartRate,
+                top: [
                   _buildHeader(),
                   const SizedBox(height: 20),
                   const FinishSetupCard(),
@@ -1280,63 +1285,91 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     key: widget.circleKey,
                     child: _buildCircleCard(),
                   ),
-                  KeyedSubtree(
-                    key: widget.yourDayKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionTitle(
-                          "Your day",
-                          trailing: [
-                            _infoButton(
-                              label: 'How Your Day works',
-                              onTap: _showReachableWindowsInfo,
-                            ),
-                            TextButton(
-                              onPressed: widget.onMyDayTap,
-                              style: TextButton.styleFrom(
-                                foregroundColor: accentPurple,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                ),
-                                minimumSize: const Size(0, 36),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                textStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              child: const Text('Open My Day ›'),
-                            ),
-                          ],
-                        ),
-                        _buildDayLoad(
-                          sleepNights,
-                          healthMinutes: healthExerciseMinutes,
-                          calories: activeCalories.toDouble(),
-                        ),
-                        _publishPatternEvents(),
-                      ],
-                    ),
-                  ),
-                  KeyedSubtree(
-                    key: widget.insightsKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionTitle('Insights'),
-                        _buildInsights(
-                          sleepHours: sleepHours,
-                          hasHeartRate: latestHeartRate != null,
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// The Home sections: [top] (greeting, stress, vitals, activity, Circle)
+  /// and then Your day and Insights. One column on a phone; on an unfolded
+  /// iPhone Duo the day and insights take the pane across the hinge.
+  Widget _buildSections({
+    required List<Widget> top,
+    required List<SleepPeriod> sleepNights,
+    required double? healthExerciseMinutes,
+    required int activeCalories,
+    required double? sleepHours,
+    required LatestHeartRateReading? latestHeartRate,
+  }) {
+    final day = [
+      KeyedSubtree(
+        key: widget.yourDayKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle(
+              "Your day",
+              trailing: [
+                _infoButton(
+                  label: 'How Your Day works',
+                  onTap: _showReachableWindowsInfo,
+                ),
+                TextButton(
+                  onPressed: widget.onMyDayTap,
+                  style: TextButton.styleFrom(
+                    foregroundColor: accentPurple,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  child: const Text('Open My Day ›'),
+                ),
+              ],
+            ),
+            _buildDayLoad(
+              sleepNights,
+              healthMinutes: healthExerciseMinutes,
+              calories: activeCalories.toDouble(),
+            ),
+            _publishPatternEvents(),
+          ],
+        ),
+      ),
+      KeyedSubtree(
+        key: widget.insightsKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle('Insights'),
+            _buildInsights(
+              sleepHours: sleepHours,
+              hasHeartRate: latestHeartRate != null,
+            ),
+          ],
+        ),
+      ),
+    ];
+    if (!DuoPose.of(context).twoPane) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [...top, ...day],
+      );
+    }
+    return DuoPanes(
+      leftInset: 20,
+      left: Column(crossAxisAlignment: CrossAxisAlignment.start, children: top),
+      right: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        // Level with the stress card, under the greeting.
+        children: [const SizedBox(height: 64), ...day],
       ),
     );
   }

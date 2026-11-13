@@ -30,6 +30,7 @@ import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/launch_splash.dart';
 import 'screens/login_screen.dart';
+import 'widgets/duo_layout.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
 import 'screens/email_verification_screen.dart';
@@ -85,6 +86,8 @@ Future<void> openActiveWorkoutFromExternal({
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // iPhone Duo hinge; returns at once on every other phone.
+  unawaited(DuoHinge.start());
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseAuth.instance.authStateChanges().listen((user) {
     // Signed in (including at launch): save any check-ins tapped on the Mood

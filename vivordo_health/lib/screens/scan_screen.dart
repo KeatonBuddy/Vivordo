@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/duo_layout.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -715,70 +716,149 @@ class _ScanScreenState extends State<ScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: CollapsingTitle(
-        title: 'Scan',
-        threshold: 84,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
+      // On an iPhone Duo set down half open, the page stands up on the top
+      // half and the hand rests on the flat half, with nothing on the hinge.
+      body: ValueListenableBuilder<HingeStatus?>(
+        valueListenable: DuoHinge.status,
+        child: _buildPage(),
+        builder: (context, _, page) => DuoHinge.tabletopOf(context)
+            ? Column(
+                children: [
+                  Expanded(child: page!),
+                  Expanded(child: _buildFlatHalf()),
+                ],
+              )
+            : page!,
+      ),
+    );
+  }
+
+  /// The flat half in the tabletop pose: where the finger goes, and the way
+  /// out. The reading itself is on the standing half above the hinge.
+  Widget _buildFlatHalf() {
+    final colors = context.vivordoColors;
+    final scanning =
+        _scanState == ScanState.scanning || _scanState == ScanState.processing;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 48),
-                Row(
-                  children: [
-                    // The tab's name, the size of the other tabs' titles.
-                    Expanded(
-                      child: Text(
-                        'Scan',
-                        textScaler: MediaQuery.textScalerOf(
-                          context,
-                        ).clamp(maxScaleFactor: 1.5),
-                        style: const TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
+                const Icon(Icons.fingerprint, color: accentPurple, size: 32),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    scanning
+                        ? 'Keep your finger still on the camera'
+                        : 'Rest your fingertip on the rear camera, behind the standing half',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
-                    IconButton(
-                      key: widget.helpKey,
-                      tooltip: 'Show tutorial',
-                      onPressed: _showScannerTutorial,
-                      icon: const Icon(
-                        CupertinoIcons.question_circle,
-                        color: accentPurple,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '15-second bpm scan',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: context.vivordoColors.textSecondary,
                   ),
                 ),
-                const SizedBox(height: 40),
-                if (!_hasTorch && _scanState != ScanState.initializing) ...[
-                  _buildNoTorchWarning(),
-                  const SizedBox(height: 16),
-                ],
-                if (_showTutorial && _scanState == ScanState.idle) ...[
-                  _buildFirstScanTutorial(),
-                  const SizedBox(height: 20),
-                ],
-                if (_scanState == ScanState.initializing) _buildInitializing(),
-                if (_scanState == ScanState.idle) _buildIdle(),
-                if (_scanState == ScanState.scanning) _buildScanning(),
-                if (_scanState == ScanState.processing) _buildProcessing(),
-                if (_scanState == ScanState.success) _buildSuccess(),
-                if (_scanState == ScanState.error) _buildError(),
-                const SizedBox(height: 120),
               ],
             ),
+            const SizedBox(height: 10),
+            Text(
+              'The reading stays up on the other half. Breathe out slowly while it runs.',
+              style: TextStyle(fontSize: 14, color: colors.textSecondary),
+            ),
+            const Spacer(),
+            if (scanning || _scanArmed)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _reset,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accentPurple,
+                    minimumSize: const Size.fromHeight(52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPage() {
+    return CollapsingTitle(
+      title: 'Scan',
+      threshold: 84,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 48),
+              Row(
+                children: [
+                  // The tab's name, the size of the other tabs' titles.
+                  Expanded(
+                    child: Text(
+                      'Scan',
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.5),
+                      style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: widget.helpKey,
+                    tooltip: 'Show tutorial',
+                    onPressed: _showScannerTutorial,
+                    icon: const Icon(
+                      CupertinoIcons.question_circle,
+                      color: accentPurple,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '15-second bpm scan',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: context.vivordoColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 40),
+              if (!_hasTorch && _scanState != ScanState.initializing) ...[
+                _buildNoTorchWarning(),
+                const SizedBox(height: 16),
+              ],
+              if (_showTutorial && _scanState == ScanState.idle) ...[
+                _buildFirstScanTutorial(),
+                const SizedBox(height: 20),
+              ],
+              if (_scanState == ScanState.initializing) _buildInitializing(),
+              if (_scanState == ScanState.idle) _buildIdle(),
+              if (_scanState == ScanState.scanning) _buildScanning(),
+              if (_scanState == ScanState.processing) _buildProcessing(),
+              if (_scanState == ScanState.success) _buildSuccess(),
+              if (_scanState == ScanState.error) _buildError(),
+              const SizedBox(height: 120),
+            ],
           ),
         ),
       ),

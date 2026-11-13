@@ -241,6 +241,17 @@ import WidgetKit
     }
   }
 
+  /// Portrait only, except on iPhone Duo, which opens into landscape. Both
+  /// Duo displays are about 1:1.42; every other iPhone is over 2:1.
+  override func application(
+    _ application: UIApplication,
+    supportedInterfaceOrientationsFor window: UIWindow?
+  ) -> UIInterfaceOrientationMask {
+    let size = (window?.screen ?? UIScreen.main).bounds.size
+    let ratio = max(size.width, size.height) / min(size.width, size.height)
+    return ratio < 1.6 ? .allButUpsideDown : .portrait
+  }
+
   override func application(
     _ app: UIApplication,
     open url: URL,

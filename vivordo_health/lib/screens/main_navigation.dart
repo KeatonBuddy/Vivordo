@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../widgets/app_tour.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/duo_layout.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
@@ -805,6 +806,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         _chatOpen || keyboardOpen || (_tourScreen != null && !_tourShowsChat);
     // iOS hides the tab bar behind the keyboard.
     final showNavBar = !keyboardOpen;
+    // On iPhone Duo the tab bar is a strip on the trailing edge, as iOS 27.1
+    // places its own, and the tabs keep clear of it instead of the bottom.
+    final rail = DuoPose.of(context).trailingTabBar;
+    // The closed Duo's status items share that trailing strip and already
+    // sit in the safe area, so the tabs keep clear of whichever is wider,
+    // not both.
+    final railClearance = math.max(
+      _navBarClearance,
+      MediaQuery.paddingOf(context).right,
+    );
     final theme = Theme.of(context);
     // Screens pushed in a tab end above the floating tab bar; the tab pages
     // themselves already leave room for it.
@@ -814,7 +825,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           for (final platform in TargetPlatform.values)
             platform: _AboveTabBarTransitions(
               base: theme.pageTransitionsTheme,
-              bottom: showNavBar ? _navBarClearance : 0,
+              bottom: showNavBar && !rail ? _navBarClearance : 0,
               background: theme.scaffoldBackgroundColor,
             ),
         },
@@ -872,11 +883,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         body: Stack(
           children: [
             Positioned.fill(
-              child: RepaintBoundary(
-                child: ScreenInsightScope(controller: _insights, child: tabs),
+              child: MediaQuery.removePadding(
+                context: context,
+                removeRight: rail,
+                child: Padding(
+                  padding: EdgeInsets.only(right: rail ? railClearance : 0),
+                  child: RepaintBoundary(
+                    child: ScreenInsightScope(
+                      controller: _insights,
+                      child: tabs,
+                    ),
+                  ),
+                ),
               ),
             ),
-            if (showNavBar)
+            if (showNavBar && rail)
+              Positioned(
+                top: 0,
+                bottom: 0,
+                right: _navBarInset,
+                child: Center(child: _buildFloatingNavBar(vertical: true)),
+              )
+            else if (showNavBar)
               ValueListenableBuilder<double>(
                 valueListenable: _insightLift,
                 builder: (context, lift, bar) => Positioned(
@@ -894,7 +922,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
               ),
             Positioned(
               key: const ValueKey('ai-chat-bubble-layer'),
-              right: _navBarInset,
+              right: rail ? _navBarInset + railClearance : _navBarInset,
               left: _navBarInset,
               bottom: _navBarInset,
               child: IgnorePointer(
@@ -1085,7 +1113,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     return _cachedGlassSettings!;
   }
 
-  Widget _buildFloatingNavBar() {
+  /// The floating tab bar; [vertical] stands it on its end for the Duo's
+  /// trailing-edge strip, the same capsule with the tabs stacked.
+  Widget _buildFloatingNavBar({bool vertical = false}) {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
@@ -1118,7 +1148,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           child: Material(
             color: Colors.transparent,
             child: Container(
-              height: _navBarHeight,
+              height: vertical
+                  ? (_navBarHeight - 8) * items.length + 8
+                  : _navBarHeight,
+              width: vertical ? _navBarHeight : null,
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(_navBarHeight / 2),
@@ -1135,13 +1168,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                         ? Duration.zero
                         : const Duration(milliseconds: 260),
                     curve: Curves.easeOutCubic,
-                    alignment: Alignment(
-                      -1 + 2 * _selectedIndex / (items.length - 1),
-                      0,
-                    ),
+                    alignment: vertical
+                        ? Alignment(
+                            0,
+                            -1 + 2 * _selectedIndex / (items.length - 1),
+                          )
+                        : Alignment(
+                            -1 + 2 * _selectedIndex / (items.length - 1),
+                            0,
+                          ),
                     child: FractionallySizedBox(
-                      widthFactor: 1 / items.length,
-                      heightFactor: 1,
+                      widthFactor: vertical ? 1 : 1 / items.length,
+                      heightFactor: vertical ? 1 / items.length : 1,
                       child: DecoratedBox(
                         decoration: ShapeDecoration(
                           shape: const StadiumBorder(),
@@ -1150,7 +1188,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       ),
                     ),
                   ),
-                  Row(
+                  Flex(
+                    direction: vertical ? Axis.vertical : Axis.horizontal,
                     children: [
                       for (final (index, (icon, label)) in items.indexed)
                         Expanded(child: _navItem(icon, label, index)),
