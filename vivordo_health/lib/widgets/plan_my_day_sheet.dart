@@ -14,18 +14,32 @@ typedef PlanChoice = ({List<PlannedSlot> slots, List<PlanTask> tomorrow});
 /// suggested one picked. Pick another, your own time, tomorrow, or none
 /// (tap the picked one again); a time taken by another priority can't be
 /// picked. Times stay in Vivordo; the calendar isn't changed.
+/// With [from] and [until] (now and the wrap-up time) the rest of the day
+/// is drawn across the top: what's already [busy], and each pick as it
+/// lands.
 Future<PlanChoice?> showPlanMyDaySheet(
   BuildContext context, {
   required DayPlan plan,
+  DateTime? from,
+  DateTime? until,
+  List<DateTimeRange> busy = const [],
 }) => showAppleSheet<PlanChoice>(
   context,
-  builder: (sheetContext) => _PlanMyDaySheet(plan: plan),
+  builder: (sheetContext) =>
+      _PlanMyDaySheet(plan: plan, from: from, until: until, busy: busy),
 );
 
 class _PlanMyDaySheet extends StatefulWidget {
-  const _PlanMyDaySheet({required this.plan});
+  const _PlanMyDaySheet({
+    required this.plan,
+    required this.from,
+    required this.until,
+    required this.busy,
+  });
 
   final DayPlan plan;
+  final DateTime? from, until;
+  final List<DateTimeRange> busy;
 
   @override
   State<_PlanMyDaySheet> createState() => _PlanMyDaySheetState();
@@ -99,9 +113,104 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
     _pick(task, slot);
   }
 
+  /// The rest of the day, left to right: grey where it's already taken,
+  /// purple for each pick, which drops in as it's chosen.
+  Widget _dayStrip(BuildContext context, DateTime from, DateTime until) {
+    final colors = context.vivordoColors;
+    final span = until.difference(from).inSeconds;
+    final still = MediaQuery.disableAnimationsOf(context);
+    final label = TextStyle(fontSize: 11, color: colors.textSecondary);
+    return ExcludeSemantics(
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 28,
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  Widget? block(
+                    DateTime start,
+                    DateTime end,
+                    Color color, {
+                    Key? key,
+                  }) {
+                    final a = start.isBefore(from) ? from : start;
+                    final b = end.isAfter(until) ? until : end;
+                    if (!b.isAfter(a)) return null;
+                    final left =
+                        box.maxWidth * a.difference(from).inSeconds / span;
+                    final width =
+                        box.maxWidth * b.difference(a).inSeconds / span;
+                    final fill = Container(
+                      margin: const EdgeInsets.only(right: 1),
+                      color: color,
+                    );
+                    return Positioned(
+                      key: key,
+                      left: left,
+                      width: width < 3 ? 3 : width,
+                      top: 0,
+                      bottom: 0,
+                      child: key == null
+                          ? fill
+                          : TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0, end: 1),
+                              duration: still
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 220),
+                              curve: Curves.easeOut,
+                              builder: (context, t, child) => Opacity(
+                                opacity: t,
+                                child: Transform.translate(
+                                  offset: Offset(0, -8 * (1 - t)),
+                                  child: child,
+                                ),
+                              ),
+                              child: fill,
+                            ),
+                    );
+                  }
+
+                  return Stack(
+                    children: [
+                      Positioned.fill(child: ColoredBox(color: colors.input)),
+                      for (final b in widget.busy)
+                        ?block(
+                          b.start,
+                          b.end,
+                          colors.textSecondary.withValues(alpha: .35),
+                        ),
+                      for (final slot in _picked.values)
+                        ?block(
+                          slot.start,
+                          slot.end,
+                          VivordoTheme.brand,
+                          key: ValueKey('${slot.task.id}@${slot.start}'),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Now', style: label),
+              Text(DateFormat.jm().format(until), style: label),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    final from = widget.from, until = widget.until;
     final kept = [for (final task in _tasks) ?_picked[task.id]]
       ..sort((a, b) => a.start.compareTo(b.start));
     final tomorrow = [
@@ -153,100 +262,137 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
         constraints: BoxConstraints(
           maxHeight: MediaQuery.sizeOf(context).height * .85,
         ),
-        child: SingleChildScrollView(
+        // The title, the day and the button stay put; the priorities scroll.
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Plan for today',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: colors.textPrimary,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Plan for today',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${kept.length} of ${_tasks.length} placed',
+                    style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Pick a time for each, or leave it for later. Times fit '
-                'around your events, heavy ones in your peak. Only in '
-                'Vivordo; your calendar isn\'t changed.',
-                style: TextStyle(fontSize: 15, color: colors.textSecondary),
-              ),
-              const SizedBox(height: 12),
-              for (final task in _tasks)
-                Builder(
-                  builder: (context) {
-                    final picked = _picked[task.id];
-                    final options = _optionsFor(task);
-                    final note = picked != null
-                        ? '${time(picked.start)}–${time(picked.end)} · ${picked.reason}'
-                        : _tomorrow.contains(task.id)
-                        ? 'Moves to tomorrow'
-                        : options.isEmpty
-                        ? reasons[task.id] ?? 'No room before your wrap-up'
-                        : options.every(_clashes)
-                        ? 'Its open times are taken by your other picks'
-                        : 'No time yet';
-                    return Container(
-                      // Full width, so the line above spans the sheet.
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: colors.border, width: .5),
+              if (from != null && until != null && until.isAfter(from)) ...[
+                const SizedBox(height: 10),
+                _dayStrip(context, from, until),
+              ],
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pick a time for each, or leave it for later. Times fit '
+                        'around your events, heavy ones in your peak. Only in '
+                        'Vivordo; your calendar isn\'t changed.',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: colors.textSecondary,
                         ),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              task.title,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: colors.textPrimary,
-                              ),
-                            ),
-                            Text(note, style: secondary),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                for (final option in options)
-                                  chip(
-                                    time(option.start),
-                                    selected: picked?.start == option.start,
-                                    onTap: _clashes(option)
-                                        ? null
-                                        : () => _pick(task, option),
+                      const SizedBox(height: 12),
+                      for (final task in _tasks)
+                        Builder(
+                          builder: (context) {
+                            final picked = _picked[task.id];
+                            final options = _optionsFor(task);
+                            final note = picked != null
+                                ? '${time(picked.start)}–${time(picked.end)} · ${picked.reason}'
+                                : _tomorrow.contains(task.id)
+                                ? 'Moves to tomorrow'
+                                : options.isEmpty
+                                ? reasons[task.id] ??
+                                      'No room before your wrap-up'
+                                : options.every(_clashes)
+                                ? 'Its open times are taken by your other picks'
+                                : 'No time yet';
+                            return Container(
+                              // Full width, so the line above spans the sheet.
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  top: BorderSide(
+                                    color: colors.border,
+                                    width: .5,
                                   ),
-                                chip(
-                                  'Other time',
-                                  selected: false,
-                                  onTap: () => _ownTime(task),
                                 ),
-                                chip(
-                                  'Tomorrow',
-                                  selected: _tomorrow.contains(task.id),
-                                  onTap: () => setState(() {
-                                    if (!_tomorrow.remove(task.id)) {
-                                      _tomorrow.add(task.id);
-                                      _picked.remove(task.id);
-                                    }
-                                  }),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
                                 ),
-                              ],
-                            ),
-                          ],
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      task.title,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: colors.textPrimary,
+                                      ),
+                                    ),
+                                    Text(note, style: secondary),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        // A time another pick has taken isn't
+                                        // offered; it comes back when that's undone.
+                                        for (final option in options)
+                                          if (!_clashes(option))
+                                            chip(
+                                              time(option.start),
+                                              selected:
+                                                  picked?.start == option.start,
+                                              onTap: () => _pick(task, option),
+                                            ),
+                                        chip(
+                                          'Other time',
+                                          selected: false,
+                                          onTap: () => _ownTime(task),
+                                        ),
+                                        chip(
+                                          'Tomorrow',
+                                          selected: _tomorrow.contains(task.id),
+                                          onTap: () => setState(() {
+                                            if (!_tomorrow.remove(task.id)) {
+                                              _tomorrow.add(task.id);
+                                              _picked.remove(task.id);
+                                            }
+                                          }),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
+              ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => Navigator.pop<PlanChoice>(context, (

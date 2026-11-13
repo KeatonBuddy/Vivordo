@@ -2760,7 +2760,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _planMyDay(List<DailyPriority> untimed, DayPlan plan) async {
     final today = DateUtils.dateOnly(DateTime.now());
     final byId = {for (final p in untimed) p.reference.path: p};
-    final choice = await showPlanMyDaySheet(context, plan: plan);
+    final now = DateTime.now();
+    final choice = await showPlanMyDaySheet(
+      context,
+      plan: plan,
+      from: now,
+      until: today.add(Duration(minutes: _wrapUpMinutes)),
+      // Events, and priorities that already have a time today.
+      busy: [
+        for (final e in _events)
+          if (!e.isAllDay && e.end.isAfter(e.start))
+            DateTimeRange(start: e.start, end: e.end),
+        for (final p in _prioritySnapshot.value.data ?? const <DailyPriority>[])
+          if (p.sourceStart case final start?
+              when !p.completed &&
+                  !p.isAllDay &&
+                  DateUtils.isSameDay(start, now))
+            DateTimeRange(
+              start: start,
+              end: p.sourceEnd ?? start.add(Duration(minutes: slotMinutes(p))),
+            ),
+      ],
+    );
     if (choice == null || !mounted) return;
     final tomorrow = today.add(const Duration(days: 1));
     Future<void> place(DailyPriority p, DateTime date, DateTime? start) =>

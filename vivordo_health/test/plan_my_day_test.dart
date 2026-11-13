@@ -158,10 +158,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Plan for today'), findsOneWidget);
     expect(find.textContaining('In your peak'), findsOneWidget);
-    // Reel Upload's 2:15 is Outlook's: it can't be picked yet.
-    final reelAt215 = find.text(DateFormat.jm().format(at(14, 15))).last;
-    await tester.tap(reelAt215);
-    await tester.pumpAndSettle();
+    expect(find.text('2 of 3 placed'), findsOneWidget);
+    // Reel Upload's 2:15 is Outlook's: it isn't offered yet.
+    final at215 = find.text(DateFormat.jm().format(at(14, 15)));
+    expect(at215, findsOneWidget);
     expect(
       find.text('Its open times are taken by your other picks'),
       findsOneWidget,
@@ -169,7 +169,9 @@ void main() {
     // Outlook to tomorrow frees it.
     await tester.tap(find.text('Tomorrow').first);
     await tester.pumpAndSettle();
-    await tester.tap(reelAt215);
+    // The priorities scroll under the pinned day strip.
+    await tester.ensureVisible(at215.last);
+    await tester.tap(at215.last);
     await tester.pumpAndSettle();
     expect(find.text('Moves to tomorrow'), findsOneWidget);
     await tester.tap(find.text('Set these times'));
