@@ -83,18 +83,72 @@ class TimelineNowLine extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          width: 7,
-          height: 7,
-          decoration: const BoxDecoration(
-            color: _nowColor,
-            shape: BoxShape.circle,
-          ),
-        ),
+        const _NowDot(),
         Expanded(child: Container(height: 1.5, color: _nowColor)),
       ],
     ),
   );
+}
+
+/// The now marker's dot. It breathes like the now dot on Home's energy
+/// line, so "live" looks the same in both places; still with Reduce Motion.
+class _NowDot extends StatefulWidget {
+  const _NowDot();
+
+  @override
+  State<_NowDot> createState() => _NowDotState();
+}
+
+class _NowDotState extends State<_NowDot> with SingleTickerProviderStateMixin {
+  late final _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2200),
+  );
+  late final _curve = CurvedAnimation(parent: _breath, curve: Curves.easeInOut);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _breath.stop();
+      _breath.value = 0;
+    } else if (!_breath.isAnimating) {
+      _breath.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _curve.dispose();
+    _breath.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RepaintBoundary(
+    child: CustomPaint(size: const Size(7, 7), painter: _NowDotPainter(_curve)),
+  );
+}
+
+class _NowDotPainter extends CustomPainter {
+  _NowDotPainter(this.breath) : super(repaint: breath);
+
+  final Animation<double> breath;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centre = size.center(Offset.zero);
+    // The halo grows and fades around the dot, past its own 7 pt box.
+    canvas.drawCircle(
+      centre,
+      3.5 + 5 * breath.value,
+      Paint()..color = _nowColor.withValues(alpha: .30 * (1 - breath.value)),
+    );
+    canvas.drawCircle(centre, 3.5, Paint()..color = _nowColor);
+  }
+
+  @override
+  bool shouldRepaint(_NowDotPainter old) => old.breath != breath;
 }
 
 class TimelineRow extends StatelessWidget {
