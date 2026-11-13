@@ -1621,6 +1621,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           listenable: Listenable.merge([
             _prioritySnapshot,
             _tomorrowPrioritySnapshot,
+            // The headline defers to the alerts shown under the brief.
+            _burnoutSnapshot,
+            _trainingLoadSnapshot,
           ]),
           builder: (context, _) {
             final priorities = _prioritySnapshot.value;
@@ -1756,7 +1759,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 : capacityScore == null || !shown
                 ? 'Make space for your day'
                 : switch (live?.fit ?? demandFit(demand, capacityScore)) {
-                    DemandFit.roomToSpare => 'Room to spare today',
+                    DemandFit.roomToSpare => roomToSpareHeadline(
+                      burnout: _burnoutSnapshot.value.data?.level,
+                      trainingLoad: _trainingLoadSnapshot.value.data?.state,
+                    ),
                     DemandFit.over =>
                       live == null
                           ? 'More than you’ve got: protect a break'
