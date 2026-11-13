@@ -55,6 +55,10 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
     for (final slot in widget.plan.placed) slot.task.id: slot,
   };
 
+  late final Map<String, PlannedSlot> _suggested = {
+    for (final slot in widget.plan.placed) slot.task.id: slot,
+  };
+
   /// Times you set yourself, offered beside the suggestions.
   final _own = <String, PlannedSlot>{};
   final _tomorrow = <String>{};
@@ -64,7 +68,13 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
       for (final o in widget.plan.options[task.id] ?? const <PlannedSlot>[])
         o.start: o,
     };
-    for (final extra in [_picked[task.id], _own[task.id]]) {
+    // The suggested time stays on offer after it's unpicked: it can differ
+    // from the plan's listed options, and would otherwise vanish.
+    for (final extra in [
+      _suggested[task.id],
+      _picked[task.id],
+      _own[task.id],
+    ]) {
       if (extra != null) options[extra.start] = extra;
     }
     return options.values.toList()..sort((a, b) => a.start.compareTo(b.start));
@@ -114,7 +124,8 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
   }
 
   /// The rest of the day, left to right: grey where it's already taken,
-  /// purple for each pick, which drops in as it's chosen.
+  /// purple for each pick. A pick fills its slot from the left as it's
+  /// chosen (the suggested ones as the sheet opens) and drains when unpicked.
   Widget _dayStrip(BuildContext context, DateTime from, DateTime until) {
     final colors = context.vivordoColors;
     final span = until.difference(from).inSeconds;
@@ -134,6 +145,7 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
                     DateTime end,
                     Color color, {
                     Key? key,
+                    bool? on,
                   }) {
                     final a = start.isBefore(from) ? from : start;
                     final b = end.isAfter(until) ? until : end;
@@ -146,29 +158,38 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
                       margin: const EdgeInsets.only(right: 1),
                       color: color,
                     );
+                    final w = width < 3 ? 3.0 : width;
+                    if (on == null) {
+                      return Positioned(
+                        left: left,
+                        width: w,
+                        top: 0,
+                        bottom: 0,
+                        child: fill,
+                      );
+                    }
+                    // No width on the Positioned: the Align sets it, from
+                    // nothing to the slot's own as it fills.
                     return Positioned(
                       key: key,
                       left: left,
-                      width: width < 3 ? 3 : width,
                       top: 0,
                       bottom: 0,
-                      child: key == null
-                          ? fill
-                          : TweenAnimationBuilder<double>(
-                              tween: Tween(begin: 0, end: 1),
-                              duration: still
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 220),
-                              curve: Curves.easeOut,
-                              builder: (context, t, child) => Opacity(
-                                opacity: t,
-                                child: Transform.translate(
-                                  offset: Offset(0, -8 * (1 - t)),
-                                  child: child,
-                                ),
-                              ),
-                              child: fill,
-                            ),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: on ? 1 : 0),
+                        duration: still
+                            ? Duration.zero
+                            : const Duration(milliseconds: 380),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, t, child) => ClipRect(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: t,
+                            child: child,
+                          ),
+                        ),
+                        child: SizedBox(width: w, child: fill),
+                      ),
                     );
                   }
 
@@ -181,13 +202,17 @@ class _PlanMyDaySheetState extends State<_PlanMyDaySheet> {
                           b.end,
                           colors.textSecondary.withValues(alpha: .35),
                         ),
-                      for (final slot in _picked.values)
-                        ?block(
-                          slot.start,
-                          slot.end,
-                          VivordoTheme.brand,
-                          key: ValueKey('${slot.task.id}@${slot.start}'),
-                        ),
+                      // Every time on offer has its slot, filled while
+                      // it's the pick, so picking and unpicking both move.
+                      for (final task in _tasks)
+                        for (final slot in _optionsFor(task))
+                          ?block(
+                            slot.start,
+                            slot.end,
+                            VivordoTheme.brand,
+                            key: ValueKey('${task.id}@${slot.start}'),
+                            on: _picked[task.id]?.start == slot.start,
+                          ),
                     ],
                   );
                 },
