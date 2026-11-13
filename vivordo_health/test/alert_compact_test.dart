@@ -25,24 +25,27 @@ void main() {
     home: Scaffold(body: child),
   );
 
-  testWidgets('a read burnout alert is one row that still opens', (
+  testWidgets('a burnout alert is one row that opens out on a tap', (
     tester,
   ) async {
-    var opened = 0;
-    await tester.pumpWidget(host(BurnoutCard(view: burnout)));
-    expect(find.text(burnout.body), findsOneWidget);
-
+    var expanded = 0;
     await tester.pumpWidget(
-      host(BurnoutCard(view: burnout, compact: true, onOpened: () => opened++)),
+      host(
+        BurnoutCard(view: burnout, compact: true, onExpand: () => expanded++),
+      ),
     );
     expect(find.text('Burnout check'), findsOneWidget);
     expect(find.text(burnout.title), findsOneWidget);
     expect(find.text(burnout.body), findsNothing);
     await tester.tap(find.text('Burnout check'));
-    expect(opened, 1);
+    expect(expanded, 1);
+
+    // Opened out: the full card.
+    await tester.pumpWidget(host(BurnoutCard(view: burnout)));
+    expect(find.text(burnout.body), findsOneWidget);
   });
 
-  testWidgets('a read training-load alert is one row', (tester) async {
+  testWidgets('a training-load alert starts as one row', (tester) async {
     await tester.pumpWidget(host(TrainingLoadAlert(view: load, compact: true)));
     expect(find.text('Training load'), findsOneWidget);
     expect(find.text('Strained'), findsOneWidget);

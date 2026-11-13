@@ -1460,18 +1460,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// After the end-of-day time: wind-down, bed-by and tomorrow's forecast.
-  /// The day "N more" was opened on; the extra alerts stay open that day.
-  String? _moreAlertsDay;
-
-  /// Alerts whose details were opened: "day|alert|level". One read today is
-  /// a single row for the rest of the day; a new level is a full card again.
-  // ponytail: kept for this run of the app only; move to preferences if
-  // the full card coming back after a relaunch gets tiresome.
-  final _alertsOpened = <String>{};
+  /// Burnout and training-load alerts opened out to their full card:
+  /// "day|alert|level". They start as one row each; a tap opens one out, and
+  /// the next day, or a new level, it's a row again.
+  final _alertsExpanded = <String>{};
 
   /// Burnout, training load and Sunday's review, most serious first
-  /// ([rankMyDayAlerts]): one card, then "N more" for the rest.
+  /// ([rankMyDayAlerts]): a row each, opened out to its card by a tap.
   Widget _buildAlerts() => ListenableBuilder(
     listenable: Listenable.merge([
       _weeklyReviewSnapshot,
@@ -1496,73 +1491,32 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         child: switch (alert) {
           MyDayAlert.burnout => BurnoutCard(
             view: burnout!,
-            compact: _alertsOpened.contains(burnoutKey),
-            onOpened: () => setState(() => _alertsOpened.add(burnoutKey)),
+            compact: !_alertsExpanded.contains(burnoutKey),
+            onExpand: () => setState(() => _alertsExpanded.add(burnoutKey)),
           ),
           MyDayAlert.trainingLoad => TrainingLoadAlert(
             view: load!,
-            compact: _alertsOpened.contains(loadKey),
-            onOpened: () => setState(() => _alertsOpened.add(loadKey)),
+            compact: !_alertsExpanded.contains(loadKey),
+            onExpand: () => setState(() => _alertsExpanded.add(loadKey)),
           ),
           MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
         },
       );
-      final rest = alerts.skip(1).toList();
-      final colors = context.vivordoColors;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 12),
-          card(alerts.first),
-          if (_moreAlertsDay == today)
-            for (final alert in rest) card(alert)
-          else if (rest.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Material(
-                color: colors.card,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Colors.black.withValues(alpha: .07)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => setState(() => _moreAlertsDay = today),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          CupertinoIcons.square_stack_3d_up,
-                          size: 18,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '${rest.length} more: '
-                            '${rest.map((a) => a.label).join(', ')}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: colors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          CupertinoIcons.chevron_right,
-                          color: colors.textSecondary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      // A row opening out to its card moves the plan below over a moment
+      // instead of in one frame.
+      return AnimatedSize(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            for (final alert in alerts) card(alert),
+          ],
+        ),
       );
     },
   );

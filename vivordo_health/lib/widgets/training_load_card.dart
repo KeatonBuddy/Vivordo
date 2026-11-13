@@ -271,23 +271,25 @@ class _WeekChart extends StatelessWidget {
 }
 
 /// My Day at High or Strained: what's going on, with a way to act.
-/// [compact] is one line, once it's been read.
+/// [compact] is one line, until it's tapped ([onExpand]).
 class TrainingLoadAlert extends StatelessWidget {
   const TrainingLoadAlert({
     super.key,
     required this.view,
     this.compact = false,
-    this.onOpened,
+    this.onExpand,
   });
 
   final TrainingLoadView view;
   final bool compact;
 
-  /// The details were opened.
-  final VoidCallback? onOpened;
+  /// Tapping the one-line row: open out to the full card.
+  final VoidCallback? onExpand;
 
+  /// The row opens out when it can; the card (or a row with nothing to
+  /// open into) shows the details.
   void _open(BuildContext context) {
-    onOpened?.call();
+    if (compact && onExpand != null) return onExpand!();
     showTrainingLoadDetails(context, view);
   }
 
@@ -332,7 +334,9 @@ class TrainingLoadAlert extends StatelessWidget {
                   style: TextStyle(fontSize: 13, color: colors.textSecondary),
                 ),
                 Icon(
-                  CupertinoIcons.chevron_right,
+                  onExpand != null
+                      ? CupertinoIcons.chevron_down
+                      : CupertinoIcons.chevron_right,
                   color: colors.textSecondary,
                   size: 20,
                 ),

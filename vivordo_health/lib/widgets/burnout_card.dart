@@ -34,23 +34,25 @@ String _levelLabel(String level) => switch (level) {
 /// The nightly burnout check on My Day (docs/scores.md §6): a full card at
 /// Watch or Warning, otherwise a one-line row. Tapping either opens the last
 /// 2 weeks against the person's normal. [compact] keeps an alert to the
-/// one-line row too, once it's been read.
+/// one-line row too, until it's tapped ([onExpand]).
 class BurnoutCard extends StatelessWidget {
   const BurnoutCard({
     super.key,
     required this.view,
     this.compact = false,
-    this.onOpened,
+    this.onExpand,
   });
 
   final BurnoutView view;
   final bool compact;
 
-  /// The details were opened.
-  final VoidCallback? onOpened;
+  /// Tapping the one-line row: open out to the full card.
+  final VoidCallback? onExpand;
 
+  /// The row opens out when it can; the card (or a row with nothing to
+  /// open into) shows the details.
   void _open(BuildContext context) {
-    onOpened?.call();
+    if (compact && onExpand != null) return onExpand!();
     showBurnoutDetails(context, view);
   }
 
@@ -201,7 +203,10 @@ class BurnoutCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                CupertinoIcons.chevron_right,
+                // Down: it opens out here rather than going somewhere.
+                compact && onExpand != null
+                    ? CupertinoIcons.chevron_down
+                    : CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
