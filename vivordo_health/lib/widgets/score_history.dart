@@ -9,6 +9,7 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/day_key.dart';
 import '../src/utils/chart_text.dart';
+import 'apple_ui.dart';
 
 /// Which score a [ScoreHistory] charts.
 enum ScoreHistoryKind {
@@ -405,10 +406,13 @@ class _ScoreHistoryState extends State<ScoreHistory> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // The picker's 6 pt tap margins replace spacing here.
-          const SizedBox(height: 8),
-          _RangePicker(
-            range: _range,
+          const SizedBox(height: 14),
+          // The same switch as the metric screens' D / W / M.
+          AppSegmented<ScoreHistoryRange>(
+            segments: {
+              for (final value in ScoreHistoryRange.values) value: value.label,
+            },
+            value: _range,
             onChanged: (range) => setState(() {
               _range = range;
               _back = 0;
@@ -416,6 +420,7 @@ class _ScoreHistoryState extends State<ScoreHistory> {
               if (_pages.hasClients) _pages.jumpToPage(0);
             }),
           ),
+          const SizedBox(height: 6),
           Row(
             children: [
               IconButton(
@@ -483,77 +488,6 @@ class _ScoreHistoryState extends State<ScoreHistory> {
         ],
       );
     },
-  );
-}
-
-class _RangePicker extends StatelessWidget {
-  const _RangePicker({required this.range, required this.onChanged});
-  final ScoreHistoryRange range;
-  final ValueChanged<ScoreHistoryRange> onChanged;
-
-  /// Invisible tap margin above and below the track, so each segment is at
-  /// least a 44 pt target while the track looks the same.
-  static const _slop = 6.0;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      Positioned.fill(
-        top: _slop,
-        bottom: _slop,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: context.vivordoColors.input,
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: Row(
-          children: [
-            for (final value in ScoreHistoryRange.values)
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: value == range,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    excludeFromSemantics: true,
-                    onTap: () => onChanged(value),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: _slop + 3),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => onChanged(value),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.symmetric(vertical: 7),
-                          decoration: BoxDecoration(
-                            color: value == range
-                                ? const Color(0xFF6B5CE7)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            value.label,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: value == range ? Colors.white : _grey,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    ],
   );
 }
 

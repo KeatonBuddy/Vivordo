@@ -42,83 +42,98 @@ Future<void> showScoreBreakdown(
         ? rows
         : ([...rows]
             ..sort((a, b) => _size(b, signed).compareTo(_size(a, signed))));
-    return SafeArea(
-      top: false,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
-        ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                kicker,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: colors.textSecondary,
-                ),
+    // The handle stays put; the breakdown scrolls under it.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AppleGrabber(),
+        Flexible(
+          child: SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(sheetContext).height * .85,
               ),
-              const SizedBox(height: 2),
-              Text(
-                words?.word ?? '$score',
-                style: TextStyle(
-                  fontSize: words == null ? 38 : 28,
-                  fontWeight: FontWeight.w800,
-                  color: colors.textPrimary,
-                ),
-              ),
-              Text(
-                summary,
-                style: TextStyle(fontSize: 15, color: colors.textSecondary),
-              ),
-              ?history,
-              if (sections.every((section) => section.rows.isEmpty)) ...[
-                const SizedBox(height: 14),
-                Text(
-                  empty,
-                  style: TextStyle(fontSize: 15, color: colors.textSecondary),
-                ),
-              ],
-              for (final section in sections)
-                if (section.rows.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  if (section.heading case final heading?)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        heading,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      kicker,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      words?.word ?? '$score',
+                      style: TextStyle(
+                        fontSize: words == null ? 38 : 28,
+                        fontWeight: FontWeight.w800,
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      summary,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    ?history,
+                    if (sections.every((section) => section.rows.isEmpty)) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        empty,
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
                           color: colors.textSecondary,
                         ),
                       ),
+                    ],
+                    for (final section in sections)
+                      if (section.rows.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        if (section.heading case final heading?)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              heading,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        for (final row in ordered(section.rows))
+                          _BreakdownRowView(
+                            row: row,
+                            signed: signed,
+                            whole: whole[row],
+                            state: states?[row],
+                          ),
+                      ],
+                    const SizedBox(height: 12),
+                    Text(
+                      footer,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: colors.textSecondary,
+                      ),
                     ),
-                  for (final row in ordered(section.rows))
-                    _BreakdownRowView(
-                      row: row,
-                      signed: signed,
-                      whole: whole[row],
-                      state: states?[row],
-                    ),
-                ],
-              const SizedBox(height: 12),
-              Text(
-                footer,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.4,
-                  color: colors.textSecondary,
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   },
 );
