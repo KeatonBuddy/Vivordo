@@ -31,6 +31,8 @@ void main() {
 
   test('the brief only says room to spare when no alert is showing', () {
     expect(roomToSpareHeadline(), 'Room to spare today');
+    expect(goEasy(), isFalse);
+    expect(goEasy(trainingLoad: 'high'), isTrue);
     expect(
       roomToSpareHeadline(burnout: 'steady', trainingLoad: 'building'),
       'Room to spare today',

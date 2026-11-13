@@ -1879,7 +1879,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     final energyWords = showNumbers
                         ? null
                         : live != null
-                        ? capacityLeftWords(live)
+                        ? capacityLeftWords(live, easy: _goEasy)
                         : briefEnergyState(
                             capacity: capacityScore,
                             usual: usualCapacity,
@@ -2298,7 +2298,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final fit = capacity == null
         ? null
         : switch (demandFit(result.total, capacity)) {
-            DemandFit.roomToSpare => 'room to spare',
+            DemandFit.roomToSpare =>
+              _goEasy ? 'room, but go easy' : 'room to spare',
             DemandFit.full => 'a full day',
             DemandFit.over => 'more than you\'ve got',
           };
@@ -3579,6 +3580,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     if (draft == null || !mounted) return;
     await _saveManualPriority(draft);
   }
+
+  /// A burnout or training-load alert is showing under the brief.
+  bool get _goEasy => goEasy(
+    burnout: _burnoutSnapshot.value.data?.level,
+    trainingLoad: _trainingLoadSnapshot.value.data?.state,
+  );
 
   /// Today's open priorities with no time today (overdue ones included).
   List<DailyPriority> _untimedToday(DateTime now) => [

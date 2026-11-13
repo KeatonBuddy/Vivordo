@@ -324,12 +324,18 @@ BriefState briefEnergyState({
 }
 
 /// Words mode's live Capacity: what's left against the plan still ahead
-/// ([CapacityLeft.fit]).
-BriefState capacityLeftWords(CapacityLeft live) => switch (live.fit) {
-  DemandFit.roomToSpare => (word: 'Plenty left', tone: BriefTone.good),
-  DemandFit.full => (word: 'Some room', tone: BriefTone.usual),
-  DemandFit.over => (word: 'Short today', tone: BriefTone.low),
-};
+/// ([CapacityLeft.fit]). With [easy] (an alert is showing under the brief),
+/// room left isn't called plenty.
+BriefState capacityLeftWords(CapacityLeft live, {bool easy = false}) =>
+    switch (live.fit) {
+      DemandFit.roomToSpare when easy => (
+        word: 'Go easy',
+        tone: BriefTone.usual,
+      ),
+      DemandFit.roomToSpare => (word: 'Plenty left', tone: BriefTone.good),
+      DemandFit.full => (word: 'Some room', tone: BriefTone.usual),
+      DemandFit.over => (word: 'Short today', tone: BriefTone.low),
+    };
 
 /// Demand against the Capacity it's set beside, as the headline
 /// ([demandFit]).

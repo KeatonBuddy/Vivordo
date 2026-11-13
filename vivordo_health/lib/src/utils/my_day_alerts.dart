@@ -39,10 +39,14 @@ List<MyDayAlert> rankMyDayAlerts({
   ]..sort((a, b) => rank(a)!.compareTo(rank(b)!));
 }
 
-/// The brief's headline when the day's plan leaves room. With a burnout or
-/// training-load alert showing under it, "Room to spare" would say the
-/// opposite of the card below, so it says to go easy instead.
+/// Whether a burnout or training-load alert is showing on My Day. A plan
+/// that leaves room then says to go easy rather than "room to spare", which
+/// would say the opposite of the card below it.
+bool goEasy({String? burnout, String? trainingLoad}) =>
+    rankMyDayAlerts(burnout: burnout, trainingLoad: trainingLoad).isNotEmpty;
+
+/// The brief's headline when the day's plan leaves room ([goEasy]).
 String roomToSpareHeadline({String? burnout, String? trainingLoad}) =>
-    rankMyDayAlerts(burnout: burnout, trainingLoad: trainingLoad).isEmpty
-    ? 'Room to spare today'
-    : 'Room today, but go easy';
+    goEasy(burnout: burnout, trainingLoad: trainingLoad)
+    ? 'Room today, but go easy'
+    : 'Room to spare today';
