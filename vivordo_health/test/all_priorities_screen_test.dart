@@ -80,7 +80,7 @@ void main() {
         await tester.pumpAndSettle();
         // Overdue counts toward today's work.
         expect(find.text('3 left today'), findsOneWidget);
-        expect(find.text('Overdue'), findsOneWidget);
+        expect(find.text('Carried over'), findsOneWidget);
         expect(find.textContaining('From '), findsOneWidget);
         expect(find.text('Today · 1 of 3'), findsOneWidget);
         expect(find.text('Tomorrow'), findsOneWidget);

@@ -23,6 +23,26 @@ DateTime? overdueSince(DailyPriority p, DateTime today) {
   return due != null && due.isBefore(_day(today)) ? due : null;
 }
 
+/// [open] priorities in My Day's order: today's own first, then those
+/// [carried] over from earlier days, so old items don't bury the day.
+({List<DailyPriority> ordered, List<DailyPriority> carried}) carriedLast(
+  List<DailyPriority> open,
+  DateTime today,
+) {
+  final carried = [
+    for (final p in open)
+      if (overdueSince(p, today) != null) p,
+  ];
+  return (
+    ordered: [
+      for (final p in open)
+        if (overdueSince(p, today) == null) p,
+      ...carried,
+    ],
+    carried: carried,
+  );
+}
+
 /// "From yesterday", "From Mon" within the past week, else "From Sep 28".
 String overdueLabel(DateTime since, DateTime today) {
   final days = DateTime.utc(

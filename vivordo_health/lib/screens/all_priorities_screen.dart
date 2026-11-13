@@ -13,7 +13,6 @@ import '../widgets/habit_chips.dart';
 import '../widgets/swipe_to_delete.dart';
 
 const _doneGreen = habitDoneGreen;
-const _overdueRed = Color(0xFFE5484D);
 
 /// One row per recurring schedule, represented by today's or its next occurrence.
 List<DailyPriority> distinctPriorities(List<DailyPriority> priorities) {
@@ -293,8 +292,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
   List<Widget> _planView(_PlanGroups plan) {
     final tomorrow = DateTime(_day.year, _day.month, _day.day + 1);
     return [
-      if (plan.overdue.isNotEmpty)
-        _group('Overdue', plan.overdue, labelColor: _overdueRed),
+      if (plan.overdue.isNotEmpty) _group('Carried over', plan.overdue),
       _group(
         plan.today.isEmpty
             ? 'Today'
@@ -325,12 +323,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     ];
   }
 
-  Widget _group(
-    String label,
-    List<DailyPriority> items, {
-    Color? labelColor,
-    String? empty,
-  }) {
+  Widget _group(String label, List<DailyPriority> items, {String? empty}) {
     final colors = context.vivordoColors;
     final open = items.where((p) => !p.completed).toList();
     final done = items.where((p) => p.completed).toList();
@@ -380,7 +373,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
             child: Text(
               label,
               style: TextStyle(
-                color: labelColor ?? colors.textSecondary,
+                color: colors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -798,13 +791,7 @@ class _PriorityTile extends StatelessWidget {
                   TextSpan(
                     children: [
                       if (overdue != null)
-                        TextSpan(
-                          text: overdueLabel(overdue, today),
-                          style: const TextStyle(
-                            color: _overdueRed,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                        TextSpan(text: overdueLabel(overdue, today)),
                       if (overdue != null && rest.isNotEmpty)
                         const TextSpan(text: ' · '),
                       TextSpan(

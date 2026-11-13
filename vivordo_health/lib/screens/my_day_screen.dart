@@ -3198,6 +3198,11 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final open = priorities.where((p) => !p.completed).toList();
       final done = priorities.where((p) => p.completed).toList();
       final hidden = open.length - _shownPriorities;
+      // Today's own come first; what was carried over from earlier days
+      // follows under one quiet heading, so old items don't bury the day.
+      final (:ordered, :carried) = carriedLast(open, _priorityDay);
+      final shown = ordered.take(_shownPriorities).toList();
+      final carriedShown = carried.isNotEmpty && shown.contains(carried.first);
       // Plan my day: open priorities with no time today (overdue ones
       // included), while there's still day before the wrap-up time.
       final now = DateTime.now();
@@ -3259,14 +3264,39 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       } else {
         body = Column(
           children: [
-            for (final priority in open.take(_shownPriorities)) ...[
+            for (final priority in shown) ...[
+              if (carriedShown && identical(priority, carried.first))
+                InkWell(
+                  onTap: _openAllPriorities,
+                  child: Container(
+                    color: colors.cardMuted,
+                    padding: const EdgeInsets.fromLTRB(18, 9, 16, 9),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SubLabel('Carried over · ${carried.length}'),
+                        ),
+                        const Text(
+                          'Review',
+                          style: TextStyle(
+                            color: MyDayScreen.purple,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               row(priority),
               divider,
             ],
             if (hidden > 0) ...[
               _ListAction(
                 icon: CupertinoIcons.ellipsis,
-                label: '$hidden more',
+                label: carried.isEmpty || carriedShown
+                    ? '$hidden more'
+                    : '$hidden more · ${carried.length} carried over',
                 muted: true,
                 onTap: _openAllPriorities,
               ),
@@ -4082,10 +4112,10 @@ class _PriorityRow extends StatelessWidget {
     final completed = checked ?? priority.completed;
     final today = DateTime.now();
     final overdue = overdueSince(priority, today);
-    // A carried-over priority says where it came from instead of its time.
-    final (pill, pillColor) = overdue != null
-        ? (overdueLabel(overdue, today), const Color(0xFFE5484D))
-        : (_timeLabel, MyDayScreen.purple);
+    // A carried-over priority says where it came from, quietly under its
+    // title, instead of its time.
+    final pill = overdue != null ? null : _timeLabel;
+    const pillColor = MyDayScreen.purple;
     final pillBadge = pill == null
         ? null
         : Container(
@@ -4184,6 +4214,14 @@ class _PriorityRow extends StatelessWidget {
                             : null,
                       ),
                     ),
+                    if (overdue != null)
+                      Text(
+                        overdueLabel(overdue, today),
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
                     // At large text the pill goes under the title, so the
                     // title keeps the row's width.
                     if (pillBadge != null && stacked) ...[
