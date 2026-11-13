@@ -33,18 +33,33 @@ String _levelLabel(String level) => switch (level) {
 
 /// The nightly burnout check on My Day (docs/scores.md §6): a full card at
 /// Watch or Warning, otherwise a one-line row. Tapping either opens the last
-/// 2 weeks against the person's normal.
+/// 2 weeks against the person's normal. [compact] keeps an alert to the
+/// one-line row too, once it's been read.
 class BurnoutCard extends StatelessWidget {
-  const BurnoutCard({super.key, required this.view});
+  const BurnoutCard({
+    super.key,
+    required this.view,
+    this.compact = false,
+    this.onOpened,
+  });
 
   final BurnoutView view;
+  final bool compact;
+
+  /// The details were opened.
+  final VoidCallback? onOpened;
+
+  void _open(BuildContext context) {
+    onOpened?.call();
+    showBurnoutDetails(context, view);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final color = _levelColor(view.level);
     final alert = view.level == 'warning' || view.level == 'watch';
-    if (!alert) return _row(context);
+    if (!alert || compact) return _row(context);
     return Material(
       color: alert
           ? Color.alphaBlend(color.withValues(alpha: .10), colors.card)
@@ -59,7 +74,7 @@ class BurnoutCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showBurnoutDetails(context, view),
+        onTap: () => _open(context),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -138,7 +153,9 @@ class BurnoutCard extends StatelessWidget {
   Widget _row(BuildContext context) {
     final colors = context.vivordoColors;
     // No day count: "14 of 42 days" reads as a long wait.
-    final status = view.level == 'learning'
+    final status = view.level == 'warning' || view.level == 'watch'
+        ? view.title
+        : view.level == 'learning'
         ? 'Learning your normal'
         : view.early
         ? 'Steady · early check'
@@ -151,7 +168,7 @@ class BurnoutCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showBurnoutDetails(context, view),
+        onTap: () => _open(context),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
           child: Row(
@@ -165,19 +182,23 @@ class BurnoutCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Burnout check',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textPrimary,
-                  ),
+              Text(
+                'Burnout check',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: colors.textPrimary,
                 ),
               ),
-              Text(
-                status,
-                style: TextStyle(fontSize: 13, color: colors.textSecondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                ),
               ),
               Icon(
                 CupertinoIcons.chevron_right,

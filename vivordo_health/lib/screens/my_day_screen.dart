@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import '../widgets/contextual_insight_bar.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1463,6 +1464,12 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   /// The day "N more" was opened on; the extra alerts stay open that day.
   String? _moreAlertsDay;
 
+  /// Alerts whose details were opened: "day|alert|level". One read today is
+  /// a single row for the rest of the day; a new level is a full card again.
+  // ponytail: kept for this run of the app only; move to preferences if
+  // the full card coming back after a relaunch gets tiresome.
+  final _alertsOpened = <String>{};
+
   /// Burnout, training load and Sunday's review, most serious first
   /// ([rankMyDayAlerts]): one card, then "N more" for the rest.
   Widget _buildAlerts() => ListenableBuilder(
@@ -1481,15 +1488,25 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         weeklyReview: review != null,
       );
       if (alerts.isEmpty) return const SizedBox.shrink();
+      final today = localDayKey(DateTime.now());
+      final burnoutKey = '$today|burnout|${burnout?.level}';
+      final loadKey = '$today|load|${load?.state}';
       Widget card(MyDayAlert alert) => Padding(
         padding: const EdgeInsets.only(top: 12),
         child: switch (alert) {
-          MyDayAlert.burnout => BurnoutCard(view: burnout!),
-          MyDayAlert.trainingLoad => TrainingLoadAlert(view: load!),
+          MyDayAlert.burnout => BurnoutCard(
+            view: burnout!,
+            compact: _alertsOpened.contains(burnoutKey),
+            onOpened: () => setState(() => _alertsOpened.add(burnoutKey)),
+          ),
+          MyDayAlert.trainingLoad => TrainingLoadAlert(
+            view: load!,
+            compact: _alertsOpened.contains(loadKey),
+            onOpened: () => setState(() => _alertsOpened.add(loadKey)),
+          ),
           MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
         },
       );
-      final today = localDayKey(DateTime.now());
       final rest = alerts.skip(1).toList();
       final colors = context.vivordoColors;
       return Column(
@@ -2947,6 +2964,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Widget _buildWatchStrip(BackToBackEventBlock block) {
     final colors = context.vivordoColors;
+    final longest = block.events.fold<int>(
+      1,
+      (most, e) => math.max(most, e.end.difference(e.start).inMinutes),
+    );
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -2979,13 +3000,29 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Sized by length (none under 45% of the longest, so a short
+              // one still fits its name), each with when it starts.
               for (final event in block.events)
                 Expanded(
-                  child: _WatchSegment(event.title, color: MyDayScreen.purple),
+                  flex: math.max(
+                    event.end.difference(event.start).inMinutes,
+                    (longest * .45).round(),
+                  ),
+                  child: _WatchSegment(
+                    event.title,
+                    formatClock(event.start),
+                    color: MyDayScreen.purple,
+                  ),
                 ),
-              const Expanded(
-                child: _WatchSegment('Reset', color: timelineOpenGreen),
+              Expanded(
+                flex: (longest * .45).round(),
+                child: _WatchSegment(
+                  'Reset',
+                  formatClock(block.end),
+                  color: timelineOpenGreen,
+                ),
               ),
             ],
           ),
@@ -3966,9 +4003,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 typedef _TimelineItem = ({_CalendarEvent? event, DailyPriority? priority});
 
 class _WatchSegment extends StatelessWidget {
-  const _WatchSegment(this.title, {required this.color});
+  const _WatchSegment(this.title, this.time, {required this.color});
 
   final String title;
+  final String time;
   final Color color;
 
   @override
@@ -3979,11 +4017,25 @@ class _WatchSegment extends StatelessWidget {
       color: color.withValues(alpha: .14),
       borderRadius: BorderRadius.circular(6),
     ),
-    child: Text(
-      title,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          time,
+          maxLines: 1,
+          style: TextStyle(color: color.withValues(alpha: .75), fontSize: 10),
+        ),
+      ],
     ),
   );
 }
