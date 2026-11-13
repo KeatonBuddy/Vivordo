@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,26 +9,6 @@ import 'plan_classifier.dart';
 import 'notification_service.dart';
 import '../utils/priority_reminder.dart';
 import '../utils/priority_schedule.dart';
-
-class CalendarPriorityCandidate {
-  const CalendarPriorityCandidate({
-    required this.sourceEventKey,
-    required this.title,
-    required this.start,
-    required this.end,
-    required this.isAllDay,
-    required this.isRecurring,
-    required this.attendeeCount,
-  });
-
-  final String sourceEventKey;
-  final String title;
-  final DateTime start;
-  final DateTime end;
-  final bool isAllDay;
-  final bool isRecurring;
-  final int attendeeCount;
-}
 
 class DailyPriority {
   const DailyPriority({
@@ -198,71 +177,6 @@ class PriorityTemplate {
 
 class DailyPriorityService {
   DailyPriorityService._();
-
-  static const _actionKeywords = <String>{
-    'appointment',
-    'assessment',
-    'audition',
-    'book appointment',
-    'complete',
-    'complete application',
-    'confirm',
-    'deadline',
-    'deliver',
-    'dentist',
-    'doctor',
-    'due',
-    'exam',
-    'finalize',
-    'finish',
-    'follow up',
-    'interview',
-    'pay bill',
-    'payment',
-    'physio',
-    'pick up',
-    'practice',
-    'prepare',
-    'prepare for',
-    'presentation',
-    'register',
-    'rehearsal',
-    'renew',
-    'reply',
-    'respond',
-    'review',
-    'send application',
-    'study',
-    'submit',
-    'submit application',
-    'training',
-    'vaccination',
-    'workout',
-  };
-  static const _ignoredPhrases = <String>{
-    'birthday',
-    'break',
-    'brunch',
-    'commute',
-    'concert',
-    'dinner',
-    'drinks',
-    'free',
-    'game',
-    'golf',
-    'holiday',
-    'hold',
-    'lunch',
-    'movie',
-    'optional',
-    'out of office',
-    'ooo',
-    'party',
-    'social',
-    'vacation',
-  };
-  static const _ignoredPrefixes = <String>{'watch'};
-  static final _nonAlphanumeric = RegExp(r'[^a-z0-9]+');
 
   static DateTime _dateOnly(DateTime day) =>
       DateTime(day.year, day.month, day.day);
@@ -479,6 +393,8 @@ class DailyPriorityService {
     String storedDay,
     String viewingDay,
   ) {
+    // Events used to be copied in as priorities. Old copies stay hidden.
+    if (data['source'] == 'calendar') return false;
     if (data['dismissed'] != true &&
         (data['planning'] as Map?)?['plannedDay'] == viewingDay) {
       return true;
@@ -487,150 +403,10 @@ class DailyPriorityService {
       return false;
     }
     if (storedDay == viewingDay) return true;
-    // Recurring occurrences and imported calendar events remain date-bound.
+    // Recurring occurrences remain date-bound.
     return data['source'] == 'manual' &&
         data['sourceStart'] == null &&
         (data['completed'] != true || data['completedDay'] == viewingDay);
-  }
-
-  /// The time fields to update on an imported calendar priority whose event
-  /// has moved, or null when nothing changed (or it isn't one).
-  @visibleForTesting
-  static Map<String, Object>? calendarTimeChanges(
-    Map<String, dynamic> data,
-    CalendarPriorityCandidate event,
-  ) {
-    if (data['source'] != 'calendar') return null;
-    DateTime? at(Object? value) => (value as Timestamp?)?.toDate();
-    if (at(data['sourceStart']) == event.start &&
-        at(data['sourceEnd']) == event.end &&
-        data['isAllDay'] == event.isAllDay) {
-      return null;
-    }
-    return {
-      'sourceStart': Timestamp.fromDate(event.start),
-      'sourceEnd': Timestamp.fromDate(event.end),
-      'isAllDay': event.isAllDay,
-    };
-  }
-
-  /// What to change on an imported calendar priority now that its event is
-  /// [there] or isn't, or null for nothing. One whose event is gone
-  /// (deleted, or moved to another day) is removed and marked, so it comes
-  /// back if the event does, e.g. after a calendar read that came back
-  /// empty. Ticked-off ones stay, and so do ones the user removed.
-  @visibleForTesting
-  static Map<String, Object>? calendarPresenceChanges(
-    Map<String, dynamic> data, {
-    required bool there,
-  }) {
-    if (data['source'] != 'calendar') return null;
-    final removedWithEvent = data['removedWithEvent'] == true;
-    if (there) {
-      return removedWithEvent
-          ? {'dismissed': false, 'removedWithEvent': false}
-          : null;
-    }
-    if (removedWithEvent ||
-        data['dismissed'] == true ||
-        data['completed'] == true) {
-      return null;
-    }
-    return {'dismissed': true, 'removedWithEvent': true};
-  }
-
-  static Future<void> seedFromCalendar(
-    DateTime day,
-    Iterable<CalendarPriorityCandidate> candidates,
-  ) async {
-    final collection = _collection(day);
-    if (collection == null) return;
-    final existing = await collection.get();
-    final existingById = {
-      for (final document in existing.docs) document.id: document,
-    };
-    var batch = FirebaseFirestore.instance.batch();
-    var writes = 0;
-    Future<void> flushIfFull() async {
-      if (writes < 450) return;
-      await batch.commit();
-      batch = FirebaseFirestore.instance.batch();
-      writes = 0;
-    }
-
-    final seen = <String>{};
-    for (final candidate in candidates) {
-      final id = _calendarDocumentId(candidate.sourceEventKey);
-      seen.add(id);
-      final existingDocument = existingById[id];
-      if (!_shouldSuggest(candidate)) {
-        final data = existingDocument?.data();
-        if (data?['source'] == 'calendar' &&
-            data?['dismissed'] != true &&
-            data?['completed'] != true) {
-          batch.update(existingDocument!.reference, {
-            'dismissed': true,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-          writes++;
-          await flushIfFull();
-        }
-        continue;
-      }
-      if (existingDocument != null) {
-        // The event moved (in the app, a day fix or Google Calendar): keep
-        // its priority, and so its reminder, at the new time.
-        final moved = calendarTimeChanges(existingDocument.data(), candidate);
-        final back = calendarPresenceChanges(
-          existingDocument.data(),
-          there: true,
-        );
-        if (moved != null || back != null) {
-          batch.update(existingDocument.reference, {
-            ...?moved,
-            ...?back,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-          writes++;
-          await flushIfFull();
-        }
-        continue;
-      }
-      batch.set(collection.doc(id), {
-        'title': candidate.title.trim(),
-        'completed': false,
-        'dismissed': false,
-        'source': 'calendar',
-        'sourceEventKey': candidate.sourceEventKey,
-        'sourceStart': Timestamp.fromDate(candidate.start),
-        'sourceEnd': Timestamp.fromDate(candidate.end),
-        'isAllDay': candidate.isAllDay,
-        'score': _score(candidate),
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      writes++;
-      await flushIfFull();
-    }
-    // Events no longer on this day take their priorities with them.
-    for (final document in existing.docs) {
-      if (seen.contains(document.id)) continue;
-      final gone = calendarPresenceChanges(document.data(), there: false);
-      if (gone == null) continue;
-      batch.update(document.reference, {
-        ...gone,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      writes++;
-      await flushIfFull();
-    }
-    if (writes > 0) await batch.commit();
-    await _userDocument()?.update({
-      'priorityReminderDays': FieldValue.arrayUnion([localDayKey(day)]),
-    });
-    for (final document in (await collection.get()).docs) {
-      await _syncReminder(document.reference);
-    }
   }
 
   static Future<DocumentReference<Map<String, dynamic>>?> createManual({
@@ -1169,7 +945,10 @@ class DailyPriorityService {
     DocumentReference<Map<String, dynamic>> reference,
   ) async {
     final data = (await reference.get()).data();
-    final time = data == null || data['dismissed'] == true
+    final time =
+        data == null ||
+            data['dismissed'] == true ||
+            data['source'] == 'calendar'
         ? null
         : priorityReminderTime(
             start: (data['sourceStart'] as Timestamp?)?.toDate(),
@@ -1217,59 +996,5 @@ class DailyPriorityService {
         await _syncReminder(document.reference);
       }
     }
-  }
-
-  static bool _shouldSuggest(
-    CalendarPriorityCandidate candidate, {
-    DateTime? now,
-  }) {
-    final title = _normalizeForMatching(candidate.title);
-    if (title.length < 3 || !candidate.end.isAfter(now ?? DateTime.now())) {
-      return false;
-    }
-    if (_isIgnoredTitle(title)) return false;
-    return _actionKeywords.any((keyword) => _containsTerm(title, keyword));
-  }
-
-  static int _score(CalendarPriorityCandidate candidate) {
-    final title = _normalizeForMatching(candidate.title);
-    if (_isIgnoredTitle(title)) return 0;
-    return _actionKeywords.any((keyword) => _containsTerm(title, keyword))
-        ? 3
-        : 0;
-  }
-
-  @visibleForTesting
-  static bool shouldSuggestForTesting(
-    CalendarPriorityCandidate candidate, {
-    required DateTime now,
-  }) => _shouldSuggest(candidate, now: now);
-
-  @visibleForTesting
-  static int scoreForTesting(CalendarPriorityCandidate candidate) =>
-      _score(candidate);
-
-  static bool _isIgnoredTitle(String title) {
-    final normalized = _normalizeForMatching(title);
-    return _ignoredPhrases.any((phrase) => _containsTerm(normalized, phrase)) ||
-        _ignoredPrefixes.any(
-          (prefix) => normalized == prefix || normalized.startsWith('$prefix '),
-        );
-  }
-
-  static String _normalizeForMatching(String value) => value
-      .toLowerCase()
-      .replaceAll(_nonAlphanumeric, ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-
-  static bool _containsTerm(String normalizedTitle, String term) {
-    final normalizedTerm = _normalizeForMatching(term);
-    return ' $normalizedTitle '.contains(' $normalizedTerm ');
-  }
-
-  static String _calendarDocumentId(String sourceEventKey) {
-    final encoded = base64Url.encode(utf8.encode(sourceEventKey));
-    return 'calendar_${encoded.replaceAll('=', '')}';
   }
 }

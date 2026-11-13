@@ -1021,19 +1021,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     unawaited(_loadPatterns());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);
-      await DailyPriorityService.seedFromCalendar(
-        dayStart,
-        events
-            .where((event) => !event.isPriorityLinked)
-            .map((event) => event.priorityCandidate),
-      );
       await DailyPriorityService.materializeRecurring(dayEnd);
-      await DailyPriorityService.seedFromCalendar(
-        dayEnd,
-        tomorrowEvents
-            .where((e) => !e.isPriorityLinked)
-            .map((e) => e.priorityCandidate),
-      );
     } catch (error) {
       debugPrint('Could not generate daily priorities: $error');
     }
@@ -4349,16 +4337,6 @@ class _CalendarEvent {
 
   String get timeLabel =>
       isAllDay ? 'All day' : DateFormat('h:mm a').format(start);
-
-  CalendarPriorityCandidate get priorityCandidate => CalendarPriorityCandidate(
-    sourceEventKey: sourceEventKey,
-    title: title,
-    start: start,
-    end: end,
-    isAllDay: isAllDay,
-    isRecurring: isRecurring,
-    attendeeCount: attendeeCount,
-  );
 
   String get durationLabel {
     if (isAllDay) return 'All-day event';
