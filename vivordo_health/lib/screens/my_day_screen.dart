@@ -4131,8 +4131,8 @@ class _PriorityRow extends StatelessWidget {
     final completed = checked ?? priority.completed;
     final today = DateTime.now();
     final overdue = overdueSince(priority, today);
-    // A carried-over priority says where it came from, quietly under its
-    // title, instead of its time.
+    // A carried-over priority says where it came from under its title,
+    // instead of its time.
     final pill = overdue != null ? null : _timeLabel;
     const pillColor = MyDayScreen.purple;
     final pillBadge = pill == null
@@ -4233,12 +4233,14 @@ class _PriorityRow extends StatelessWidget {
                             : null,
                       ),
                     ),
+                    // Red, so a late one still stands out in its quiet group.
                     if (overdue != null)
                       Text(
                         overdueLabel(overdue, today),
                         style: TextStyle(
-                          color: colors.textSecondary,
+                          color: colors.danger,
                           fontSize: 12,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     // At large text the pill goes under the title, so the

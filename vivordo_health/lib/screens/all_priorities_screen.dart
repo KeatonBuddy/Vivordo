@@ -791,7 +791,13 @@ class _PriorityTile extends StatelessWidget {
                   TextSpan(
                     children: [
                       if (overdue != null)
-                        TextSpan(text: overdueLabel(overdue, today)),
+                        TextSpan(
+                          text: overdueLabel(overdue, today),
+                          style: TextStyle(
+                            color: colors.danger,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       if (overdue != null && rest.isNotEmpty)
                         const TextSpan(text: ' · '),
                       TextSpan(

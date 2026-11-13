@@ -703,7 +703,6 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
     final minutes = priorityMinutes(p);
     final overdue = overdueSince(p, day);
     final detail = [
-      if (overdue != null) overdueLabel(overdue, day),
       if (start != null && !p.isAllDay && DateUtils.isSameDay(start, day))
         end == null
             ? DateFormat('h:mm a').format(start)
@@ -748,8 +747,26 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                       decoration: checked ? TextDecoration.lineThrough : null,
                     ),
                   ),
-                  Text(
-                    detail.isEmpty ? 'Anytime' : detail.join(' · '),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        if (overdue != null)
+                          TextSpan(
+                            text: overdueLabel(overdue, day),
+                            style: TextStyle(
+                              color: colors.danger,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (overdue != null && detail.isNotEmpty)
+                          const TextSpan(text: ' · '),
+                        TextSpan(
+                          text: detail.isEmpty && overdue == null
+                              ? 'Anytime'
+                              : detail.join(' · '),
+                        ),
+                      ],
+                    ),
                     style: TextStyle(color: colors.textSecondary, fontSize: 12),
                   ),
                 ],
