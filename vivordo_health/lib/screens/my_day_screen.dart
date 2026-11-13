@@ -3180,14 +3180,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       // Plan my day: open priorities with no time today (overdue ones
       // included), while there's still day before the wrap-up time.
       final now = DateTime.now();
-      final untimed = [
-        for (final p in open)
-          if (!p.habit &&
-              !p.isAllDay &&
-              (p.sourceStart == null ||
-                  !DateUtils.isSameDay(p.sourceStart, now)))
-            p,
-      ];
+      final untimed = _untimedToday(now);
       // Only when at least one of them fits today.
       final plan =
           untimed.isEmpty ||
@@ -3530,15 +3523,67 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     await _saveManualPriority(draft);
   }
 
-  /// Opens the Priority / Event sheet for an open slot starting at [start].
+  /// Today's open priorities with no time today (overdue ones included).
+  List<DailyPriority> _untimedToday(DateTime now) => [
+    for (final p in _prioritySnapshot.value.data ?? const <DailyPriority>[])
+      if (!p.completed &&
+          !p.habit &&
+          !p.isAllDay &&
+          (p.sourceStart == null || !DateUtils.isSameDay(p.sourceStart, now)))
+        p,
+  ];
+
+  /// Opens the sheet for an open slot starting at [start]: the priorities
+  /// waiting for a time that fit it, or a new priority or event.
   Future<void> _planSlot(DateTime start, [DateTime? end]) async {
-    final result = await showPlanSlotSheet(context, start: start, end: end);
+    final result = await showPlanSlotSheet(
+      context,
+      start: start,
+      end: end,
+      waiting: _untimedToday(DateTime.now()),
+    );
     if (!mounted) return;
     switch (result) {
+      case SlotPick pick:
+        await _putInSlot(pick);
       case PriorityDraft draft:
         await _saveManualPriority(draft);
       case CalendarEventDraft draft:
         await _saveGoogleEvent(draft);
+    }
+  }
+
+  /// A waiting priority gets the slot's time, in Vivordo only (like Plan my
+  /// day), with an undo back to its own day and time.
+  Future<void> _putInSlot(SlotPick pick) async {
+    final p = pick.priority;
+    final today = DateUtils.dateOnly(pick.start);
+    Future<void> place(DailyPriority q, DateTime date, DateTime? start) =>
+        DailyPriorityService.editPriority(
+          q,
+          title: q.title,
+          date: date,
+          scheduledAt: start,
+          completed: q.completed,
+          reminderMinutes: q.reminderMinutes,
+          reminderTimeMinutes: q.reminderTimeMinutes,
+        );
+    try {
+      await place(p, today, pick.start);
+    } catch (_) {
+      _showMessage("Couldn't set the time.", error: true);
+      return;
+    }
+    if (!await _showUndo(
+      '${p.title} at ${DateFormat('h:mm a').format(pick.start)}',
+    )) {
+      return;
+    }
+    try {
+      final current = await _priorityOn(today, p.id);
+      if (current != null) await place(current, p.date ?? today, p.sourceStart);
+    } catch (_) {
+      _showMessage("Couldn't undo the time.", error: true);
     }
   }
 
