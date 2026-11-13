@@ -684,7 +684,7 @@ class _AddCalendarEventSheetState extends State<_AddCalendarEventSheet> {
                         _PickerRow(
                           icon: CupertinoIcons.calendar,
                           label: 'Date',
-                          value: DateFormat('MMMM d, y').format(_date),
+                          value: formDateLabel(_date),
                           onTap: _pickDate,
                         ),
                         _PickerRow(

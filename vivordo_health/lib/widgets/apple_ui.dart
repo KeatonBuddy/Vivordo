@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../theme/vivordo_theme.dart';
 
@@ -1371,6 +1372,16 @@ class AppSegmented<T extends Object> extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A date as a form row's value, the same in every sheet: "Today",
+/// "Mon, Nov 2", or with the year when it isn't this one.
+String formDateLabel(DateTime date) {
+  final now = DateTime.now();
+  if (DateUtils.isSameDay(date, now)) return 'Today';
+  return DateFormat(
+    date.year == now.year ? 'EEE, MMM d' : 'MMM d, y',
+  ).format(date);
 }
 
 /// A round completion check (replaces Material's square checkbox).

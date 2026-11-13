@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
+import 'package:vivordo_health/src/utils/priority_schedule.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/vivordo_time_picker.dart';
 import 'apple_ui.dart';
@@ -321,9 +322,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
     );
   }
 
-  String get _dateLabel => DateUtils.isSameDay(_date, DateTime.now())
-      ? 'Today'
-      : DateFormat('MMM d, y').format(_date);
+  String get _dateLabel => formDateLabel(_date);
 
   String get _repeatSummary {
     const names = {
@@ -509,11 +508,11 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                         children: [
                           _Row(
                             icon: CupertinoIcons.timer,
-                            label: 'Estimated duration',
+                            label: 'Duration',
                             value: _planning['minutes'] == null
                                 ? 'Not set'
                                 : '${_isEstimate('minutes') ? '≈ ' : ''}'
-                                      '${(_planning['minutes'] as num).toInt() ~/ 60} hr ${(_planning['minutes'] as num).toInt() % 60} min',
+                                      '${formatPriorityMinutes((_planning['minutes'] as num).toInt())}',
                             onTap: () async {
                               FocusScope.of(context).unfocus();
                               final minutes = await showPriorityDurationPicker(
@@ -533,7 +532,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                           ),
                           _Row(
                             icon: CupertinoIcons.chart_bar_fill,
-                            label: 'Effort (optional)',
+                            label: 'Effort',
                             value:
                                 (_planning['effort'] != null &&
                                         _isEstimate('effort')
@@ -623,8 +622,7 @@ class _AddPrioritySheetState extends State<_AddPrioritySheet> {
                             icon: CupertinoIcons.bell,
                             label: 'Reminder',
                             value: _time == null
-                                ? (_reminderTime?.format(context) ??
-                                      'Choose reminder time')
+                                ? (_reminderTime?.format(context) ?? 'None')
                                 : _reminderMinutes == null
                                 ? 'None'
                                 : priorityReminderLabel(_reminderMinutes!),
@@ -866,17 +864,18 @@ class _Row extends StatelessWidget {
               Icon(icon, color: _purple, size: 23),
               const SizedBox(width: 16),
             ],
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(color: colors.textPrimary, fontSize: 16),
-              ),
+            Text(
+              label,
+              style: TextStyle(color: colors.textPrimary, fontSize: 16),
             ),
-            Flexible(
+            const SizedBox(width: 12),
+            // On the right, like the event form's rows.
+            Expanded(
               child: Text(
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
                 style: TextStyle(color: colors.textSecondary, fontSize: 15),
               ),
             ),

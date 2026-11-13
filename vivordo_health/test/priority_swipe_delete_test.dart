@@ -90,7 +90,7 @@ void main() {
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
       expect(find.text('Edit Priority'), findsOneWidget);
-      expect(find.text('Choose reminder time'), findsOneWidget);
+      expect(find.text('None'), findsOneWidget);
       expect(find.text('Date'), findsOneWidget);
       expect(find.text('Time'), findsOneWidget);
       await tester.ensureVisible(find.text('Mark as completed'));
