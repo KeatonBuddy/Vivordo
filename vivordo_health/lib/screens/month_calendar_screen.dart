@@ -7,12 +7,15 @@ import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/services/calendar_cognitive_load_service.dart';
 import '../src/services/calendar_service.dart';
+import '../src/services/daily_priority_service.dart';
 import '../src/utils/day_agenda.dart';
+import '../src/utils/priority_schedule.dart';
 import '../widgets/add_calendar_event_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
 import '../src/utils/meeting_patterns.dart' show seriesKeyFor;
 import '../widgets/calendar_event_summary_sheet.dart';
+import '../widgets/check_off.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/plan_slot_sheet.dart';
 
@@ -476,7 +479,13 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
                 ),
               ),
               const SizedBox(height: 22),
-              _buildSelectedDay(now),
+              // The day's priorities too: My Day counts them for tomorrow,
+              // and "View day" lands here.
+              _PrioritiesOn(
+                key: ValueKey(_selectedDay),
+                day: _selectedDay,
+                builder: (priorities) => _buildSelectedDay(now, priorities),
+              ),
             ],
           ),
         ),
@@ -486,9 +495,15 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
 
   /// Today runs from now to the end of the day, like My Day. Other future
   /// days run from their first event to their last. Past days list events.
-  Widget _buildSelectedDay(DateTime now) {
+  Widget _buildSelectedDay(DateTime now, List<DailyPriority> priorities) {
     final colors = context.vivordoColors;
     final day = _selectedDay;
+    final open = priorities.where((p) => !p.completed).toList();
+    // Open first (today's own before carried-over ones), then the done.
+    final listed = [
+      ...carriedLast(open, day).ordered,
+      ...priorities.where((p) => p.completed),
+    ];
     final dayEnd = DateTime(day.year, day.month, day.day + 1);
     final events = _eventsFor(day);
     final allDay = events.where((e) => e.isAllDay).toList();
@@ -530,6 +545,8 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
             : '${events.length} ${events.length == 1 ? 'event' : 'events'}',
       if (!_loading && openMinutes > 0)
         '${formatSpan(Duration(minutes: openMinutes))} open',
+      if (open.isNotEmpty)
+        '${open.length} ${open.length == 1 ? 'priority' : 'priorities'}',
     ].join(' · ');
 
     Widget row(AgendaItem<_MonthEvent> entry, {bool past = false}) =>
@@ -639,9 +656,132 @@ class _MonthCalendarScreenState extends State<MonthCalendarScreen> {
           ),
           child: body,
         ),
+        if (listed.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'Priorities',
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: colors.card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: colors.border),
+            ),
+            child: Column(
+              children: [for (final p in listed) _priorityRow(p, day)],
+            ),
+          ),
+        ],
       ],
     );
   }
+
+  Future<void> _togglePriority(DailyPriority p) async {
+    try {
+      await DailyPriorityService.setCompleted(p, !p.completed);
+    } catch (_) {
+      _showMessage("Couldn't update the priority. Try again.", error: true);
+    }
+  }
+
+  /// A priority on [day]: tick it off here; editing stays on My Day.
+  Widget _priorityRow(DailyPriority p, DateTime day) {
+    final colors = context.vivordoColors;
+    final start = p.sourceStart;
+    final end = p.sourceEnd;
+    final minutes = priorityMinutes(p);
+    final overdue = overdueSince(p, day);
+    final detail = [
+      if (overdue != null) overdueLabel(overdue, day),
+      if (start != null && !p.isAllDay && DateUtils.isSameDay(start, day))
+        end == null
+            ? DateFormat('h:mm a').format(start)
+            : '${DateFormat('h:mm').format(start)}–'
+                  '${DateFormat('h:mm a').format(end)}',
+      if (minutes != null && end == null) formatPriorityMinutes(minutes),
+      ?switch (p.planning['effort']) {
+        'light' => 'Light',
+        'moderate' => 'Moderate',
+        'demanding' => 'Demanding',
+        _ => null,
+      },
+    ];
+    return CheckOff(
+      key: ValueKey(p.reference.path),
+      completed: p.completed,
+      onToggle: () => _togglePriority(p),
+      builder: (context, checked, toggle) => Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 14, 4),
+        child: Row(
+          children: [
+            Semantics(
+              button: true,
+              label: checked ? 'Mark incomplete' : 'Mark completed',
+              child: IconButton(
+                onPressed: toggle,
+                icon: AppCheckCircle(checked: checked, size: 24),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    p.title,
+                    style: TextStyle(
+                      color: checked
+                          ? colors.textSecondary
+                          : colors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      decoration: checked ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  Text(
+                    detail.isEmpty ? 'Anytime' : detail.join(' · '),
+                    style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Watches [day]'s priorities (as My Day shows them) for [builder]. Keyed
+/// by day, so picking another day starts a fresh listener.
+class _PrioritiesOn extends StatefulWidget {
+  const _PrioritiesOn({super.key, required this.day, required this.builder});
+
+  final DateTime day;
+  final Widget Function(List<DailyPriority> priorities) builder;
+
+  @override
+  State<_PrioritiesOn> createState() => _PrioritiesOnState();
+}
+
+class _PrioritiesOnState extends State<_PrioritiesOn> {
+  late final _stream = DailyPriorityService.watch(widget.day);
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<DailyPriority>>(
+    stream: _stream,
+    builder: (context, snapshot) => widget.builder(snapshot.data ?? const []),
+  );
 }
 
 class _CalendarDayCell extends StatelessWidget {
