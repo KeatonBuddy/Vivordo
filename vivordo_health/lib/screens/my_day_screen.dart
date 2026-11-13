@@ -76,6 +76,7 @@ import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
 import '../src/services/wind_down_reminder.dart';
+import '../widgets/check_off.dart';
 import '../widgets/day_fixes_card.dart';
 import '../widgets/energy_forecast_view.dart';
 
@@ -3199,15 +3200,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           _planHiddenDay == localDayKey(now) &&
           untimed.every((p) => _planHiddenIds.contains(p.reference.path));
       final canPlan = plan != null && plan.placed.isNotEmpty && !hiddenToday;
-      Widget row(DailyPriority priority) => _PriorityRow(
+      Widget row(DailyPriority priority) => CheckOff(
         key: ValueKey(priority.reference.path),
-        priority: priority,
+        completed: priority.completed,
         onToggle: () => _togglePriority(priority),
-        onDelete: () => _deletePriority(priority),
-        onDeleteAll: priority.templateId == null
-            ? null
-            : () => _deleteRepeats(priority.templateId!),
-        onEdit: () => _editPriority(priority),
+        builder: (context, checked, toggle) => _PriorityRow(
+          priority: priority,
+          checked: checked,
+          onToggle: toggle,
+          onDelete: () => _deletePriority(priority),
+          onDeleteAll: priority.templateId == null
+              ? null
+              : () => _deleteRepeats(priority.templateId!),
+          onEdit: () => _editPriority(priority),
+        ),
       );
       const divider = Divider(height: 1, indent: 54, endIndent: 16);
 
@@ -3976,15 +3982,18 @@ Widget priorityRowForTesting({
 
 class _PriorityRow extends StatelessWidget {
   const _PriorityRow({
-    super.key,
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.checked,
     this.onDeleteAll,
     this.onEdit,
   });
 
   final DailyPriority priority;
+
+  /// Shown as done; ahead of [priority] while its check-off plays.
+  final bool? checked;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
 
@@ -4004,6 +4013,7 @@ class _PriorityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    final completed = checked ?? priority.completed;
     final today = DateTime.now();
     final overdue = overdueSince(priority, today);
     // A carried-over priority says where it came from instead of its time.
@@ -4046,8 +4056,8 @@ class _PriorityRow extends StatelessWidget {
             Semantics(
               container: true,
               button: true,
-              checked: priority.completed,
-              label: priority.completed ? 'Mark not complete' : 'Mark complete',
+              checked: completed,
+              label: completed ? 'Mark not complete' : 'Mark complete',
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 excludeFromSemantics: true,
@@ -4064,18 +4074,18 @@ class _PriorityRow extends StatelessWidget {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: priority.completed
+                          color: completed
                               ? const Color(0xFF54C75B)
                               : Colors.transparent,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: priority.completed
+                            color: completed
                                 ? const Color(0xFF54C75B)
                                 : MyDayScreen.muted,
                             width: 2,
                           ),
                         ),
-                        child: priority.completed
+                        child: completed
                             ? const Icon(
                                 CupertinoIcons.checkmark,
                                 color: Colors.white,
@@ -4098,12 +4108,12 @@ class _PriorityRow extends StatelessWidget {
                     Text(
                       priority.title,
                       style: TextStyle(
-                        color: priority.completed
+                        color: completed
                             ? colors.textSecondary
                             : colors.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        decoration: priority.completed
+                        decoration: completed
                             ? TextDecoration.lineThrough
                             : null,
                       ),

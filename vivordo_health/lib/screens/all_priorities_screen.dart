@@ -8,6 +8,7 @@ import '../src/utils/priority_schedule.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/check_off.dart';
 import '../widgets/habit_chips.dart';
 import '../widgets/swipe_to_delete.dart';
 
@@ -396,26 +397,31 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     );
   }
 
-  Widget _plannedRow(DailyPriority p) => SwipeToDelete(
+  Widget _plannedRow(DailyPriority p) => CheckOff(
     key: ValueKey(p.reference.path),
-    onTap: () => widget.onEdit(context, p),
-    onDelete: () => _delete(p),
-    onDeleteAll: p.templateId == null
-        ? null
-        : () => _deleteSchedule(p.templateId!),
-    confirmTitle: 'Delete priority?',
-    confirmMessage: priorityDeleteMessage(
-      p.title,
-      manual: p.source == 'manual',
-    ),
-    child: _PriorityTile(
-      priority: p,
-      today: _day,
-      repeatLabel: _recurring(p)
-          ? _templates[p.templateId]?.label ?? 'Repeating'
-          : null,
-      busy: _busy.contains(p.reference.path),
-      onToggle: () => _toggle(p),
+    completed: p.completed,
+    onToggle: () => _toggle(p),
+    builder: (context, checked, toggle) => SwipeToDelete(
+      onTap: () => widget.onEdit(context, p),
+      onDelete: () => _delete(p),
+      onDeleteAll: p.templateId == null
+          ? null
+          : () => _deleteSchedule(p.templateId!),
+      confirmTitle: 'Delete priority?',
+      confirmMessage: priorityDeleteMessage(
+        p.title,
+        manual: p.source == 'manual',
+      ),
+      child: _PriorityTile(
+        priority: p,
+        checked: checked,
+        today: _day,
+        repeatLabel: _recurring(p)
+            ? _templates[p.templateId]?.label ?? 'Repeating'
+            : null,
+        busy: _busy.contains(p.reference.path),
+        onToggle: toggle,
+      ),
     ),
   );
 
@@ -720,6 +726,7 @@ class _PlanGroups {
 class _PriorityTile extends StatelessWidget {
   const _PriorityTile({
     required this.priority,
+    required this.checked,
     required this.today,
     required this.repeatLabel,
     required this.busy,
@@ -727,6 +734,9 @@ class _PriorityTile extends StatelessWidget {
   });
 
   final DailyPriority priority;
+
+  /// Shown as done; ahead of [priority] while its check-off plays.
+  final bool checked;
   final DateTime today;
   final String? repeatLabel;
   final bool busy;
@@ -764,10 +774,10 @@ class _PriorityTile extends StatelessWidget {
         children: [
           Semantics(
             button: true,
-            label: p.completed ? 'Mark incomplete' : 'Mark completed',
+            label: checked ? 'Mark incomplete' : 'Mark completed',
             child: IconButton(
               onPressed: busy ? null : onToggle,
-              icon: AppCheckCircle(checked: p.completed, size: 24),
+              icon: AppCheckCircle(checked: checked, size: 24),
             ),
           ),
           Expanded(
@@ -777,12 +787,10 @@ class _PriorityTile extends StatelessWidget {
                 Text(
                   p.title,
                   style: TextStyle(
-                    color: p.completed
-                        ? colors.textSecondary
-                        : colors.textPrimary,
+                    color: checked ? colors.textSecondary : colors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    decoration: p.completed ? TextDecoration.lineThrough : null,
+                    decoration: checked ? TextDecoration.lineThrough : null,
                   ),
                 ),
                 const SizedBox(height: 2),
