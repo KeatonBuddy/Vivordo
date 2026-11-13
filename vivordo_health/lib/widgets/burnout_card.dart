@@ -41,6 +41,7 @@ class BurnoutCard extends StatelessWidget {
     required this.view,
     this.compact = false,
     this.onExpand,
+    this.onCollapse,
   });
 
   final BurnoutView view;
@@ -48,6 +49,9 @@ class BurnoutCard extends StatelessWidget {
 
   /// Tapping the one-line row: open out to the full card.
   final VoidCallback? onExpand;
+
+  /// Folds the full card back to its row; shows a chevron for it.
+  final VoidCallback? onCollapse;
 
   /// The row opens out when it can; the card (or a row with nothing to
   /// open into) shows the details.
@@ -107,11 +111,29 @@ class BurnoutCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    color: colors.textSecondary,
-                    size: 20,
-                  ),
+                  if (onCollapse != null)
+                    Semantics(
+                      button: true,
+                      label: 'Show less',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onCollapse,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 0, 8),
+                          child: Icon(
+                            CupertinoIcons.chevron_up,
+                            color: colors.textSecondary,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      color: colors.textSecondary,
+                      size: 20,
+                    ),
                 ],
               ),
               const SizedBox(height: 6),

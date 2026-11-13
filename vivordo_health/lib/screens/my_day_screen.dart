@@ -1463,8 +1463,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   /// Burnout and training-load alerts opened out to their full card:
-  /// "day|alert|level". They start as one row each; a tap opens one out, and
-  /// the next day, or a new level, it's a row again.
+  /// "day|alert|level". They start as one row each; a tap opens one out
+  /// and its chevron folds it back. The next day, or a new level, it's a
+  /// row again.
   final _alertsExpanded = <String>{};
 
   /// Burnout, training load and Sunday's review, most serious first
@@ -1495,11 +1496,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             view: burnout!,
             compact: !_alertsExpanded.contains(burnoutKey),
             onExpand: () => setState(() => _alertsExpanded.add(burnoutKey)),
+            onCollapse: () =>
+                setState(() => _alertsExpanded.remove(burnoutKey)),
           ),
           MyDayAlert.trainingLoad => TrainingLoadAlert(
             view: load!,
             compact: !_alertsExpanded.contains(loadKey),
             onExpand: () => setState(() => _alertsExpanded.add(loadKey)),
+            onCollapse: () => setState(() => _alertsExpanded.remove(loadKey)),
           ),
           MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
         },
