@@ -132,6 +132,78 @@ class EventRepeat {
   }
 
   /// e.g. "Every week", "Every 2 weeks on Mon, Wed, until Dec 31, 2026".
+  /// Up to [count] occurrence starts of a series first starting at
+  /// [seriesStart] that begin at or after [from], in order.
+  List<DateTime> nextOccurrences(
+    DateTime seriesStart, {
+    required DateTime from,
+    int count = 4,
+  }) {
+    final unit = this.unit;
+    if (unit == null) {
+      return seriesStart.isBefore(from) ? const [] : [seriesStart];
+    }
+    final until = this.until;
+    final last = until == null
+        ? null
+        : DateTime(until.year, until.month, until.day, 23, 59, 59);
+    DateTime at(int y, int m, int d) =>
+        DateTime(y, m, d, seriesStart.hour, seriesStart.minute);
+    final days = unit == RepeatUnit.week && weekdays.isNotEmpty
+        ? (weekdays.toList()..sort())
+        : [seriesStart.weekday];
+    final weekStart = DateTime(
+      seriesStart.year,
+      seriesStart.month,
+      seriesStart.day - (seriesStart.weekday - DateTime.monday),
+    );
+    final found = <DateTime>[];
+    // ponytail: walks period by period from the first occurrence; fine for
+    // the next few of a series under a few years old.
+    for (var i = 0; found.length < count && i < 2000; i++) {
+      final step = i * interval;
+      final candidates = switch (unit) {
+        RepeatUnit.day => [
+          at(seriesStart.year, seriesStart.month, seriesStart.day + step),
+        ],
+        RepeatUnit.week => [
+          for (final day in days)
+            at(
+              weekStart.year,
+              weekStart.month,
+              weekStart.day + step * 7 + day - DateTime.monday,
+            ),
+        ],
+        RepeatUnit.month => [
+          // A month without that day (31st, 30th) has no occurrence.
+          if (DateTime(
+                seriesStart.year,
+                seriesStart.month + step,
+                seriesStart.day,
+              ).day ==
+              seriesStart.day)
+            at(seriesStart.year, seriesStart.month + step, seriesStart.day),
+        ],
+        RepeatUnit.year => [
+          if (DateTime(
+                seriesStart.year + step,
+                seriesStart.month,
+                seriesStart.day,
+              ).month ==
+              seriesStart.month)
+            at(seriesStart.year + step, seriesStart.month, seriesStart.day),
+        ],
+      };
+      for (final start in candidates) {
+        if (last != null && start.isAfter(last)) return found;
+        if (start.isBefore(seriesStart) || start.isBefore(from)) continue;
+        found.add(start);
+        if (found.length == count) break;
+      }
+    }
+    return found;
+  }
+
   String describe() {
     final unit = this.unit;
     if (unit == null) return 'Does not repeat';

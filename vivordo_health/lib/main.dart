@@ -4,6 +4,7 @@ import 'package:vivordo_health/src/services/daily_priority_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
@@ -86,6 +87,9 @@ Future<void> openActiveWorkoutFromExternal({
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // debugPrint still prints in release builds, into the device log; the
+  // app's messages include account ids and scores.
+  if (kReleaseMode) debugPrint = (String? message, {int? wrapWidth}) {};
   // iPhone Duo hinge; returns at once on every other phone.
   unawaited(DuoHinge.start());
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);

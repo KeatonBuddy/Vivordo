@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import '../widgets/contextual_insight_bar.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,6 +30,7 @@ import '../src/utils/home_day_load.dart';
 import '../src/utils/my_day_planning_insight.dart';
 import '../src/utils/home_metrics_summary.dart';
 import '../widgets/add_calendar_event_sheet.dart';
+import 'invites_screen.dart';
 import '../widgets/calendar_event_summary_sheet.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/score_breakdown_sheet.dart';
@@ -41,6 +43,7 @@ import '../widgets/swipe_to_delete.dart';
 import '../widgets/habit_chips.dart';
 import '../src/utils/priority_schedule.dart';
 import '../widgets/plan_my_day_sheet.dart';
+import '../src/services/day_help_log.dart';
 import '../widgets/plan_slot_sheet.dart';
 import 'journal_screen.dart';
 import 'month_calendar_screen.dart';
@@ -74,6 +77,7 @@ import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
 import '../src/services/wind_down_reminder.dart';
+import '../widgets/check_off.dart';
 import '../widgets/day_fixes_card.dart';
 import '../widgets/energy_forecast_view.dart';
 
@@ -1165,9 +1169,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _saveGoogleEvent(CalendarEventDraft draft) async {
     try {
       setState(() => _isLoading = true);
-      await saveEventDraft(draft);
+      final message = await saveEventDraft(draft);
       await _loadTodayEvents();
-      _showMessage('Event added to your calendar.');
+      _showMessage(message);
     } catch (error) {
       if (mounted) setState(() => _isLoading = false);
       debugPrint('Create calendar event failed: $error');
@@ -1238,6 +1242,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                       key: widget.actionsKey,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        const InvitesButton(),
                         IconButton(
                           onPressed: () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -1245,8 +1250,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           tooltip: 'Journal',
+                          // Outlined like its neighbours; filled, it looked
+                          // selected.
                           icon: const Icon(
-                            CupertinoIcons.book_fill,
+                            CupertinoIcons.book,
                             color: MyDayScreen.purple,
                           ),
                         ),
@@ -1455,12 +1462,13 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// After the end-of-day time: wind-down, bed-by and tomorrow's forecast.
-  /// The day "N more" was opened on; the extra alerts stay open that day.
-  String? _moreAlertsDay;
+  /// Burnout and training-load alerts opened out to their full card:
+  /// "day|alert|level". They start as one row each; a tap opens one out, and
+  /// the next day, or a new level, it's a row again.
+  final _alertsExpanded = <String>{};
 
   /// Burnout, training load and Sunday's review, most serious first
-  /// ([rankMyDayAlerts]): one card, then "N more" for the rest.
+  /// ([rankMyDayAlerts]): a row each, opened out to its card by a tap.
   Widget _buildAlerts() => ListenableBuilder(
     listenable: Listenable.merge([
       _weeklyReviewSnapshot,
@@ -1477,71 +1485,40 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         weeklyReview: review != null,
       );
       if (alerts.isEmpty) return const SizedBox.shrink();
+      final today = localDayKey(DateTime.now());
+      final burnoutKey = '$today|burnout|${burnout?.level}';
+      final loadKey = '$today|load|${load?.state}';
       Widget card(MyDayAlert alert) => Padding(
         padding: const EdgeInsets.only(top: 12),
         child: switch (alert) {
-          MyDayAlert.burnout => BurnoutCard(view: burnout!),
-          MyDayAlert.trainingLoad => TrainingLoadAlert(view: load!),
+          MyDayAlert.burnout => BurnoutCard(
+            view: burnout!,
+            compact: !_alertsExpanded.contains(burnoutKey),
+            onExpand: () => setState(() => _alertsExpanded.add(burnoutKey)),
+          ),
+          MyDayAlert.trainingLoad => TrainingLoadAlert(
+            view: load!,
+            compact: !_alertsExpanded.contains(loadKey),
+            onExpand: () => setState(() => _alertsExpanded.add(loadKey)),
+          ),
           MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
         },
       );
-      final today = localDayKey(DateTime.now());
-      final rest = alerts.skip(1).toList();
-      final colors = context.vivordoColors;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 12),
-          card(alerts.first),
-          if (_moreAlertsDay == today)
-            for (final alert in rest) card(alert)
-          else if (rest.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Material(
-                color: colors.card,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: Colors.black.withValues(alpha: .07)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => setState(() => _moreAlertsDay = today),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          CupertinoIcons.square_stack_3d_up,
-                          size: 18,
-                          color: colors.textSecondary,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '${rest.length} more: '
-                            '${rest.map((a) => a.label).join(', ')}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: colors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        Icon(
-                          CupertinoIcons.chevron_right,
-                          color: colors.textSecondary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      // A row opening out to its card moves the plan below over a moment
+      // instead of in one frame.
+      return AnimatedSize(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            for (final alert in alerts) card(alert),
+          ],
+        ),
       );
     },
   );
@@ -1558,7 +1535,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     ].join(' · ');
     return Material(
       color: Colors.white.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => showEnergyForecastSheet(context, tonight),
@@ -1617,6 +1594,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           listenable: Listenable.merge([
             _prioritySnapshot,
             _tomorrowPrioritySnapshot,
+            // The headline defers to the alerts shown under the brief.
+            _burnoutSnapshot,
+            _trainingLoadSnapshot,
           ]),
           builder: (context, _) {
             final priorities = _prioritySnapshot.value;
@@ -1752,7 +1732,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                 : capacityScore == null || !shown
                 ? 'Make space for your day'
                 : switch (live?.fit ?? demandFit(demand, capacityScore)) {
-                    DemandFit.roomToSpare => 'Room to spare today',
+                    DemandFit.roomToSpare => roomToSpareHeadline(
+                      burnout: _burnoutSnapshot.value.data?.level,
+                      trainingLoad: _trainingLoadSnapshot.value.data?.state,
+                    ),
                     DemandFit.over =>
                       live == null
                           ? 'More than you’ve got: protect a break'
@@ -1869,7 +1852,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     final energyWords = showNumbers
                         ? null
                         : live != null
-                        ? capacityLeftWords(live)
+                        ? capacityLeftWords(live, easy: _goEasy)
                         : briefEnergyState(
                             capacity: capacityScore,
                             usual: usualCapacity,
@@ -2190,7 +2173,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                     ? 'Why you started today where you did ›'
                     : 'Why you started at ${live.morning} ›',
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -2288,7 +2271,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     final fit = capacity == null
         ? null
         : switch (demandFit(result.total, capacity)) {
-            DemandFit.roomToSpare => 'room to spare',
+            DemandFit.roomToSpare =>
+              _goEasy ? 'room, but go easy' : 'room to spare',
             DemandFit.full => 'a full day',
             DemandFit.over => 'more than you\'ve got',
           };
@@ -2595,7 +2579,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       message,
       actionLabel: 'Undo',
       onAction: () => undone = true,
-    ).closed;
+    )?.closed;
     return undone;
   }
 
@@ -2756,7 +2740,28 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   Future<void> _planMyDay(List<DailyPriority> untimed, DayPlan plan) async {
     final today = DateUtils.dateOnly(DateTime.now());
     final byId = {for (final p in untimed) p.reference.path: p};
-    final choice = await showPlanMyDaySheet(context, plan: plan);
+    final now = DateTime.now();
+    final choice = await showPlanMyDaySheet(
+      context,
+      plan: plan,
+      from: now,
+      until: today.add(Duration(minutes: _wrapUpMinutes)),
+      // Events, and priorities that already have a time today.
+      busy: [
+        for (final e in _events)
+          if (!e.isAllDay && e.end.isAfter(e.start))
+            DateTimeRange(start: e.start, end: e.end),
+        for (final p in _prioritySnapshot.value.data ?? const <DailyPriority>[])
+          if (p.sourceStart case final start?
+              when !p.completed &&
+                  !p.isAllDay &&
+                  DateUtils.isSameDay(start, now))
+            DateTimeRange(
+              start: start,
+              end: p.sourceEnd ?? start.add(Duration(minutes: slotMinutes(p))),
+            ),
+      ],
+    );
     if (choice == null || !mounted) return;
     final tomorrow = today.add(const Duration(days: 1));
     Future<void> place(DailyPriority p, DateTime date, DateTime? start) =>
@@ -2793,7 +2798,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         if (moved > 0) '$moved moved to tomorrow',
       ].join(' · '),
     );
-    if (!undo) return;
+    if (!undo) {
+      unawaited(markDayHelped(DayHelp.planMyDay));
+      return;
+    }
     try {
       for (final m in moves) {
         // Back to its own day and time (an overdue one to its old day).
@@ -2912,6 +2920,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   Widget _buildWatchStrip(BackToBackEventBlock block) {
     final colors = context.vivordoColors;
+    final longest = block.events.fold<int>(
+      1,
+      (most, e) => math.max(most, e.end.difference(e.start).inMinutes),
+    );
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -2944,13 +2956,29 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Sized by length (none under 45% of the longest, so a short
+              // one still fits its name), each with when it starts.
               for (final event in block.events)
                 Expanded(
-                  child: _WatchSegment(event.title, color: MyDayScreen.purple),
+                  flex: math.max(
+                    event.end.difference(event.start).inMinutes,
+                    (longest * .45).round(),
+                  ),
+                  child: _WatchSegment(
+                    event.title,
+                    formatClock(event.start),
+                    color: MyDayScreen.purple,
+                  ),
                 ),
-              const Expanded(
-                child: _WatchSegment('Reset', color: timelineOpenGreen),
+              Expanded(
+                flex: (longest * .45).round(),
+                child: _WatchSegment(
+                  'Reset',
+                  formatClock(block.end),
+                  color: timelineOpenGreen,
+                ),
               ),
             ],
           ),
@@ -3170,17 +3198,15 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       final open = priorities.where((p) => !p.completed).toList();
       final done = priorities.where((p) => p.completed).toList();
       final hidden = open.length - _shownPriorities;
+      // Today's own come first; what was carried over from earlier days
+      // follows under one quiet heading, so old items don't bury the day.
+      final (:ordered, :carried) = carriedLast(open, _priorityDay);
+      final shown = ordered.take(_shownPriorities).toList();
+      final carriedShown = carried.isNotEmpty && shown.contains(carried.first);
       // Plan my day: open priorities with no time today (overdue ones
       // included), while there's still day before the wrap-up time.
       final now = DateTime.now();
-      final untimed = [
-        for (final p in open)
-          if (!p.habit &&
-              !p.isAllDay &&
-              (p.sourceStart == null ||
-                  !DateUtils.isSameDay(p.sourceStart, now)))
-            p,
-      ];
+      final untimed = _untimedToday(now);
       // Only when at least one of them fits today.
       final plan =
           untimed.isEmpty ||
@@ -3193,15 +3219,20 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
           _planHiddenDay == localDayKey(now) &&
           untimed.every((p) => _planHiddenIds.contains(p.reference.path));
       final canPlan = plan != null && plan.placed.isNotEmpty && !hiddenToday;
-      Widget row(DailyPriority priority) => _PriorityRow(
+      Widget row(DailyPriority priority) => CheckOff(
         key: ValueKey(priority.reference.path),
-        priority: priority,
+        completed: priority.completed,
         onToggle: () => _togglePriority(priority),
-        onDelete: () => _deletePriority(priority),
-        onDeleteAll: priority.templateId == null
-            ? null
-            : () => _deleteRepeats(priority.templateId!),
-        onEdit: () => _editPriority(priority),
+        builder: (context, checked, toggle) => _PriorityRow(
+          priority: priority,
+          checked: checked,
+          onToggle: toggle,
+          onDelete: () => _deletePriority(priority),
+          onDeleteAll: priority.templateId == null
+              ? null
+              : () => _deleteRepeats(priority.templateId!),
+          onEdit: () => _editPriority(priority),
+        ),
       );
       const divider = Divider(height: 1, indent: 54, endIndent: 16);
 
@@ -3233,15 +3264,44 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
       } else {
         body = Column(
           children: [
-            for (final priority in open.take(_shownPriorities)) ...[
+            for (final priority in shown) ...[
+              if (carriedShown && identical(priority, carried.first))
+                InkWell(
+                  onTap: _openAllPriorities,
+                  child: Container(
+                    color: colors.cardMuted,
+                    padding: const EdgeInsets.fromLTRB(18, 9, 16, 9),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SubLabel('Carried over · ${carried.length}'),
+                        ),
+                        const Text(
+                          'Review',
+                          style: TextStyle(
+                            color: MyDayScreen.purple,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               row(priority),
               divider,
             ],
             if (hidden > 0) ...[
+              // It opens the Priorities screen, so it says so and points
+              // there, rather than looking like it expands in place.
               _ListAction(
-                icon: CupertinoIcons.ellipsis,
-                label: '$hidden more',
+                icon: CupertinoIcons.list_bullet,
+                label: carried.isEmpty || carriedShown
+                    ? 'See all ${open.length}'
+                    : 'See all ${open.length} · '
+                          '${carried.length} carried over',
                 muted: true,
+                leaves: true,
                 onTap: _openAllPriorities,
               ),
               const Divider(height: 1),
@@ -3518,15 +3578,73 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     await _saveManualPriority(draft);
   }
 
-  /// Opens the Priority / Event sheet for an open slot starting at [start].
+  /// A burnout or training-load alert is showing under the brief.
+  bool get _goEasy => goEasy(
+    burnout: _burnoutSnapshot.value.data?.level,
+    trainingLoad: _trainingLoadSnapshot.value.data?.state,
+  );
+
+  /// Today's open priorities with no time today (overdue ones included).
+  List<DailyPriority> _untimedToday(DateTime now) => [
+    for (final p in _prioritySnapshot.value.data ?? const <DailyPriority>[])
+      if (!p.completed &&
+          !p.habit &&
+          !p.isAllDay &&
+          (p.sourceStart == null || !DateUtils.isSameDay(p.sourceStart, now)))
+        p,
+  ];
+
+  /// Opens the sheet for an open slot starting at [start]: the priorities
+  /// waiting for a time that fit it, or a new priority or event.
   Future<void> _planSlot(DateTime start, [DateTime? end]) async {
-    final result = await showPlanSlotSheet(context, start: start, end: end);
+    final result = await showPlanSlotSheet(
+      context,
+      start: start,
+      end: end,
+      waiting: _untimedToday(DateTime.now()),
+    );
     if (!mounted) return;
     switch (result) {
+      case SlotPick pick:
+        await _putInSlot(pick);
       case PriorityDraft draft:
         await _saveManualPriority(draft);
       case CalendarEventDraft draft:
         await _saveGoogleEvent(draft);
+    }
+  }
+
+  /// A waiting priority gets the slot's time, in Vivordo only (like Plan my
+  /// day), with an undo back to its own day and time.
+  Future<void> _putInSlot(SlotPick pick) async {
+    final p = pick.priority;
+    final today = DateUtils.dateOnly(pick.start);
+    Future<void> place(DailyPriority q, DateTime date, DateTime? start) =>
+        DailyPriorityService.editPriority(
+          q,
+          title: q.title,
+          date: date,
+          scheduledAt: start,
+          completed: q.completed,
+          reminderMinutes: q.reminderMinutes,
+          reminderTimeMinutes: q.reminderTimeMinutes,
+        );
+    try {
+      await place(p, today, pick.start);
+    } catch (_) {
+      _showMessage("Couldn't set the time.", error: true);
+      return;
+    }
+    if (!await _showUndo(
+      '${p.title} at ${DateFormat('h:mm a').format(pick.start)}',
+    )) {
+      return;
+    }
+    try {
+      final current = await _priorityOn(today, p.id);
+      if (current != null) await place(current, p.date ?? today, p.sourceStart);
+    } catch (_) {
+      _showMessage("Couldn't undo the time.", error: true);
     }
   }
 
@@ -3845,9 +3963,10 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 typedef _TimelineItem = ({_CalendarEvent? event, DailyPriority? priority});
 
 class _WatchSegment extends StatelessWidget {
-  const _WatchSegment(this.title, {required this.color});
+  const _WatchSegment(this.title, this.time, {required this.color});
 
   final String title;
+  final String time;
   final Color color;
 
   @override
@@ -3858,11 +3977,25 @@ class _WatchSegment extends StatelessWidget {
       color: color.withValues(alpha: .14),
       borderRadius: BorderRadius.circular(6),
     ),
-    child: Text(
-      title,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          time,
+          maxLines: 1,
+          style: TextStyle(color: color.withValues(alpha: .75), fontSize: 10),
+        ),
+      ],
     ),
   );
 }
@@ -3873,12 +4006,16 @@ class _ListAction extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.muted = false,
+    this.leaves = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final bool muted;
+
+  /// It opens another screen: a chevron on the right.
+  final bool leaves;
 
   @override
   Widget build(BuildContext context) {
@@ -3900,11 +4037,17 @@ class _ListAction extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: colors.textSecondary,
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
+            if (leaves)
+              Icon(
+                CupertinoIcons.chevron_right,
+                size: 18,
+                color: colors.textSecondary,
+              ),
           ],
         ),
       ),
@@ -3970,15 +4113,18 @@ Widget priorityRowForTesting({
 
 class _PriorityRow extends StatelessWidget {
   const _PriorityRow({
-    super.key,
     required this.priority,
     required this.onToggle,
     required this.onDelete,
+    this.checked,
     this.onDeleteAll,
     this.onEdit,
   });
 
   final DailyPriority priority;
+
+  /// Shown as done; ahead of [priority] while its check-off plays.
+  final bool? checked;
   final VoidCallback onToggle;
   final Future<void> Function() onDelete;
 
@@ -3998,12 +4144,13 @@ class _PriorityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    final completed = checked ?? priority.completed;
     final today = DateTime.now();
     final overdue = overdueSince(priority, today);
-    // A carried-over priority says where it came from instead of its time.
-    final (pill, pillColor) = overdue != null
-        ? (overdueLabel(overdue, today), const Color(0xFFE5484D))
-        : (_timeLabel, MyDayScreen.purple);
+    // A carried-over priority says where it came from under its title,
+    // instead of its time.
+    final pill = overdue != null ? null : _timeLabel;
+    const pillColor = MyDayScreen.purple;
     final pillBadge = pill == null
         ? null
         : Container(
@@ -4040,8 +4187,8 @@ class _PriorityRow extends StatelessWidget {
             Semantics(
               container: true,
               button: true,
-              checked: priority.completed,
-              label: priority.completed ? 'Mark not complete' : 'Mark complete',
+              checked: completed,
+              label: completed ? 'Mark not complete' : 'Mark complete',
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 excludeFromSemantics: true,
@@ -4058,18 +4205,18 @@ class _PriorityRow extends StatelessWidget {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: priority.completed
+                          color: completed
                               ? const Color(0xFF54C75B)
                               : Colors.transparent,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: priority.completed
+                            color: completed
                                 ? const Color(0xFF54C75B)
                                 : MyDayScreen.muted,
                             width: 2,
                           ),
                         ),
-                        child: priority.completed
+                        child: completed
                             ? const Icon(
                                 CupertinoIcons.checkmark,
                                 color: Colors.white,
@@ -4092,16 +4239,26 @@ class _PriorityRow extends StatelessWidget {
                     Text(
                       priority.title,
                       style: TextStyle(
-                        color: priority.completed
+                        color: completed
                             ? colors.textSecondary
                             : colors.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        decoration: priority.completed
+                        decoration: completed
                             ? TextDecoration.lineThrough
                             : null,
                       ),
                     ),
+                    // Red, so a late one still stands out in its quiet group.
+                    if (overdue != null)
+                      Text(
+                        overdueLabel(overdue, today),
+                        style: TextStyle(
+                          color: colors.danger,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     // At large text the pill goes under the title, so the
                     // title keeps the row's width.
                     if (pillBadge != null && stacked) ...[

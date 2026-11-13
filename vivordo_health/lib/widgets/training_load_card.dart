@@ -111,7 +111,7 @@ class TrainingLoadCard extends StatelessWidget {
           // Labels are short; values take the rest, flush right.
           Text(
             label,
-            style: TextStyle(fontSize: 14, color: colors.textPrimary),
+            style: TextStyle(fontSize: 15, color: colors.textPrimary),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -271,14 +271,81 @@ class _WeekChart extends StatelessWidget {
 }
 
 /// My Day at High or Strained: what's going on, with a way to act.
+/// [compact] is one line, until it's tapped ([onExpand]).
 class TrainingLoadAlert extends StatelessWidget {
-  const TrainingLoadAlert({super.key, required this.view});
+  const TrainingLoadAlert({
+    super.key,
+    required this.view,
+    this.compact = false,
+    this.onExpand,
+  });
 
   final TrainingLoadView view;
+  final bool compact;
+
+  /// Tapping the one-line row: open out to the full card.
+  final VoidCallback? onExpand;
+
+  /// The row opens out when it can; the card (or a row with nothing to
+  /// open into) shows the details.
+  void _open(BuildContext context) {
+    if (compact && onExpand != null) return onExpand!();
+    showTrainingLoadDetails(context, view);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
+    if (compact) {
+      return Material(
+        color: colors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.black.withValues(alpha: .07)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _open(context),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: _coral,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Training load',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ),
+                Text(
+                  view.label,
+                  style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                ),
+                Icon(
+                  onExpand != null
+                      ? CupertinoIcons.chevron_down
+                      : CupertinoIcons.chevron_right,
+                  color: colors.textSecondary,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final plan = _planner(context, view);
     TextButton button(String label, VoidCallback onPressed) => TextButton(
       onPressed: onPressed,
@@ -287,7 +354,7 @@ class TrainingLoadAlert extends StatelessWidget {
         padding: EdgeInsets.zero,
         minimumSize: const Size(0, 36),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
       ),
       child: Text(label),
     );
@@ -299,7 +366,7 @@ class TrainingLoadAlert extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showTrainingLoadDetails(context, view),
+        onTap: () => _open(context),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Column(
@@ -336,10 +403,7 @@ class TrainingLoadAlert extends StatelessWidget {
                 children: [
                   if (plan != null) button('Plan an easier week', plan),
                   const Spacer(),
-                  button(
-                    'Details ›',
-                    () => showTrainingLoadDetails(context, view),
-                  ),
+                  button('Details ›', () => _open(context)),
                 ],
               ),
             ],
@@ -360,7 +424,7 @@ Future<void> showTrainingLoadDetails(
   final plan = view.alert ? _planner(context, view) : null;
   final colors = context.vivordoColors;
   final secondary = TextStyle(
-    fontSize: 14,
+    fontSize: 15,
     height: 1.45,
     color: colors.textSecondary,
   );
@@ -370,7 +434,7 @@ Future<void> showTrainingLoadDetails(
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) => SafeArea(
       child: ConstrainedBox(
@@ -595,7 +659,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                     ),
                     shape: WidgetStatePropertyAll(
                       RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                         side: BorderSide(color: colors.border),
                       ),
                     ),
@@ -645,7 +709,7 @@ class _TrainingLoadWeeksState extends State<_TrainingLoadWeeks> {
                         child: Text(
                           option.dateRange,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: FontWeight.w600,
                             color: colors.textPrimary,
                           ),

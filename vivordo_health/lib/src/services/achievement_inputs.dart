@@ -13,6 +13,9 @@ typedef AchievementMetricDay = ({
   num? steps,
   num? calories,
   num? minutes,
+  num? sleep,
+  num? restingHeartRate,
+  num? mood,
 });
 
 AchievementMetricDay projectAchievementDay(AchievementFieldReader read) {
@@ -39,23 +42,39 @@ AchievementMetricDay projectAchievementDay(AchievementFieldReader read) {
     steps: read('steps.sum') as num?,
     calories: read('active_calories.sum') as num?,
     minutes: read('exercise_time.sum') as num?,
+    sleep: _number(read('sleep.avg')),
+    restingHeartRate: _number(read('resting_heart_rate.avg')),
+    mood: _number(read('mood.avg')),
   );
 }
 
 /// Server-projected summary day (functions/metrics_summary.js), or null when
-/// the document predates the scan/mood counts.
+/// the document predates the scan/mood counts or the daily sleep, resting
+/// heart rate and mood values.
 AchievementMetricDay? projectAchievementSummary(AchievementFieldReader read) {
   final scans = read('scans');
   final moods = read('moods');
   if (scans is! int || moods is! int) return null;
+  if (read('sleep') is! Map ||
+      read('resting_heart_rate') is! Map ||
+      read('mood') is! Map) {
+    return null;
+  }
   return (
     scans: scans,
     moods: moods,
     steps: read('steps.sum') as num?,
     calories: read('active_calories.sum') as num?,
     minutes: read('exercise_time.sum') as num?,
+    sleep: _number(read('sleep.avg')),
+    restingHeartRate: _number(read('resting_heart_rate.avg')),
+    mood: _number(read('mood.avg')),
   );
 }
+
+/// A daily value as the server projects it: a finite, non-negative number.
+num? _number(Object? value) =>
+    value is num && value.isFinite && value >= 0 ? value : null;
 
 bool projectAchievementWorkout(AchievementFieldReader read) {
   final category = read('activityCategory');

@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'units.dart';
 
 /// One day of the imported history, from its `scores_daily` Capacity and
 /// Effort (docs/scores.md §4): last night's sleep, the overnight body and
@@ -145,7 +146,7 @@ HistoryFindings historyFindings(
     basis: basis,
     usuals: [
       if (usualSleep != null)
-        (value: _duration(usualSleep), label: 'sleep a night'),
+        (value: hoursMinutes(usualSleep), label: 'sleep a night'),
       if (numbers && usualCapacity != null)
         (value: '${usualCapacity.round()}', label: 'Capacity'),
       if (usualResting != null)
@@ -172,7 +173,3 @@ String _hours(double hours) {
 }
 
 /// 7.07 → "7h 04m".
-String _duration(double hours) {
-  final minutes = (hours * 60).round();
-  return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
-}

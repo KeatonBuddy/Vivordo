@@ -33,18 +33,35 @@ String _levelLabel(String level) => switch (level) {
 
 /// The nightly burnout check on My Day (docs/scores.md §6): a full card at
 /// Watch or Warning, otherwise a one-line row. Tapping either opens the last
-/// 2 weeks against the person's normal.
+/// 2 weeks against the person's normal. [compact] keeps an alert to the
+/// one-line row too, until it's tapped ([onExpand]).
 class BurnoutCard extends StatelessWidget {
-  const BurnoutCard({super.key, required this.view});
+  const BurnoutCard({
+    super.key,
+    required this.view,
+    this.compact = false,
+    this.onExpand,
+  });
 
   final BurnoutView view;
+  final bool compact;
+
+  /// Tapping the one-line row: open out to the full card.
+  final VoidCallback? onExpand;
+
+  /// The row opens out when it can; the card (or a row with nothing to
+  /// open into) shows the details.
+  void _open(BuildContext context) {
+    if (compact && onExpand != null) return onExpand!();
+    showBurnoutDetails(context, view);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final color = _levelColor(view.level);
     final alert = view.level == 'warning' || view.level == 'watch';
-    if (!alert) return _row(context);
+    if (!alert || compact) return _row(context);
     return Material(
       color: alert
           ? Color.alphaBlend(color.withValues(alpha: .10), colors.card)
@@ -59,7 +76,7 @@ class BurnoutCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showBurnoutDetails(context, view),
+        onTap: () => _open(context),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -138,7 +155,9 @@ class BurnoutCard extends StatelessWidget {
   Widget _row(BuildContext context) {
     final colors = context.vivordoColors;
     // No day count: "14 of 42 days" reads as a long wait.
-    final status = view.level == 'learning'
+    final status = view.level == 'warning' || view.level == 'watch'
+        ? view.title
+        : view.level == 'learning'
         ? 'Learning your normal'
         : view.early
         ? 'Steady · early check'
@@ -146,12 +165,12 @@ class BurnoutCard extends StatelessWidget {
     return Material(
       color: colors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: Colors.black.withValues(alpha: .07)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => showBurnoutDetails(context, view),
+        onTap: () => _open(context),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
           child: Row(
@@ -165,22 +184,29 @@ class BurnoutCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Burnout check',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textPrimary,
-                  ),
+              Text(
+                'Burnout check',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: colors.textPrimary,
                 ),
               ),
-              Text(
-                status,
-                style: TextStyle(fontSize: 13, color: colors.textSecondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                ),
               ),
               Icon(
-                CupertinoIcons.chevron_right,
+                // Down: it opens out here rather than going somewhere.
+                compact && onExpand != null
+                    ? CupertinoIcons.chevron_down
+                    : CupertinoIcons.chevron_right,
                 color: colors.textSecondary,
                 size: 20,
               ),
@@ -202,7 +228,7 @@ Future<void> showBurnoutDetails(BuildContext context, BurnoutView view) {
     isScrollControlled: true,
     backgroundColor: context.vivordoColors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) => _BurnoutDetails(
       view: view,

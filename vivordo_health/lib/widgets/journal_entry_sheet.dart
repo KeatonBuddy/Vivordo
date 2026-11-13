@@ -226,7 +226,7 @@ class _JournalEntrySheetState extends State<JournalEntrySheet>
         ),
         decoration: BoxDecoration(
           color: colors.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
         child: Column(
@@ -285,7 +285,7 @@ class _JournalEntrySheetState extends State<JournalEntrySheet>
                       widget.prompt!,
                       style: TextStyle(
                         color: colors.textSecondary,
-                        fontSize: 14,
+                        fontSize: 15,
                         height: 1.4,
                       ),
                     ),

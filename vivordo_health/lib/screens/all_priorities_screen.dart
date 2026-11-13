@@ -8,11 +8,11 @@ import '../src/utils/priority_schedule.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/add_priority_sheet.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/check_off.dart';
 import '../widgets/habit_chips.dart';
 import '../widgets/swipe_to_delete.dart';
 
 const _doneGreen = habitDoneGreen;
-const _overdueRed = Color(0xFFE5484D);
 
 /// One row per recurring schedule, represented by today's or its next occurrence.
 List<DailyPriority> distinctPriorities(List<DailyPriority> priorities) {
@@ -250,7 +250,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
                 'Priorities',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 32,
+                  fontSize: 34,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -270,7 +270,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
           padding: const EdgeInsets.only(left: 8),
           child: Text(
             summary,
-            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+            style: TextStyle(color: colors.textSecondary, fontSize: 15),
           ),
         ),
         if (total > 0) ...[
@@ -292,17 +292,15 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
   List<Widget> _planView(_PlanGroups plan) {
     final tomorrow = DateTime(_day.year, _day.month, _day.day + 1);
     return [
-      if (plan.overdue.isNotEmpty)
-        _group('Overdue', plan.overdue, labelColor: _overdueRed),
+      // Today first, then what was carried over, as on My Day.
       _group(
         plan.today.isEmpty
             ? 'Today'
             : 'Today · ${plan.doneToday} of ${plan.today.length}',
         plan.today,
-        empty: plan.overdue.isEmpty
-            ? 'Nothing planned for today.'
-            : 'Nothing else planned for today.',
+        empty: 'Nothing planned for today.',
       ),
+      if (plan.overdue.isNotEmpty) _group('Carried over', plan.overdue),
       for (final entry in plan.later.entries)
         _group(
           DateUtils.isSameDay(entry.key, tomorrow)
@@ -324,12 +322,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     ];
   }
 
-  Widget _group(
-    String label,
-    List<DailyPriority> items, {
-    Color? labelColor,
-    String? empty,
-  }) {
+  Widget _group(String label, List<DailyPriority> items, {String? empty}) {
     final colors = context.vivordoColors;
     final open = items.where((p) => !p.completed).toList();
     final done = items.where((p) => p.completed).toList();
@@ -379,7 +372,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
             child: Text(
               label,
               style: TextStyle(
-                color: labelColor ?? colors.textSecondary,
+                color: colors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -396,26 +389,31 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
     );
   }
 
-  Widget _plannedRow(DailyPriority p) => SwipeToDelete(
+  Widget _plannedRow(DailyPriority p) => CheckOff(
     key: ValueKey(p.reference.path),
-    onTap: () => widget.onEdit(context, p),
-    onDelete: () => _delete(p),
-    onDeleteAll: p.templateId == null
-        ? null
-        : () => _deleteSchedule(p.templateId!),
-    confirmTitle: 'Delete priority?',
-    confirmMessage: priorityDeleteMessage(
-      p.title,
-      manual: p.source == 'manual',
-    ),
-    child: _PriorityTile(
-      priority: p,
-      today: _day,
-      repeatLabel: _recurring(p)
-          ? _templates[p.templateId]?.label ?? 'Repeating'
-          : null,
-      busy: _busy.contains(p.reference.path),
-      onToggle: () => _toggle(p),
+    completed: p.completed,
+    onToggle: () => _toggle(p),
+    builder: (context, checked, toggle) => SwipeToDelete(
+      onTap: () => widget.onEdit(context, p),
+      onDelete: () => _delete(p),
+      onDeleteAll: p.templateId == null
+          ? null
+          : () => _deleteSchedule(p.templateId!),
+      confirmTitle: 'Delete priority?',
+      confirmMessage: priorityDeleteMessage(
+        p.title,
+        manual: p.source == 'manual',
+      ),
+      child: _PriorityTile(
+        priority: p,
+        checked: checked,
+        today: _day,
+        repeatLabel: _recurring(p)
+            ? _templates[p.templateId]?.label ?? 'Repeating'
+            : null,
+        busy: _busy.contains(p.reference.path),
+        onToggle: toggle,
+      ),
     ),
   );
 
@@ -602,7 +600,7 @@ class _AllPrioritiesScreenState extends State<AllPrioritiesScreen>
               height: 34,
               decoration: BoxDecoration(
                 color: VivordoTheme.brand.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
                 CupertinoIcons.repeat,
@@ -720,6 +718,7 @@ class _PlanGroups {
 class _PriorityTile extends StatelessWidget {
   const _PriorityTile({
     required this.priority,
+    required this.checked,
     required this.today,
     required this.repeatLabel,
     required this.busy,
@@ -727,6 +726,9 @@ class _PriorityTile extends StatelessWidget {
   });
 
   final DailyPriority priority;
+
+  /// Shown as done; ahead of [priority] while its check-off plays.
+  final bool checked;
   final DateTime today;
   final String? repeatLabel;
   final bool busy;
@@ -764,10 +766,10 @@ class _PriorityTile extends StatelessWidget {
         children: [
           Semantics(
             button: true,
-            label: p.completed ? 'Mark incomplete' : 'Mark completed',
+            label: checked ? 'Mark incomplete' : 'Mark completed',
             child: IconButton(
               onPressed: busy ? null : onToggle,
-              icon: AppCheckCircle(checked: p.completed, size: 24),
+              icon: AppCheckCircle(checked: checked, size: 24),
             ),
           ),
           Expanded(
@@ -777,12 +779,10 @@ class _PriorityTile extends StatelessWidget {
                 Text(
                   p.title,
                   style: TextStyle(
-                    color: p.completed
-                        ? colors.textSecondary
-                        : colors.textPrimary,
+                    color: checked ? colors.textSecondary : colors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    decoration: p.completed ? TextDecoration.lineThrough : null,
+                    decoration: checked ? TextDecoration.lineThrough : null,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -792,8 +792,8 @@ class _PriorityTile extends StatelessWidget {
                       if (overdue != null)
                         TextSpan(
                           text: overdueLabel(overdue, today),
-                          style: const TextStyle(
-                            color: _overdueRed,
+                          style: TextStyle(
+                            color: colors.danger,
                             fontWeight: FontWeight.w700,
                           ),
                         ),

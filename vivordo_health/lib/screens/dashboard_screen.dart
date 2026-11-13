@@ -12,6 +12,8 @@ import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:vivordo_health/src/services/achievement_inputs.dart';
+import 'package:vivordo_health/src/services/achievement_service.dart';
 import 'package:vivordo_health/src/services/health_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/heart_rate_history.dart';
@@ -24,6 +26,7 @@ import 'exercise_detail_screen.dart';
 import 'mood_detail_screen.dart';
 import 'sleep_detail_screen.dart';
 import 'steps_detail_screen.dart';
+import 'metric_history_screen.dart' show HistoryMetric;
 import 'physical_health_screen.dart';
 import '../widgets/daily_tags.dart' show tagLastNightSick;
 import '../src/utils/metrics_insights.dart';
@@ -119,6 +122,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // The tiles read today only; the usual comes from the compact history
+    // the achievements already hold, so this adds no reads.
+    AchievementService.activityHistory().then((days) {
+      if (mounted) setState(() => _history = days);
+    }, onError: (Object _) {});
     _rebuildStreams();
     _loadMetricOrder();
     _requestAutomaticRefreshIfActive();
@@ -611,7 +619,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               const Text(
                 'Key metrics',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 12),
               if (_enabledKeyMetrics.isEmpty)
@@ -664,7 +672,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               const Text(
                 'Insights',
-                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 10),
               VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
@@ -722,7 +730,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Material(
       color: context.vivordoColors.card,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: context.vivordoColors.border),
       ),
       clipBehavior: Clip.antiAlias,
@@ -757,7 +765,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           Text(
                             score == null ? '--' : score.round().toString(),
                             style: const TextStyle(
-                              fontSize: 38,
+                              fontSize: 40,
                               height: 1,
                               fontWeight: FontWeight.w900,
                             ),
@@ -791,7 +799,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               : view.note.startsWith('↑')
                               ? greenColor
                               : context.vivordoColors.textSecondary,
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -923,7 +931,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : _formatMetricValue(metric, values.last);
     final detail = todaySummedValue != null
         ? todaySummedValue > 0
-              ? _comparisonText(values, lowerIsBetter: false)
+              ? _usualLine(metric, todaySummedValue) ??
+                    _comparisonText(values, lowerIsBetter: false)
               : metric == 'active_calories'
               ? 'No active calories recorded today'
               : metric == 'steps'
@@ -939,7 +948,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         : metric == 'stress'
         ? (_stressIntradayDetail(snap) ??
               _comparisonText(values, lowerIsBetter: true))
-        : _comparisonText(values, lowerIsBetter: metric == 'stress');
+        : _usualLine(metric, values.last) ??
+              _comparisonText(values, lowerIsBetter: metric == 'stress');
     return _buildKeyMetricTile(
       title: title,
       value: value,
@@ -976,7 +986,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.vivordoColors.border),
       ),
       child: Row(
@@ -1038,7 +1048,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, height: 1.2),
+                        // 13, so "Active calories" stays on one line.
+                        style: const TextStyle(fontSize: 13, height: 1.2),
                       ),
                       const SizedBox(height: 2),
                       FittedBox(
@@ -1185,6 +1196,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return digits.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
   }
 
+  Map<String, AchievementMetricDay>? _history;
+
+  /// A tile's second line against the last 28 days (today left out), or
+  /// null when the metric has no history here or under a week of it.
+  String? _usualLine(String metric, double today) {
+    final kind = switch (metric) {
+      'steps' => HistoryMetric.steps,
+      'active_calories' => HistoryMetric.calories,
+      'exercise_time' => HistoryMetric.exercise,
+      'sleep' => HistoryMetric.sleep,
+      'mood' => HistoryMetric.mood,
+      _ => null,
+    };
+    final history = _history;
+    if (kind == null || history == null) return null;
+    final now = DateUtils.dateOnly(DateTime.now());
+    final from = now.subtract(const Duration(days: 28));
+    final values = [
+      for (final MapEntry(:key, :value) in history.entries)
+        if (DateTime.tryParse(key) case final day?
+            when !day.isBefore(from) && day.isBefore(now))
+          if (kind.of(value) case final v? when v > 0) v.toDouble(),
+    ];
+    if (values.length < 7) return null;
+    final usual = _avg(values);
+    return switch (kind) {
+      HistoryMetric.sleep => switch (((today - usual) * 60).round()) {
+        final d when d.abs() < 15 => 'About your usual',
+        final d =>
+          '${hoursMinutes(d.abs() / 60)} ${d > 0 ? 'more' : 'less'} than usual',
+      },
+      HistoryMetric.mood => switch (today - usual) {
+        final d when d.abs() < 5 => 'About your usual',
+        final d => d > 0 ? 'Above your usual' : 'Below your usual',
+      },
+      // Today is still under way, so the usual is given, not judged against.
+      // The unit is on the value above, and the line has to fit the tile.
+      _ => 'Usual ${kind.number(usual)} a day',
+    };
+  }
+
   String _comparisonText(List<double> values, {required bool lowerIsBetter}) {
     if (values.length < 2) return 'Today';
     final usual = _avg(values.sublist(0, values.length - 1));
@@ -1238,7 +1290,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'respiratory_rate':
         return 'Respiratory Rate (brpm)';
       case 'sleep':
-        return 'Sleep (hours)';
+        return 'Sleep';
       case 'weight':
         return 'Weight (${context.read<ThemeController>().units.bodyWeightLabel})';
       case 'body_fat':
@@ -1304,7 +1356,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Material(
           color: context.vivordoColors.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
             height: MediaQuery.sizeOf(context).height * 0.82,
@@ -1332,7 +1384,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Text(
                                 'Customize key metrics',
                                 style: TextStyle(
-                                  fontSize: 21,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.w900,
                                 ),
                               ),
@@ -1394,7 +1446,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     height: 40,
                                     decoration: BoxDecoration(
                                       color: color.withValues(alpha: 0.12),
-                                      borderRadius: BorderRadius.circular(11),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Icon(
                                       _metricIcon(metric),
@@ -1497,7 +1549,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'active_calories':
         return '${number()} kcal';
       case 'exercise_time':
-        return '${number(decimals: value >= 10 ? 1 : 2)} min';
+        return '${number()} min';
       case 'heart_rate':
       case 'heart_rate_scan':
       case 'resting_heart_rate':
@@ -1509,7 +1561,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'respiratory_rate':
         return '${number()} brpm';
       case 'sleep':
-        return '${number(decimals: 1)}h';
+        return hoursMinutes(value);
       case 'weight':
         return context.read<ThemeController>().units.formatBodyWeight(value);
       case 'body_fat':

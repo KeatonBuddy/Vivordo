@@ -252,6 +252,15 @@ class AchievementService {
     if (identical(_session, session)) _session = null;
   }
 
+  /// Every day's steps, active calories and exercise minutes since the
+  /// account began, by day key. Shares the achievement session's lifetime
+  /// listener, so it adds no reads.
+  static Future<Map<String, AchievementMetricDay>> activityHistory() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const {};
+    return (await _sessionFor(user.uid).inputs.load()).days;
+  }
+
   static Future<List<AchievementProgress>> reconcileAll({
     CircleProfile? profile,
   }) {

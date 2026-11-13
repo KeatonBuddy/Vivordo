@@ -105,7 +105,7 @@ class _AchievementBannerState extends State<AchievementBanner>
                   color: colors.card,
                   elevation: 8,
                   shadowColor: Colors.black38,
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(20),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 500),
                     child: Padding(

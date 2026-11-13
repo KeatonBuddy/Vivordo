@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/src/services/auth_service.dart';
+import 'package:vivordo_health/src/services/notification_service.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'login_screen.dart';
@@ -135,6 +136,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   Future<void> _logout() async {
     _pollTimer?.cancel();
     _cooldownTimer?.cancel();
+    await NotificationService().prepareForSignOut();
     await FirebaseAuth.instance.signOut();
     if (mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -180,7 +182,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 "you're verified.",
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: textGrey,
                   height: 1.5,
                 ),
@@ -195,7 +197,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     backgroundColor: accentPurple,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     elevation: 0,
                   ),

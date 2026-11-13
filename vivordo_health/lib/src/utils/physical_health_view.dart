@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'units.dart';
 
 /// One ingredient of Physical Health, as the detail screen shows it.
 /// Where to fix a missing ingredient: the Body profile (age, height and
@@ -201,7 +202,7 @@ class PhysicalHealthView {
             ? 'From your morning check-ins'
             : sleepHours == null
             ? 'Not enough sleep data yet'
-            : '${_hoursMinutes(sleepHours)} avg'
+            : '${hoursMinutes(sleepHours)} avg'
                   '${onTime == null ? '' : ' · ${(onTime * 7).round()} of 7 nights on time'}',
         part('sleep'),
       ),
@@ -302,8 +303,3 @@ String _thousands(int n) =>
 
 String _trim(double v) =>
     v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
-
-String _hoursMinutes(double hours) {
-  final m = (hours * 60).round();
-  return '${m ~/ 60}h ${(m % 60).toString().padLeft(2, '0')}m';
-}

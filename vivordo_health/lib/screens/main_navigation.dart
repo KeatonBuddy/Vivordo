@@ -25,10 +25,12 @@ import 'my_day_screen.dart';
 import 'month_calendar_screen.dart';
 import 'steps_detail_screen.dart';
 import 'circle_screen.dart';
+import 'invites_screen.dart';
 import '../src/services/achievement_service.dart';
 import '../src/services/analytics_service.dart';
 import '../src/services/circle_profile_service.dart';
 import '../src/services/day_record_service.dart';
+import '../src/services/event_invite_service.dart';
 import '../src/services/vo2_max_service.dart';
 import '../src/services/reduce_transparency.dart';
 import '../src/services/health_service.dart';
@@ -75,6 +77,7 @@ class MainNavigationScreen extends StatefulWidget {
     '/steps': (_) => const StepsDetailScreen(),
     '/circle': (_) => const CircleScreen(),
     '/circle/challenges': (_) => const CircleScreen(initialTab: 1),
+    '/invites': (_) => const InvitesScreen(),
   };
 
   @override
@@ -249,6 +252,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _refreshTodayFromHealth();
     // Yesterday too, in case the app was last opened before it ended.
     unawaited(DayRecordService.syncOnOpen());
+    unawaited(EventInviteService.syncCopies());
     // Warms Circle's data so the tab opens filled; launch doesn't wait.
     unawaited(CircleProfileService.preload());
     _achievementMonitor = AchievementMonitor.start();
@@ -498,6 +502,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _refreshTodayFromHealth();
       _achievementMonitor?.scheduleNow();
       unawaited(DayRecordService.syncOnOpen());
+      unawaited(EventInviteService.syncCopies());
     }
   }
 
@@ -903,8 +908,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 bottom: 0,
                 right: _navBarInset,
                 child: Center(child: _buildFloatingNavBar(vertical: true)),
-              )
-            else if (showNavBar)
+              ),
+            // A scroll-edge fade: the bar is glass, and text passing right
+            // behind and beside it read as clutter. The Duo's rail sits
+            // beside the content, so it needs none.
+            if (showNavBar && !rail)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: _navBarClearance + 26,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          context.vivordoColors.page.withValues(alpha: 0),
+                          context.vivordoColors.page.withValues(alpha: .9),
+                        ],
+                        stops: const [0, .6],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (showNavBar && !rail)
               ValueListenableBuilder<double>(
                 valueListenable: _insightLift,
                 builder: (context, lift, bar) => Positioned(
@@ -1387,8 +1417,8 @@ class _SheetClipper extends CustomClipper<Path> {
     ..addRRect(
       RRect.fromRectAndCorners(
         Offset.zero & size,
-        topLeft: const Radius.circular(28),
-        topRight: const Radius.circular(28),
+        topLeft: const Radius.circular(20),
+        topRight: const Radius.circular(20),
       ),
     );
 

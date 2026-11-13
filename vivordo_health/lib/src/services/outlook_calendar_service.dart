@@ -382,7 +382,14 @@ class OutlookCalendarService {
         (decoded['value'] as List? ?? const []).cast<Map<String, dynamic>>(),
       );
       final next = decoded['@odata.nextLink'];
-      page = next is String ? Uri.parse(next) : null;
+      // The next request carries the access token, so it only ever goes to
+      // Microsoft Graph, whatever the response says.
+      final nextPage = next is String ? Uri.tryParse(next) : null;
+      page = nextPage != null &&
+              nextPage.scheme == 'https' &&
+              nextPage.host == page.host
+          ? nextPage
+          : null;
     }
     return items;
   }
@@ -782,6 +789,58 @@ class OutlookCalendarService {
 
   static Future<void> deleteEvent(String id) async {
     await _send('DELETE', _graphUri('/me/events/${_graphId(id)}'));
+    CalendarService.invalidateEventCache();
+  }
+
+  /// Moves, renames or cancels (a null [start]) the occurrence of
+  /// [seriesId] that originally started at [originalStart]. Graph lists
+  /// occurrences by where they are now, so this looks a month either side.
+  // ponytail: an occurrence moved over a month away isn't found again.
+  static Future<void> changeOccurrence(
+    String seriesId, {
+    required DateTime originalStart,
+    String? title,
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final json = await _send(
+      'GET',
+      _graphUri('/me/events/${_graphId(seriesId)}/instances', {
+        'startDateTime': originalStart
+            .subtract(const Duration(days: 31))
+            .toUtc()
+            .toIso8601String(),
+        'endDateTime': originalStart
+            .add(const Duration(days: 31))
+            .toUtc()
+            .toIso8601String(),
+        r'$select': 'id,originalStart',
+        r'$top': '100',
+      }),
+    );
+    final id = [
+      for (final occurrence in json?['value'] as List? ?? const [])
+        if (DateTime.tryParse(
+              '${(occurrence as Map)['originalStart']}',
+            )?.isAtSameMomentAs(originalStart) ==
+            true)
+          occurrence['id'] as String?,
+    ].nonNulls.firstOrNull;
+    if (id == null) return;
+    final uri = _graphUri('/me/events/${Uri.encodeComponent(id)}');
+    if (start == null || end == null) {
+      await _send('DELETE', uri);
+    } else {
+      final zone = await CalendarService.deviceTimeZone();
+      await _send(
+        'PATCH',
+        uri,
+        body: {
+          if (title?.trim().isNotEmpty == true) 'subject': title!.trim(),
+          ..._times(start, end, allDay: false, zone: zone),
+        },
+      );
+    }
     CalendarService.invalidateEventCache();
   }
 

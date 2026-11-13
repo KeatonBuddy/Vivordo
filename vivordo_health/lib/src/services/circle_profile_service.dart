@@ -74,7 +74,38 @@ class CircleActivity {
     this.activityCategory,
     this.achievementBadgeAsset,
     this.achievementTier,
+    this.personalRecords = const [],
+    this.exercises = const [],
   });
+
+  /// Reads a `circle_activity` document posted by [profile].
+  factory CircleActivity.fromData(
+    String id,
+    CircleProfile profile,
+    Map<String, dynamic> data,
+  ) => CircleActivity(
+    id: id,
+    profile: profile,
+    name: data['name'] as String? ?? 'Activity',
+    minutes: (data['minutes'] as num?)?.round() ?? 0,
+    day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    kind: data['kind'] as String? ?? 'activity',
+    summary: data['summary'] as String?,
+    mood: data['mood'] as String?,
+    km: (data['km'] as num?)?.toDouble(),
+    sets: (data['sets'] as num?)?.round(),
+    activityCategory: data['activityCategory'] as String?,
+    achievementBadgeAsset: CircleProfileService.achievementBadgeFor(data),
+    achievementTier: data['achievementTier'] as String?,
+    personalRecords: [
+      for (final record in data['personalRecords'] as List? ?? const [])
+        if (record is Map) CirclePersonalRecord.fromMap(record),
+    ],
+    exercises: [
+      for (final exercise in data['exercises'] as List? ?? const [])
+        if (exercise is Map) CircleExerciseSummary.fromMap(exercise),
+    ],
+  );
 
   final String id;
   final CircleProfile profile;
@@ -89,7 +120,66 @@ class CircleActivity {
   final String? activityCategory;
   final String? achievementBadgeAsset;
   final String? achievementTier;
+
+  /// Lifts on a shared workout that beat the person's earlier record.
+  final List<CirclePersonalRecord> personalRecords;
+
+  /// Every exercise on a shared workout, with its best set.
+  final List<CircleExerciseSummary> exercises;
 }
+
+/// A personal record shown on a shared workout. Weights are in pounds.
+class CirclePersonalRecord {
+  const CirclePersonalRecord({
+    required this.name,
+    required this.weightLbs,
+    required this.reps,
+    this.previousWeightLbs,
+    this.previousReps,
+  });
+
+  factory CirclePersonalRecord.fromMap(Map<dynamic, dynamic> data) =>
+      CirclePersonalRecord(
+        name: data['name'] as String? ?? 'Exercise',
+        weightLbs: (data['weightLbs'] as num?)?.toDouble() ?? 0,
+        reps: (data['reps'] as num?)?.toInt() ?? 0,
+        previousWeightLbs: (data['previousWeightLbs'] as num?)?.toDouble(),
+        previousReps: (data['previousReps'] as num?)?.toInt(),
+      );
+
+  final String name;
+  final double weightLbs;
+  final int reps;
+  final double? previousWeightLbs;
+  final int? previousReps;
+}
+
+/// One exercise on a shared workout. Weights are in pounds; [bestWeightLbs]
+/// is null for bodyweight work.
+class CircleExerciseSummary {
+  const CircleExerciseSummary({
+    required this.name,
+    required this.sets,
+    this.bestWeightLbs,
+    this.bestReps,
+  });
+
+  factory CircleExerciseSummary.fromMap(Map<dynamic, dynamic> data) =>
+      CircleExerciseSummary(
+        name: data['name'] as String? ?? 'Exercise',
+        sets: (data['sets'] as num?)?.toInt() ?? 0,
+        bestWeightLbs: (data['bestWeightLbs'] as num?)?.toDouble(),
+        bestReps: (data['bestReps'] as num?)?.toInt(),
+      );
+
+  final String name;
+  final int sets;
+  final double? bestWeightLbs;
+  final int? bestReps;
+}
+
+/// A personal record from one shared workout, with when it was set.
+typedef CircleSharedRecord = ({CirclePersonalRecord record, DateTime day});
 
 class CircleDailyFitness {
   const CircleDailyFitness({
@@ -822,6 +912,42 @@ class CircleProfileService {
     return controller.stream;
   }
 
+  /// Every personal record [uid] has shared on a Circle workout, newest
+  /// first. Only posted workouts are read, so it never reveals a lift the
+  /// person didn't share.
+  static Stream<List<CircleSharedRecord>> watchSharedPersonalRecords(
+    String uid,
+  ) {
+    if (uid.trim().isEmpty) return Stream.value(const []);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('circle_activity')
+        .where('kind', isEqualTo: 'workout')
+        .snapshots()
+        .map(
+          (snapshot) => sharedRecordsFrom(
+            snapshot.docs.map((document) => document.data()),
+          ),
+        );
+  }
+
+  /// Flattens workout posts into their personal records, newest first.
+  @visibleForTesting
+  static List<CircleSharedRecord> sharedRecordsFrom(
+    Iterable<Map<String, dynamic>> posts,
+  ) {
+    final records = <CircleSharedRecord>[
+      for (final post in posts)
+        if ((post['day'] as Timestamp?)?.toDate() case final day?)
+          for (final record in post['personalRecords'] as List? ?? const [])
+            if (record is Map)
+              (record: CirclePersonalRecord.fromMap(record), day: day),
+    ];
+    records.sort((a, b) => b.day.compareTo(a.day));
+    return records;
+  }
+
   static Stream<int> watchWorkoutStreak(String uid) {
     if (uid.trim().isEmpty) return Stream.value(0);
     return FirebaseFirestore.instance
@@ -905,26 +1031,13 @@ class CircleProfileService {
                 activitiesByFriend.remove(friend.uid);
               } else {
                 activitiesByFriend[friend.uid] = snapshot.docs
-                    .map((document) {
-                      final data = document.data();
-                      return CircleActivity(
-                        id: document.id,
-                        profile: friend,
-                        name: data['name'] as String? ?? 'Activity',
-                        minutes: (data['minutes'] as num?)?.round() ?? 0,
-                        day:
-                            (data['day'] as Timestamp?)?.toDate() ??
-                            DateTime.now(),
-                        kind: data['kind'] as String? ?? 'activity',
-                        summary: data['summary'] as String?,
-                        mood: data['mood'] as String?,
-                        km: (data['km'] as num?)?.toDouble(),
-                        sets: (data['sets'] as num?)?.round(),
-                        activityCategory: data['activityCategory'] as String?,
-                        achievementBadgeAsset: achievementBadgeFor(data),
-                        achievementTier: data['achievementTier'] as String?,
-                      );
-                    })
+                    .map(
+                      (document) => CircleActivity.fromData(
+                        document.id,
+                        friend,
+                        document.data(),
+                      ),
+                    )
                     .toList(growable: false);
               }
               emit();
@@ -968,24 +1081,10 @@ class CircleProfileService {
     if (limit != null) query = query.limit(limit);
     return query.snapshots().map(
       (snapshot) => snapshot.docs
-          .map((document) {
-            final data = document.data();
-            return CircleActivity(
-              id: document.id,
-              profile: profile,
-              name: data['name'] as String? ?? 'Activity',
-              minutes: (data['minutes'] as num?)?.round() ?? 0,
-              day: (data['day'] as Timestamp?)?.toDate() ?? DateTime.now(),
-              kind: data['kind'] as String? ?? 'activity',
-              summary: data['summary'] as String?,
-              mood: data['mood'] as String?,
-              km: (data['km'] as num?)?.toDouble(),
-              sets: (data['sets'] as num?)?.round(),
-              activityCategory: data['activityCategory'] as String?,
-              achievementBadgeAsset: achievementBadgeFor(data),
-              achievementTier: data['achievementTier'] as String?,
-            );
-          })
+          .map(
+            (document) =>
+                CircleActivity.fromData(document.id, profile, document.data()),
+          )
           .toList(growable: false),
     );
   }

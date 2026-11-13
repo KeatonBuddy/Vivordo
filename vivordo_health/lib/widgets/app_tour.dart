@@ -403,7 +403,7 @@ class _AppTourState extends State<AppTour> with SingleTickerProviderStateMixin {
                   color: colors.card,
                   elevation: 12,
                   shadowColor: Colors.black.withValues(alpha: .4),
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(20),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
                     child: Column(
@@ -470,7 +470,7 @@ class _ScrimPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final spot = RRect.fromRectAndRadius(
       hole.inflate(8),
-      const Radius.circular(22),
+      const Radius.circular(20),
     );
     final scrim = Path.combine(
       PathOperation.difference,

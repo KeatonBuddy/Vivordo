@@ -838,7 +838,7 @@ class _ScanScreenState extends State<ScanScreen>
               Text(
                 '15-second bpm scan',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: context.vivordoColors.textSecondary,
                 ),
               ),
@@ -873,7 +873,7 @@ class _ScanScreenState extends State<ScanScreen>
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFFF9500).withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: const Color(0xFFFF9500).withValues(alpha: 0.35),
         ),
@@ -936,7 +936,7 @@ class _ScanScreenState extends State<ScanScreen>
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: accentPurple.withValues(alpha: 0.22)),
         boxShadow: [
           BoxShadow(
@@ -956,7 +956,7 @@ class _ScanScreenState extends State<ScanScreen>
               Text(
                 'First scan tutorial',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: accentPurple,
                 ),
@@ -1008,7 +1008,7 @@ class _ScanScreenState extends State<ScanScreen>
                         slide['body'] as String,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 12,
                           color: context.vivordoColors.textSecondary,
                           height: 1.35,
                         ),
@@ -1033,7 +1033,7 @@ class _ScanScreenState extends State<ScanScreen>
                   color: isActive
                       ? accentPurple
                       : accentPurple.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               );
             }),
@@ -1048,7 +1048,7 @@ class _ScanScreenState extends State<ScanScreen>
                     foregroundColor: context.vivordoColors.textPrimary,
                     side: BorderSide(color: context.vivordoColors.border),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                   ),
                   child: const Text('Skip'),
@@ -1072,7 +1072,7 @@ class _ScanScreenState extends State<ScanScreen>
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                   ),
                   child: Text(
@@ -1189,7 +1189,7 @@ class _ScanScreenState extends State<ScanScreen>
                     : 'Cover the rear camera and hold still. The scan begins when your finger is detected.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: context.vivordoColors.textSecondary,
                   height: 1.6,
                 ),
@@ -1208,7 +1208,7 @@ class _ScanScreenState extends State<ScanScreen>
                         alpha: .55,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                     ),
                     icon: _isStartingScan
@@ -1313,7 +1313,7 @@ class _ScanScreenState extends State<ScanScreen>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: accentPurple.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
           ),
           child: Column(
@@ -1439,7 +1439,7 @@ class _ScanScreenState extends State<ScanScreen>
         ),
         const SizedBox(height: 24),
         ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           child: LinearProgressIndicator(
             value: _progress,
             minHeight: 8,
@@ -1479,7 +1479,7 @@ class _ScanScreenState extends State<ScanScreen>
         const SizedBox(height: 32),
         const Text(
           'Analysing your scan...',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
       ],
     );
@@ -1513,7 +1513,7 @@ class _ScanScreenState extends State<ScanScreen>
           padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
           decoration: BoxDecoration(
             color: accentPurple,
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
                 color: accentPurple.withValues(alpha: 0.35),
@@ -1641,7 +1641,7 @@ class _ScanScreenState extends State<ScanScreen>
                   SizedBox(width: 6),
                   Text(
                     'Insight',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -1714,14 +1714,14 @@ class _ScanScreenState extends State<ScanScreen>
         Text(
           _errorTitle,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
           _errorBody,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 15,
             color: context.vivordoColors.textSecondary,
             height: 1.6,
           ),
@@ -1857,7 +1857,7 @@ class _ScanScreenState extends State<ScanScreen>
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
       decoration: BoxDecoration(
         color: context.vivordoColors.card,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.vivordoColors.border),
       ),
       child: Column(

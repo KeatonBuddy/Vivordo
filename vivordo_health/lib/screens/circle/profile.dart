@@ -18,6 +18,8 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
   var _tab = 0;
   late final Stream<CircleProfile?> _profile =
       CircleProfileService.watchProfile(widget.profile.uid);
+  late final Stream<List<CircleSharedRecord>> _sharedRecords =
+      CircleProfileService.watchSharedPersonalRecords(widget.profile.uid);
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _achievementDocs =
       FirebaseFirestore.instance
           .collection('users')
@@ -43,56 +45,73 @@ class _CircleUserProfilePageState extends State<CircleUserProfilePage> {
                 profile,
                 achievementSnapshot.data?.docs ?? const [],
               );
-              return ListView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 40),
-                children: [
-                  _buildHeader(context, profile),
-                  const SizedBox(height: 10),
-                  _ProfileHero(
-                    profile: profile,
-                    isOwner: isOwner,
-                    onEdit: () => _edit(profile),
-                  ),
-                  if (!isOwner) ...[
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      onPressed: () => _challenge(profile),
-                      icon: const Icon(CupertinoIcons.rosette, size: 19),
-                      label: Text('Challenge ${profile.username}'),
-                      style: _primaryButtonStyle(),
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  _ProfileStats(
-                    profile: profile,
-                    isOwner: isOwner,
-                    achievementsEarned: achievements
-                        .where((achievement) => achievement.unlocked)
-                        .length,
-                  ),
-                  if (!isOwner) _FriendTodayCard(profile: profile),
-                  const SizedBox(height: 18),
-                  _FeaturedAchievementsCard(
-                    profile: profile,
-                    achievements: achievements,
-                    onEdit: isOwner
-                        ? () => _editFeatured(profile, achievements)
-                        : null,
-                  ),
-                  const SizedBox(height: 22),
-                  _SegmentedTabs(
-                    labels: const ['Activity', 'Achievements'],
-                    selectedIndex: _tab,
-                    height: 46,
-                    onChanged: (index) => setState(() => _tab = index),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_tab == 0)
-                    _ProfileActivityList(profile: profile)
-                  else
-                    _ProfileAchievementsSummary(achievements: achievements),
-                ],
+              return StreamBuilder<List<CircleSharedRecord>>(
+                stream: _sharedRecords,
+                builder: (context, recordsSnapshot) {
+                  final records =
+                      recordsSnapshot.data ?? const <CircleSharedRecord>[];
+                  return ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(18, 10, 18, 40),
+                    children: [
+                      _buildHeader(context, profile),
+                      const SizedBox(height: 10),
+                      _ProfileHero(
+                        profile: profile,
+                        isOwner: isOwner,
+                        onEdit: () => _edit(profile),
+                      ),
+                      if (!isOwner) ...[
+                        const SizedBox(height: 18),
+                        FilledButton.icon(
+                          onPressed: () => _challenge(profile),
+                          icon: const Icon(CupertinoIcons.rosette, size: 19),
+                          label: Text('Challenge ${profile.username}'),
+                          style: _primaryButtonStyle(),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      _ProfileStats(
+                        profile: profile,
+                        isOwner: isOwner,
+                        recordsThisYear: records
+                            .where(
+                              (shared) =>
+                                  shared.day.year == DateTime.now().year,
+                            )
+                            .length,
+                      ),
+                      if (!isOwner) _FriendTodayCard(profile: profile),
+                      if (records.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _PersonalRecordBoard(
+                          records: records,
+                          ownerLabel: isOwner ? 'you' : profile.username,
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      _FeaturedAchievementsCard(
+                        profile: profile,
+                        achievements: achievements,
+                        onEdit: isOwner
+                            ? () => _editFeatured(profile, achievements)
+                            : null,
+                      ),
+                      const SizedBox(height: 22),
+                      _SegmentedTabs(
+                        labels: const ['Activity', 'Achievements'],
+                        selectedIndex: _tab,
+                        height: 46,
+                        onChanged: (index) => setState(() => _tab = index),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_tab == 0)
+                        _ProfileActivityList(profile: profile)
+                      else
+                        _ProfileAchievementsSummary(achievements: achievements),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -363,7 +382,7 @@ class _ProfileHero extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: colors.textPrimary,
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             letterSpacing: -.5,
           ),
@@ -397,12 +416,12 @@ class _ProfileStats extends StatefulWidget {
   const _ProfileStats({
     required this.profile,
     required this.isOwner,
-    required this.achievementsEarned,
+    required this.recordsThisYear,
   });
 
   final CircleProfile profile;
   final bool isOwner;
-  final int achievementsEarned;
+  final int recordsThisYear;
 
   @override
   State<_ProfileStats> createState() => _ProfileStatsState();
@@ -459,8 +478,9 @@ class _ProfileStatsState extends State<_ProfileStats> {
           child: isOwner
               ? medals
               : _StatTile(
-                  value: '${widget.achievementsEarned}',
-                  label: 'Achievements',
+                  value: '${widget.recordsThisYear}',
+                  label: 'PRs this year',
+                  color: palette.gold,
                 ),
         ),
       ],
@@ -637,7 +657,7 @@ class _FeaturedAchievementsCard extends StatelessWidget {
                 onEdit == null
                     ? 'Nothing featured yet.'
                     : 'Earn an achievement to feature it here.',
-                style: TextStyle(color: context.muted, fontSize: 14),
+                style: TextStyle(color: context.muted, fontSize: 15),
               ),
             )
           else
@@ -818,7 +838,7 @@ class _FeaturedAchievementPickerState
       ),
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
@@ -833,7 +853,7 @@ class _FeaturedAchievementPickerState
                 'Featured achievements',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -865,7 +885,7 @@ class _FeaturedAchievementPickerState
                           ? context.circle.accentTint
                           : colors.cardMuted,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(20),
                         side: BorderSide(
                           color: selected ? _brand : colors.border,
                           width: selected ? 2 : 1,
@@ -878,7 +898,7 @@ class _FeaturedAchievementPickerState
                             _selected.add(achievement.id);
                           }
                         }),
-                        borderRadius: BorderRadius.circular(18),
+                        borderRadius: BorderRadius.circular(20),
                         child: Stack(
                           children: [
                             Padding(
@@ -943,6 +963,127 @@ class _FeaturedAchievementPickerState
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The latest PR for each exercise someone has shared, newest first.
+class _PersonalRecordBoard extends StatefulWidget {
+  const _PersonalRecordBoard({required this.records, required this.ownerLabel});
+
+  /// Every shared record, newest first.
+  final List<CircleSharedRecord> records;
+
+  /// "you", or the person's name, for the caption.
+  final String ownerLabel;
+
+  @override
+  State<_PersonalRecordBoard> createState() => _PersonalRecordBoardState();
+}
+
+class _PersonalRecordBoardState extends State<_PersonalRecordBoard> {
+  static const _collapsedCount = 4;
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = context.watch<ThemeController>().units;
+    final colors = context.vivordoColors;
+    // A PR always beats the one before it, so the newest per exercise is the
+    // best that person has shared.
+    final seen = <String>{};
+    final latest = [
+      for (final shared in widget.records)
+        if (seen.add(shared.record.name.trim().toLowerCase())) shared,
+    ];
+    final shown = _expanded ? latest : latest.take(_collapsedCount).toList();
+    return _CircleCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(
+            'Personal records',
+            trailing: latest.length > _collapsedCount
+                ? _LinkButton(
+                    label: _expanded ? 'Show less' : 'See all ${latest.length}',
+                    onTap: () => setState(() => _expanded = !_expanded),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 4),
+          for (var index = 0; index < shown.length; index++)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                border: index == 0
+                    ? null
+                    : Border(top: BorderSide(color: colors.border)),
+              ),
+              child: Row(
+                children: [
+                  const _PersonalRecordStar(size: 34),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                shown[index].record.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colors.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (DateTime.now()
+                                    .difference(shown[index].day)
+                                    .inDays <
+                                7) ...[
+                              const SizedBox(width: 6),
+                              _Pill(
+                                label: 'New',
+                                color: context.circle.success,
+                                background: context.circle.successTint,
+                              ),
+                            ],
+                          ],
+                        ),
+                        Text(
+                          _relativeActivityTime(shown[index].day),
+                          style: TextStyle(color: context.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    _liftText(
+                      units,
+                      shown[index].record.weightLbs,
+                      shown[index].record.reps,
+                    ),
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
+          Text(
+            'From workouts ${widget.ownerLabel} shared to Circle.',
+            style: TextStyle(color: context.muted, fontSize: 12),
+          ),
+        ],
       ),
     );
   }

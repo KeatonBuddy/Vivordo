@@ -5,6 +5,7 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:googleapis/calendar/v3.dart' as gcal;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:vivordo_health/src/services/event_invite_service.dart';
 import 'package:vivordo_health/src/services/outlook_calendar_service.dart';
 import 'package:vivordo_health/src/services/calendar_snapshot_service.dart';
 import 'package:vivordo_health/src/utils/event_repeat.dart';
@@ -181,9 +182,124 @@ class CalendarService {
     return gcal.CalendarApi(authorization.authClient(scopes: scopes));
   }
 
+  /// Friends invited to an event of yours see its change or cancellation.
+  /// Best effort: the calendar change already happened.
+  static void _followInvites(Future<void> Function() update) {
+    update().catchError((Object e) => debugPrint('Invite not updated: $e'));
+  }
+
   /// Deletes [event]. For one occurrence of a repeating event, [scope] can
   /// widen that to the occurrences after it or to the whole series.
   static Future<void> deleteEvent(
+    gcal.Event event, {
+    EventScope scope = EventScope.thisEvent,
+  }) async {
+    await _deleteEvent(event, scope: scope);
+    final series = event.recurringEventId;
+    _followInvites(switch (scope) {
+      _ when series == null => () => EventInviteService.senderEventDeleted(
+        event.id,
+      ),
+      EventScope.thisEvent => () => EventInviteService.senderOccurrenceChanged(
+        event,
+      ),
+      EventScope.thisAndFollowing => () => _followSeriesEnd(event),
+      // Deleting every occurrence cancels the series' invite.
+      EventScope.allEvents => () => EventInviteService.senderEventDeleted(
+        series,
+      ),
+    });
+  }
+
+  /// After "this and following" goes, the series ends earlier, or is gone
+  /// when that was its first occurrence. From one already past, nothing
+  /// ahead is left, so the invite is off too.
+  static Future<void> _followSeriesEnd(gcal.Event occurrence) async {
+    gcal.Event? series;
+    try {
+      series = await seriesFor(occurrence);
+    } catch (_) {
+      // Deleted outright.
+    }
+    final from =
+        occurrence.originalStartTime?.dateTime ?? occurrence.start?.dateTime;
+    if (series == null ||
+        series.status == 'cancelled' ||
+        (from != null && from.isBefore(DateTime.now()))) {
+      return EventInviteService.senderEventDeleted(occurrence.recurringEventId);
+    }
+    return EventInviteService.senderEventChanged(series);
+  }
+
+  /// Moves, renames or cancels (a null [start]) one occurrence of the
+  /// series [seriesId], found by where it originally started: an accepted
+  /// invite's copy following the sender. Does nothing when that occurrence
+  /// isn't there (already cancelled, or past the series' end).
+  static Future<void> changeOccurrence(
+    String seriesId, {
+    String? calendarId,
+    required DateTime originalStart,
+    String? title,
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    if (seriesId.startsWith('outlook:')) {
+      return OutlookCalendarService.changeOccurrence(
+        seriesId,
+        originalStart: originalStart,
+        title: title,
+        start: start,
+        end: end,
+      );
+    }
+    final api = await _authorizedCalendarApi();
+    final calendar = calendarId ?? await defaultCalendarId();
+    final instances = await api.events.instances(
+      calendar,
+      seriesId,
+      originalStart: originalStart.toUtc().toIso8601String(),
+    );
+    final occurrence = instances.items?.firstOrNull;
+    if (occurrence?.id == null) return;
+    if (start == null || end == null) {
+      await api.events.delete(calendar, occurrence!.id!);
+    } else {
+      final zone = occurrence!.start?.timeZone;
+      await api.events.patch(
+        gcal.Event()
+          ..summary = title
+          ..start = (gcal.EventDateTime()
+            ..dateTime = start.toUtc()
+            ..timeZone = zone)
+          ..end = (gcal.EventDateTime()
+            ..dateTime = end.toUtc()
+            ..timeZone = zone),
+        calendar,
+        occurrence.id!,
+      );
+    }
+    invalidateEventCache();
+  }
+
+  /// Deletes a one-off event known only by its ids, as saved earlier (an
+  /// accepted invite's copy). Outlook ids carry their own account.
+  static Future<void> deleteEventById(
+    String eventId, {
+    String? calendarId,
+  }) async {
+    if (eventId.startsWith('outlook:')) {
+      return OutlookCalendarService.deleteEvent(eventId);
+    }
+    final calendarApi = await _authorizedCalendarApi();
+    await calendarApi.events.delete(
+      calendarId ?? await defaultCalendarId(),
+      eventId,
+    );
+    _eventCalendarIds.remove(eventId);
+    invalidateEventCache();
+  }
+
+  static Future<void> _deleteEvent(
     gcal.Event event, {
     EventScope scope = EventScope.thisEvent,
   }) async {
@@ -436,6 +552,24 @@ class CalendarService {
     required DateTime end,
     required String recurrence,
   }) async {
+    final result = await _updateEventTimeAndRecurrence(
+      event,
+      start: start,
+      end: end,
+      recurrence: recurrence,
+    );
+    if (result.recurringEventId == null) {
+      _followInvites(() => EventInviteService.senderEventChanged(result));
+    }
+    return result;
+  }
+
+  static Future<gcal.Event> _updateEventTimeAndRecurrence(
+    gcal.Event event, {
+    required DateTime start,
+    required DateTime end,
+    required String recurrence,
+  }) async {
     if (isOutlook(event)) {
       return OutlookCalendarService.updateEvent(
         event,
@@ -548,6 +682,39 @@ class CalendarService {
   /// Updates the fields Panda is allowed to propose. Null fields are preserved.
   /// With [allEvents], an occurrence's changes go to its whole series.
   static Future<gcal.Event> updateEvent(
+    gcal.Event event, {
+    String? title,
+    DateTime? start,
+    DateTime? end,
+    String? recurrence,
+    String? calendarId,
+    bool? isAllDay,
+    bool allEvents = false,
+  }) async {
+    final result = await _updateEvent(
+      event,
+      title: title,
+      start: start,
+      end: end,
+      recurrence: recurrence,
+      calendarId: calendarId,
+      isAllDay: isAllDay,
+      allEvents: allEvents,
+    );
+    if (event.recurringEventId == null) {
+      _followInvites(() => EventInviteService.senderEventChanged(result));
+    } else if (!allEvents) {
+      // Before and after: the change can drop the original start.
+      _followInvites(
+        () =>
+            EventInviteService.senderOccurrenceChanged(event, changed: result),
+      );
+    }
+    // allEvents: _updateEvent's update of the series followed it already.
+    return result;
+  }
+
+  static Future<gcal.Event> _updateEvent(
     gcal.Event event, {
     String? title,
     DateTime? start,

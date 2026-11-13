@@ -280,7 +280,7 @@ const TASKS = {
  * @return {Object} {error} or {model, maxTokens, system, user}
  */
 function buildTask(data) {
-  const build = TASKS[data?.task];
+  const build = Object.hasOwn(TASKS, data?.task) ? TASKS[data.task] : null;
   if (!build) return {error: `task must be one of ${Object.keys(TASKS)}.`};
   return build(data.input);
 }

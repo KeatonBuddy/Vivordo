@@ -6,6 +6,9 @@ const {
   onDocumentWritten,
 } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
+const {shortName} = require("./push");
+const {requireBudget} = require("./rate_limit");
+const {FieldValue, Timestamp} = require("firebase-admin/firestore");
 
 const CHALLENGE_TYPES = Object.freeze({
   workout_count: {
@@ -88,6 +91,10 @@ function uniqueInvitees(rawInvitees, creatorUid) {
       .filter((value) => typeof value === "string")
       .map((value) => value.trim())
       .filter((value) => value && value !== creatorUid))];
+  // These become document ids: a "/" would write to some other path.
+  if (invitees.some((value) => value.includes("/") || value.length > 128)) {
+    throw new HttpsError("invalid-argument", "Choose valid Circle friends.");
+  }
   if (invitees.length === 0 || invitees.length > MAX_INVITEES) {
     throw new HttpsError(
         "invalid-argument",
@@ -154,7 +161,7 @@ function validatedChallengeInput(request, creatorUid) {
 }
 
 function timestampAfter(timestamp, duration) {
-  return admin.firestore.Timestamp.fromMillis(
+  return Timestamp.fromMillis(
       timestamp.toMillis() + duration,
   );
 }
@@ -239,8 +246,13 @@ exports.createChallenge = onCall(async (request) => {
   const creatorUid = requireAuth(request);
   const input = validatedChallengeInput(request, creatorUid);
   const db = admin.firestore();
+  await requireBudget(db, creatorUid, "social");
   const friendshipSnapshots = await db.getAll(
-      ...input.invitees.map((uid) => friendReference(db, creatorUid, uid)),
+      // Both sides: the creator's own list alone is theirs to write.
+      ...input.invitees.flatMap((uid) => [
+        friendReference(db, creatorUid, uid),
+        friendReference(db, uid, creatorUid),
+      ]),
   );
   if (friendshipSnapshots.some((snapshot) => !snapshot.exists)) {
     throw new HttpsError(
@@ -263,17 +275,18 @@ exports.createChallenge = onCall(async (request) => {
   const profileSnapshots = await db.getAll(
       ...profileUids.map((uid) => profileReference(db, uid)),
   );
-  const creatorName = profileSnapshots[0].data()?.username || "A friend";
+  const creatorName =
+    shortName(profileSnapshots[0].data()?.username, "A friend");
   const participantNames = {};
   profileUids.forEach((uid, index) => {
-    participantNames[uid] = profileSnapshots[index].data()?.username ||
-      "Circle member";
+    participantNames[uid] = shortName(
+        profileSnapshots[index].data()?.username, "Circle member");
   });
 
   const challengeReference = db.collection("challenges").doc();
   const challengeId = challengeReference.id;
   const participantUids = [creatorUid, ...input.invitees];
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const pendingExpiresAt = timestampAfter(
       now,
       INVITE_EXPIRY_HOURS * 60 * 60 * 1000,
@@ -343,10 +356,12 @@ exports.createChallenge = onCall(async (request) => {
 
 exports.respondToChallenge = onCall(async (request) => {
   const uid = requireAuth(request);
+  await requireBudget(admin.firestore(), uid, "social");
   const challengeId = typeof request.data?.challengeId === "string" ?
     request.data.challengeId.trim() : "";
   const accept = request.data?.accept;
-  if (!challengeId || typeof accept !== "boolean") {
+  if (!challengeId || challengeId.includes("/") ||
+      typeof accept !== "boolean") {
     throw new HttpsError(
         "invalid-argument",
         "challengeId and accept are required.",
@@ -395,7 +410,7 @@ exports.respondToChallenge = onCall(async (request) => {
     const declinedUids = [...(challenge.declinedUids || [])];
     if (accept && !acceptedUids.includes(uid)) acceptedUids.push(uid);
     if (!accept && !declinedUids.includes(uid)) declinedUids.push(uid);
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     const activated = pendingUids.length === 0 && acceptedUids.length >= 2;
     const cancelled = pendingUids.length === 0 && acceptedUids.length < 2;
     const status = activated ? "active" : cancelled ? "cancelled" : "pending";
@@ -518,7 +533,8 @@ exports.respondToChallenge = onCall(async (request) => {
 
   if (!response.alreadyProcessed) {
     const responder = await profileReference(db, uid).get();
-    const responderName = responder.data()?.username || "A Circle friend";
+    const responderName =
+      shortName(responder.data()?.username, "A Circle friend");
     await sendChallengeNotification(
         response.creatorUid,
         "Circle",
@@ -542,9 +558,10 @@ exports.respondToChallenge = onCall(async (request) => {
 
 exports.cancelChallenge = onCall(async (request) => {
   const uid = requireAuth(request);
+  await requireBudget(admin.firestore(), uid, "social");
   const challengeId = typeof request.data?.challengeId === "string" ?
     request.data.challengeId.trim() : "";
-  if (!challengeId) {
+  if (!challengeId || challengeId.includes("/")) {
     throw new HttpsError("invalid-argument", "challengeId is required.");
   }
   const db = admin.firestore();
@@ -562,7 +579,7 @@ exports.cancelChallenge = onCall(async (request) => {
       );
     }
     if (!["pending", "active"].includes(challenge.status)) return;
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     transaction.update(challengeReference, {
       status: "cancelled",
       cancelledAt: now,
@@ -737,7 +754,7 @@ exports.challengeMetricProgress = onDocumentWritten(
 
 exports.finalizeChallenges = onSchedule("every 15 minutes", async () => {
   const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
+  const now = Timestamp.now();
   const [active, pending] = await Promise.all([
     db.collection("challenges")
         .where("status", "==", "active")
@@ -800,8 +817,8 @@ async function journalEntryExistsForDay(uid, dayKey) {
       Number(match[2]) - 1,
       Number(match[3]),
   );
-  const start = admin.firestore.Timestamp.fromMillis(startMillis);
-  const end = admin.firestore.Timestamp.fromMillis(
+  const start = Timestamp.fromMillis(startMillis);
+  const end = Timestamp.fromMillis(
       startMillis + 24 * 60 * 60 * 1000,
   );
   const snapshot = await admin.firestore().collection("users").doc(uid)
@@ -894,7 +911,7 @@ async function applyContribution({
         0,
         Number(challenge.totalProgress || 0) + delta,
     );
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     const participantData = participantSnapshot.data();
     // Later contributions keep the first completion time.
     const participantCompletedAt = participantData?.completedAt || now;
@@ -973,7 +990,7 @@ async function applyContribution({
         awardedAt: now,
       });
       transaction.set(profileReference(db, uid), {
-        challengeMedalCount: admin.firestore.FieldValue.increment(1),
+        challengeMedalCount: FieldValue.increment(1),
         updatedAt: now,
       }, {merge: true});
     }
@@ -999,7 +1016,7 @@ async function expireChallenge(reference, status) {
     if (!snapshot.exists ||
         !["pending", "active"].includes(snapshot.data().status)) return;
     const challenge = snapshot.data();
-    const now = admin.firestore.Timestamp.now();
+    const now = Timestamp.now();
     transaction.update(reference, {
       status,
       expiredAt: now,

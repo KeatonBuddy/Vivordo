@@ -54,6 +54,16 @@ void main() {
     expect(overdueSince(movedEarlier, today), DateTime(2026, 10, 4));
   });
 
+  test("today's own come before what was carried over", () {
+    final old = p(date: DateTime(2026, 10, 2));
+    final older = p(date: DateTime(2026, 9, 28));
+    final mine = p(date: DateTime(2026, 10, 6));
+    final timed = p(date: DateTime(2026, 10, 6), start: today);
+    final (:ordered, :carried) = carriedLast([old, mine, older, timed], today);
+    expect(ordered, [mine, timed, old, older]);
+    expect(carried, [old, older]);
+  });
+
   test('overdue labels read naturally', () {
     expect(overdueLabel(DateTime(2026, 10, 5), today), 'From yesterday');
     expect(overdueLabel(DateTime(2026, 10, 2), today), 'From Fri');

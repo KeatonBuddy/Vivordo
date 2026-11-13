@@ -2,6 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 
+import 'units.dart';
+
+export 'units.dart' show formatCount, hoursMinutes;
+
 part 'sleep_patterns.dart';
 
 /// The one-line insight on each metric detail screen, comparing the person
@@ -339,27 +343,44 @@ DetailInsight sleepInsight({
     );
   }
   final average = _mean(recent.map((n) => n.hours).toList());
-  var text =
-      'You averaged ${hoursMinutes(average)} a night over '
-      '${recent.length} nights${versusNeed(average)}.';
+  // The card above already gives the average and whether it meets the
+  // need, so this says only what it can't: how far off the need, and how
+  // regular the nights were.
+  final gap = need == null ? 0 : ((average - need) * 60).round();
   final timed = [
     for (final n in recent)
       if (n.bedtime case final b?) _minutesFromNoon(b),
   ];
-  if (usualBedtime != null && timed.length >= 3) {
-    final onTime = timed.where((m) => (m - usualBedtime).abs() <= 60).length;
-    text +=
-        ' Bedtime was within an hour of usual on $onTime of ${timed.length} nights.';
-  }
   final woke = [
     for (final n in recent)
       if (n.wakeTime case final w?) _minutesOfDay(w),
   ];
-  if (usualWake != null && woke.length >= 3) {
-    final onTime = woke.where((m) => (m - usualWake).abs() <= 60).length;
-    text +=
-        ' Wake time was within an hour of usual on $onTime of ${woke.length} mornings.';
-  }
+  final bedOnTime = usualBedtime != null && timed.length >= 3
+      ? timed.where((m) => (m - usualBedtime).abs() <= 60).length
+      : null;
+  final wakeOnTime = usualWake != null && woke.length >= 3
+      ? woke.where((m) => (m - usualWake).abs() <= 60).length
+      : null;
+  final parts = [
+    if (need != null && gap.abs() >= 15)
+      '${_duration(gap.abs())} ${gap < 0 ? 'less' : 'more'} a night than '
+          'your need of ${hoursMinutes(need)}.',
+    if (bedOnTime != null && wakeOnTime != null)
+      'Bedtime was within an hour of usual on $bedOnTime of ${timed.length} '
+          'nights, wake time on $wakeOnTime of ${woke.length}.'
+    else if (bedOnTime != null)
+      'Bedtime was within an hour of usual on $bedOnTime of ${timed.length} '
+          'nights.'
+    else if (wakeOnTime != null)
+      'Wake time was within an hour of usual on $wakeOnTime of '
+          '${woke.length} mornings.',
+  ];
+  final text = parts.isNotEmpty
+      ? parts.join(' ')
+      : need == null
+      ? 'You averaged ${hoursMinutes(average)} a night over '
+            '${recent.length} nights.'
+      : 'About your need over ${recent.length} nights.';
   // A run of long sleep shows in sleepPatterns instead.
   final short = need != null && (need - average) * 60 >= 30;
   return DetailInsight(text, short ? InsightTone.concern : InsightTone.neutral);
@@ -389,9 +410,7 @@ enum SleepNeedTone { met, short, learning }
 /// takes. Null when there's nothing to show.
 ({String label, String value, double progress, SleepNeedTone tone})?
 sleepNeedBar({required double hours, double? need, required int nights}) {
-  String spaced(int minutes) => minutes < 60
-      ? '$minutes m'
-      : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} m';
+  String spaced(int minutes) => hoursMinutes(minutes / 60);
   if (need == null) {
     if (nights >= 14) return null;
     return (
@@ -607,16 +626,6 @@ DetailInsight exerciseInsight({
 }
 
 // ── Shared ───────────────────────────────────────────────────────────────────
-
-String formatCount(double value) => value.round().toString().replaceAllMapped(
-  RegExp(r'\B(?=(\d{3})+(?!\d))'),
-  (_) => ',',
-);
-
-String hoursMinutes(double hours) {
-  final minutes = (hours * 60).round();
-  return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
-}
 
 /// "25 min" or "1h 10m".
 String _duration(int minutes) => minutes < 60

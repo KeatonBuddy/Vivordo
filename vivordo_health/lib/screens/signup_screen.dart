@@ -148,7 +148,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 Text(
                   'Create your account',
                   style: TextStyle(
-                    fontSize: 26,
+                    fontSize: 28,
                     fontWeight: FontWeight.w800,
                     color: context.vivordoColors.textPrimary,
                   ),
@@ -329,19 +329,19 @@ class _SignupScreenState extends State<SignupScreen> {
         filled: true,
         fillColor: context.vivordoColors.card,
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: context.vivordoColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: _purple, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFFF3B30)),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFFF3B30), width: 1.5),
         ),
       ),
@@ -365,7 +365,7 @@ class _SignupScreenState extends State<SignupScreen> {
         disabledBackgroundColor: color.withValues(alpha: .62),
         foregroundColor: foreground,
         disabledForegroundColor: foreground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       child: loading
           ? SizedBox(

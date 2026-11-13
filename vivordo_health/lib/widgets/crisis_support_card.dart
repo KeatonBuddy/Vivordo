@@ -67,7 +67,7 @@ class CrisisSupportCard extends StatelessWidget {
               'now. Talking to a crisis line is free and confidential.',
               style: TextStyle(
                 color: colors.textPrimary,
-                fontSize: 14,
+                fontSize: 15,
                 height: 1.4,
               ),
             ),

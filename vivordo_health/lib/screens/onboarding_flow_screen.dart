@@ -887,7 +887,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: context.vivordoColors.card,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: _purple.withValues(alpha: .35),
               width: 1.5,
@@ -910,7 +910,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                     'Vivordo will point out your patterns as it learns your '
                         'days.',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w700,
                   height: 1.3,
                   color: context.vivordoColors.textPrimary,
@@ -963,7 +963,7 @@ class _OnboardingFlowScreenState extends State<OnboardingFlowScreen> {
                       Text(
                         usual.value,
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                           color: context.vivordoColors.textPrimary,
                         ),
@@ -1190,7 +1190,7 @@ class _StepLayout extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: iconColor!.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: iconColor, size: 26),
                 ),
@@ -1209,7 +1209,7 @@ class _StepLayout extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                fontSize: 26,
+                fontSize: 28,
                 fontWeight: FontWeight.w800,
                 height: 1.2,
                 color: context.vivordoColors.textPrimary,
@@ -1244,7 +1244,7 @@ class _StepLayout extends StatelessWidget {
                   foregroundColor: Colors.white,
                   disabledForegroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
                 child: Text(
@@ -1304,7 +1304,7 @@ class _ScoreStyleOption extends StatelessWidget {
           color: selected
               ? _purple.withValues(alpha: .12)
               : context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected ? _purple : context.vivordoColors.border,
             width: selected ? 2 : 1,
@@ -1360,7 +1360,7 @@ class _Card extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: Column(children: children),
@@ -1497,7 +1497,7 @@ class _HistoryRow extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Row(
       children: [

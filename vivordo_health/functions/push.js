@@ -30,4 +30,17 @@ async function pushToUser(user, messaging, setting, message) {
       valid[i].ref.delete() : null));
 }
 
-module.exports = {pushToUser};
+/**
+ * A profile name safe to put in a notification: profiles are written by
+ * their owner, so it's one line and at most 40 characters.
+ * @param {*} value The stored name.
+ * @param {string} fallback Used when there's none.
+ * @return {string} The name to show.
+ */
+function shortName(value, fallback) {
+  const name = typeof value === "string" ?
+    value.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+  return name || fallback;
+}
+
+module.exports = {pushToUser, shortName};

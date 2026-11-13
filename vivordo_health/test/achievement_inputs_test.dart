@@ -84,6 +84,35 @@ void main() {
     expect(reads.every((path) => path.contains('.')), isTrue);
   });
 
+  test(
+    'summaries without the daily sleep, heart rate and mood are not trusted',
+    () {
+      final old = {
+        'scans': 0,
+        'moods': 1,
+        'steps': {'sum': 4000},
+      };
+      expect(projectAchievementSummary((path) => field(old, path)), isNull);
+      final current = {
+        ...old,
+        'sleep': {'avg': 7.5},
+        'resting_heart_rate': {'avg': 58},
+        'mood': {'avg': null},
+      };
+      final day = projectAchievementSummary((path) => field(current, path))!;
+      expect([day.sleep, day.restingHeartRate, day.mood], [7.5, 58, null]);
+      // Full day records give the same values.
+      final full = projectAchievementDay(
+        (path) => field({
+          'sleep': {'avg': 7.5, 'bedtime': 'x'},
+          'resting_heart_rate': {'avg': 58},
+          'mood': {'avg': -1},
+        }, path),
+      );
+      expect([full.sleep, full.restingHeartRate, full.mood], [7.5, 58, null]);
+    },
+  );
+
   test('scan/mood counts match the server projector cases', () {
     // Shared with functions/test/metrics_summary.test.js so both sides agree.
     final cases =
@@ -183,6 +212,9 @@ void main() {
           'exercise_time': {'sum': null, 'source': null},
           'scans': ?scans,
           'moods': 3,
+          'sleep': {'avg': null},
+          'resting_heart_rate': {'avg': null},
+          'mood': {'avg': null},
         });
         if (marker != null) {
           await db

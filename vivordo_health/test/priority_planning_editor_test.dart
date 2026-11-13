@@ -46,13 +46,13 @@ void main() {
     await tester.tap(find.text('Remove reminder time'));
     await tester.pumpAndSettle();
     expect(find.text('Remove reminder time'), findsNothing);
-    await tester.ensureVisible(find.text('Effort (optional)'));
-    await tester.tap(find.text('Effort (optional)'));
+    await tester.ensureVisible(find.text('Effort'));
+    await tester.tap(find.text('Effort'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Demanding'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Estimated duration'));
-    await tester.tap(find.text('Estimated duration'));
+    await tester.ensureVisible(find.text('Duration'));
+    await tester.tap(find.text('Duration'));
     await tester.pumpAndSettle();
     tester
         .widget<CupertinoPicker>(find.byKey(const ValueKey('duration-hours')))

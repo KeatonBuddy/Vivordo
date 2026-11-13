@@ -126,7 +126,10 @@ class CalendarCognitiveLoadService {
 
   static const _storage = FlutterSecureStorage();
   static const classifierVersion = 3;
-  static const _cacheKey = 'calendar_cognitive_load_ai_cache_v3';
+  // Per account: it holds categories for this person's event titles.
+  static String get _cacheKey =>
+      'calendar_cognitive_load_ai_cache_v3_'
+      '${FirebaseAuth.instance.currentUser?.uid ?? 'signed_out'}';
   static const _maxAiEventsPerBatch = 20;
   static const _maxCacheEntries = 200;
 
@@ -300,6 +303,8 @@ class CalendarCognitiveLoadService {
 
   static Future<Map<String, dynamic>> _readCache() async {
     try {
+      // The cache used to be one entry shared by every account on the phone.
+      await _storage.delete(key: 'calendar_cognitive_load_ai_cache_v3');
       final encoded = await _storage.read(key: _cacheKey);
       if (encoded == null || encoded.isEmpty) return {};
       return jsonDecode(encoded) as Map<String, dynamic>;

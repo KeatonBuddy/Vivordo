@@ -40,7 +40,8 @@ class JournalScreen extends StatefulWidget {
   State<JournalScreen> createState() => _JournalScreenState();
 }
 
-class _JournalScreenState extends State<JournalScreen> {
+class _JournalScreenState extends State<JournalScreen>
+    with WidgetsBindingObserver {
   final _search = TextEditingController();
   Stream<QuerySnapshot<Map<String, dynamic>>>? _stream;
   late DateTime _month;
@@ -80,11 +81,23 @@ class _JournalScreenState extends State<JournalScreen> {
       onError: (Object error) => debugPrint('Weekly reviews: $error'),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkJournalAccess());
+    WidgetsBinding.instance.addObserver(this);
     _loadPrompts();
+  }
+
+  /// A locked journal locks again when the app goes to the background, so it
+  /// isn't left open for whoever picks the phone up next. (`paused`, not
+  /// `inactive`: the Face ID sheet itself makes the app inactive.)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && _journalLocked && mounted) {
+      setState(() => _accessGranted = false);
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     unawaited(_reviewSubscription?.cancel());
     super.dispose();
@@ -223,7 +236,7 @@ class _JournalScreenState extends State<JournalScreen> {
                 'Journal',
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 36,
+                  fontSize: 34,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -275,7 +288,7 @@ class _JournalScreenState extends State<JournalScreen> {
               summary.isEmpty
                   ? 'A private space to reflect on your day'
                   : summary,
-              style: TextStyle(color: colors.textSecondary, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 15),
             ),
           ),
       ],
@@ -319,16 +332,45 @@ class _JournalScreenState extends State<JournalScreen> {
           ),
           Padding(
             padding: const EdgeInsets.only(right: 10),
+            // A real calendar, weeks from Sunday like My Day's month view,
+            // so weekdays line up and a run of low Mondays shows.
+            child: Row(
+              children: [
+                for (final d in const ['S', 'M', 'T', 'W', 'T', 'F', 'S'])
+                  Expanded(
+                    child: ExcludeSemantics(
+                      child: Text(
+                        d,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
             child: GridView.count(
-              crossAxisCount: 10,
+              crossAxisCount: 7,
               shrinkWrap: true,
               // Without this the grid adds the screen's safe-area inset.
               padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 5,
               crossAxisSpacing: 5,
-              childAspectRatio: 1.15,
+              childAspectRatio: 1.35,
               children: [
+                for (
+                  var blank = DateTime(_month.year, _month.month).weekday % 7;
+                  blank > 0;
+                  blank--
+                )
+                  const SizedBox.shrink(),
                 for (var d = 1; d <= days; d++)
                   _dayCell(
                     DateTime(_month.year, _month.month, d),
@@ -463,7 +505,7 @@ class _JournalScreenState extends State<JournalScreen> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -486,7 +528,7 @@ class _JournalScreenState extends State<JournalScreen> {
             prompt,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 19,
+              fontSize: 20,
               height: 1.3,
               fontWeight: FontWeight.w700,
             ),
@@ -643,7 +685,7 @@ class _JournalScreenState extends State<JournalScreen> {
     return _Card(
       padding: EdgeInsets.zero,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         child: Column(
           children: [
             for (var i = 0; i < rows.length; i++) ...[
@@ -813,7 +855,7 @@ class _JournalScreenState extends State<JournalScreen> {
               height: 86,
               decoration: BoxDecoration(
                 color: context.vivordoColors.card,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: const Icon(
                 CupertinoIcons.lock_fill,
@@ -824,7 +866,7 @@ class _JournalScreenState extends State<JournalScreen> {
             const SizedBox(height: 22),
             Text(
               _accessChecked ? 'Journal Locked' : 'Opening Journal…',
-              style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 8),
             Text(
@@ -844,7 +886,7 @@ class _JournalScreenState extends State<JournalScreen> {
                   backgroundColor: _purple,
                   minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                 ),
                 icon: const Icon(CupertinoIcons.lock_open),
@@ -989,7 +1031,7 @@ class _Card extends StatelessWidget {
     padding: padding,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: child,
@@ -1356,7 +1398,7 @@ class _JournalEntryDetailScreenState extends State<_JournalEntryDetailScreen> {
             side: BorderSide(color: _red.withValues(alpha: .45)),
             minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
           icon: _deleting

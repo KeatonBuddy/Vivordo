@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Vivordo uses the microphone only while you click the mic in Vivordo AI, to turn what you say into text. Nothing is recorded or saved.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Vivordo turns what you say to Vivordo AI into text on your Mac, so you can check it before sending.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>

@@ -60,7 +60,7 @@ class MuscleSetsSection extends StatelessWidget {
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: Column(
@@ -75,7 +75,7 @@ class MuscleSetsSection extends StatelessWidget {
           children: [
             TextSpan(
               text: value,
-              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
             ),
             TextSpan(
               text: '  $unit',

@@ -9,8 +9,10 @@ const {
 const {defineSecret} = require("firebase-functions/params");
 const Anthropic = require("@anthropic-ai/sdk");
 const admin = require("firebase-admin");
+const {FieldPath, FieldValue, Timestamp} = require("firebase-admin/firestore");
 const crypto = require("crypto");
 const {removalPlan} = require("./circle_removal");
+const eventInvites = require("./event_invites");
 const {
   dueWhoopEndpoints,
   isWhoopAuthorizationFailureCode,
@@ -47,6 +49,8 @@ const {
 } = require("./account_deletion");
 const nodemailer = require("nodemailer");
 const {REPORT_EMAIL, reportEmail} = require("./report_alert");
+const {shortName} = require("./push");
+const rateLimit = require("./rate_limit");
 const {
   hasPremium,
   webhookUserIds,
@@ -65,7 +69,7 @@ exports.projectDailyActivitySummary = onDocumentWritten(
     async (event) => {
       const {refreshActivitySummary} = require("./metrics_summary");
       await refreshActivitySummary(admin.firestore(), event.params.uid,
-          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+          event.params.day, () => FieldValue.serverTimestamp());
     },
 );
 
@@ -98,7 +102,7 @@ exports.computeDailyCapacity = onDocumentWritten(
         require("./activity_load");
       const {physicalInputsChanged, refreshPhysicalHealth} =
         require("./physical_health");
-      const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
+      const timestamp = () => FieldValue.serverTimestamp();
       const {uid, day} = event.params;
       const capacity = capacityInputsChanged(before, after);
       const effort = effortInputsChanged(before, after);
@@ -140,8 +144,11 @@ exports.rebuildHistory = onCall({timeoutSeconds: 540, memory: "512MiB"},
       const uid = request.auth?.uid;
       if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
       const {rebuildHistory} = require("./history_import");
+      // The import's own cooldown is in the user document, which the
+      // account can write; this cap is the one it can't reset.
+      await rateLimit.requireBudget(admin.firestore(), uid, "history");
       return rebuildHistory(admin.firestore(), uid,
-          () => admin.firestore.FieldValue.serverTimestamp());
+          () => FieldValue.serverTimestamp());
     },
 );
 
@@ -155,7 +162,7 @@ exports.computeDailyEffort = onDocumentWritten(
       if (await leaveToImport(admin.firestore(), event.params.uid,
           event.params.day)) return;
       await refreshEffort(admin.firestore(), event.params.uid,
-          event.params.day, () => admin.firestore.FieldValue.serverTimestamp());
+          event.params.day, () => FieldValue.serverTimestamp());
     },
 );
 
@@ -166,11 +173,10 @@ exports.finishDailyEffort = onSchedule({
   schedule: "15 * * * *",
   timeZone: "UTC",
 }, async () => {
-  const {Timestamp} = require("firebase-admin/firestore");
   const {refreshEffort} = require("./effort");
   const {refreshBurnout} = require("./burnout");
   const db = admin.firestore();
-  const timestamp = () => admin.firestore.FieldValue.serverTimestamp();
+  const timestamp = () => FieldValue.serverTimestamp();
   const now = Date.now();
   const ended = await db.collectionGroup("effort_inputs")
       .where("dayEnd", ">=", Timestamp.fromMillis(now - 2 * 3600000))
@@ -208,7 +214,7 @@ exports.computeEffortFromWorkout = onDocumentWritten(
       if (typeof workout?.exerciseGoalDay === "string") {
         await refreshPhysicalHealth(admin.firestore(), event.params.uid,
             workout.exerciseGoalDay,
-            () => admin.firestore.FieldValue.serverTimestamp());
+            () => FieldValue.serverTimestamp());
       }
       const startedAt = event.data?.after?.data()?.startedAt ??
         event.data?.before?.data()?.startedAt;
@@ -227,7 +233,7 @@ exports.computeEffortFromWorkout = onDocumentWritten(
       }
       const {refreshEffort} = require("./effort");
       await refreshEffort(db, event.params.uid, record.id,
-          () => admin.firestore.FieldValue.serverTimestamp());
+          () => FieldValue.serverTimestamp());
     },
 );
 
@@ -244,13 +250,13 @@ exports.computePhysicalFromProfile = onDocumentUpdated(
       const {uid} = event.params;
       const db = admin.firestore();
       const newest = await db.collection(`users/${uid}/metrics_daily`)
-          .orderBy(admin.firestore.FieldPath.documentId(), "desc")
+          .orderBy(FieldPath.documentId(), "desc")
           .limit(1)
           .select()
           .get();
       if (newest.empty) return;
       await refreshPhysicalHealth(db, uid, newest.docs[0].id,
-          () => admin.firestore.FieldValue.serverTimestamp());
+          () => FieldValue.serverTimestamp());
     },
 );
 
@@ -260,7 +266,7 @@ exports.enableAchievementSummaries = onDocumentCreated("users/{uid}",
     async (event) => {
       const {enableSummariesForNewAccount} = require("./metrics_summary");
       await enableSummariesForNewAccount(admin.firestore(), event.params.uid,
-          () => admin.firestore.FieldValue.serverTimestamp());
+          () => FieldValue.serverTimestamp());
     },
 );
 
@@ -276,7 +282,7 @@ exports.blockCircleUser = onCall(async (request) => {
   const batch = db.batch();
   batch.set(db.doc(`circle_blocks/${uid}/users/${target}`), {
     userId: target,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
   for (const [owner, other] of [[uid, target], [target, uid]]) {
     for (const collection of ["friends", "friend_requests"]) {
@@ -287,6 +293,7 @@ exports.blockCircleUser = onCall(async (request) => {
   }
   await batch.commit();
   await removeSharedCircleChallenges(uid, target);
+  await eventInvites.removeEventInvitesBetween(uid, target);
   return {blocked: true};
 });
 
@@ -308,6 +315,7 @@ exports.removeCircleFriend = onCall(async (request) => {
     }
   }
   await batch.commit();
+  await eventInvites.removeEventInvitesBetween(uid, target);
   return {removed: true};
 });
 
@@ -331,7 +339,7 @@ async function removeSharedCircleChallenges(uid, target) {
       const update = removalPlan(
           challenge, uid, participation.data()?.progress || 0,
       );
-      const now = admin.firestore.FieldValue.serverTimestamp();
+      const now = FieldValue.serverTimestamp();
       tx.update(document.ref, {...update, updatedAt: now});
       tx.delete(participant);
       for (const member of challenge.participantUids) {
@@ -391,6 +399,14 @@ exports.unblockCircleUser = onCall(async (request) => {
 // Loading this module after Firebase Admin initialization keeps all functions
 // on the same shared Admin app and Firestore connection pool.
 Object.assign(exports, require("./challenges"));
+
+// Calendar invites between Circle friends.
+exports.sendEventInvites = eventInvites.sendEventInvites;
+exports.respondToEventInvite = eventInvites.respondToEventInvite;
+exports.updateEventInvite = eventInvites.updateEventInvite;
+exports.updateEventInviteOccurrence =
+  eventInvites.updateEventInviteOccurrence;
+exports.cancelEventInvite = eventInvites.cancelEventInvite;
 
 // A distinct Secret Manager binding avoids the legacy plain environment
 // variable with the old name on the existing Panda Cloud Run services.
@@ -468,7 +484,8 @@ exports.circleEngagementNotification = onDocumentCreated(
         return;
       }
 
-      const actorName = actorSnapshot.data()?.username || "A Circle friend";
+      const actorName =
+        shortName(actorSnapshot.data()?.username, "A Circle friend");
       const title = "Circle";
       let body;
 
@@ -606,9 +623,16 @@ exports.friendRequestNotification = onDocumentCreated(
 
       const profile = profileSnapshot.data();
       const requesterData = requesterSnapshot.data();
-      const requesterName = profile?.username ||
-        requesterData?.displayName || requesterData?.username ||
-        "A Vivordo user";
+      const requesterName = shortName(profile?.username ||
+        requesterData?.displayName || requesterData?.username,
+      "A Vivordo user");
+      // Deleting and re-sending a request would otherwise push every time.
+      if (!(await rateLimit.spend(
+          admin.firestore(), requesterUid, "friend_requests"))) {
+        console.warn("Friend request notification skipped: daily limit",
+            {requesterUid});
+        return;
+      }
       const title = "New Friend Request";
       const body = `from ${requesterName}`;
       const invalidCodes = new Set([
@@ -869,7 +893,7 @@ exports.assistant = onCall(
         db: admin.firestore(),
         uid,
         request: validated,
-        now: () => admin.firestore.FieldValue.serverTimestamp(),
+        now: () => FieldValue.serverTimestamp(),
       });
       console.log("[assistant] usage", JSON.stringify(usage.map((u) => ({
         input: u?.input_tokens ?? 0,
@@ -1020,7 +1044,7 @@ async function requestGoogleToken(parameters) {
 
 async function saveGoogleHealthTokens(uid, tokens) {
   const expiresIn = Number(tokens.expires_in || 3600);
-  const expiresAt = admin.firestore.Timestamp.fromMillis(
+  const expiresAt = Timestamp.fromMillis(
       Date.now() + expiresIn * 1000,
   );
   const values = {
@@ -1028,7 +1052,7 @@ async function saveGoogleHealthTokens(uid, tokens) {
     scope: tokens.scope || "",
     tokenType: tokens.token_type || "Bearer",
     expiresAt,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   };
   if (tokens.refresh_token) values.refreshToken = tokens.refresh_token;
   await admin.firestore()
@@ -1255,7 +1279,7 @@ function addMetric(days, day, key, values) {
   days[day][key] = {
     ...values,
     source: "fitbit",
-    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+    syncedAt: FieldValue.serverTimestamp(),
   };
 }
 
@@ -1352,10 +1376,10 @@ function normalizeGoogleHealthData(data) {
       stages: sleep.stages || {},
     };
     if (sleep.bedtime) {
-      sleepMetric.bedtime = admin.firestore.Timestamp.fromDate(sleep.bedtime);
+      sleepMetric.bedtime = Timestamp.fromDate(sleep.bedtime);
     }
     if (sleep.wakeTime) {
-      sleepMetric.wakeTime = admin.firestore.Timestamp.fromDate(
+      sleepMetric.wakeTime = Timestamp.fromDate(
           sleep.wakeTime,
       );
     }
@@ -1398,7 +1422,7 @@ function addFitbitWellness(days, activityGoals) {
         avg: weightedScore / totalWeight * 100,
         unit: "score",
         source: "computed",
-        computedAt: admin.firestore.FieldValue.serverTimestamp(),
+        computedAt: FieldValue.serverTimestamp(),
       };
     }
   }
@@ -1464,15 +1488,15 @@ async function requestWhoopToken(parameters) {
 
 async function saveWhoopTokens(uid, tokens) {
   const expiresIn = Number(tokens.expires_in || 3600);
-  const expiresAt = admin.firestore.Timestamp.fromMillis(
+  const expiresAt = Timestamp.fromMillis(
       Date.now() + expiresIn * 1000,
   );
   const values = {
     accessToken: tokens.access_token,
     tokenType: tokens.token_type || "Bearer",
     expiresAt,
-    refreshLease: admin.firestore.FieldValue.delete(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    refreshLease: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp(),
   };
   // Refresh responses may omit scope; do not erase the original grant.
   if (typeof tokens.scope === "string") values.scope = tokens.scope;
@@ -1490,7 +1514,7 @@ async function invalidateWhoopAuthorization(uid) {
   batch.set(firestore.collection("users").doc(uid), {
     whoopConnected: false,
     whoopAuthorizationExpiredAt:
-        admin.firestore.FieldValue.serverTimestamp(),
+        FieldValue.serverTimestamp(),
   }, {merge: true});
   await batch.commit();
 }
@@ -1553,7 +1577,7 @@ async function getWhoopAccessToken(uid, invalidAccessToken) {
       transaction.set(reference, {
         refreshLease: {
           id: leaseId,
-          expiresAt: admin.firestore.Timestamp.fromMillis(now + 60 * 1000),
+          expiresAt: Timestamp.fromMillis(now + 60 * 1000),
         },
       }, {merge: true});
       result = {
@@ -1589,7 +1613,7 @@ async function getWhoopAccessToken(uid, invalidAccessToken) {
           const snapshot = await transaction.get(reference);
           if (snapshot.data()?.refreshLease?.id === result.leaseId) {
             transaction.set(reference, {
-              refreshLease: admin.firestore.FieldValue.delete(),
+              refreshLease: FieldValue.delete(),
             }, {merge: true});
           }
         });
@@ -1745,7 +1769,7 @@ async function claimWhoopSync(uid, force, timezoneOffsetMinutes) {
       (endpoint?.expiresAt?.toMillis?.() || 0) <= nowMs;
     const sleep = schedule.sleep && leaseAvailable(leases.sleep);
     if (sleep) {
-      const expiresAt = admin.firestore.Timestamp.fromMillis(
+      const expiresAt = Timestamp.fromMillis(
           nowMs + 2 * 60 * 1000,
       );
       const nextLeases = {...leases};
@@ -1779,7 +1803,7 @@ async function finishWhoopSync(claim, succeeded) {
     const leases = snapshot.data()?.syncLeases || {};
     const updates = {};
     if (claim.sleep && leases.sleep?.id === claim.claimId) {
-      updates["syncLeases.sleep"] = admin.firestore.FieldValue.delete();
+      updates["syncLeases.sleep"] = FieldValue.delete();
       if (succeeded.sleep &&
           ["morning", "midday"].includes(claim.sleepSlot)) {
         const slot = claim.sleepSlot === "morning" ? "Morning" : "Midday";
@@ -1813,7 +1837,7 @@ function setWhoopMetric(days, day, key, values) {
   days[day][key] = {
     ...payload,
     source: "whoop",
-    syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+    syncedAt: FieldValue.serverTimestamp(),
   };
 }
 
@@ -1869,9 +1893,9 @@ function normalizeWhoopData({sleeps, recoveries = []}) {
       unit: "hours",
       dimension: "sleep",
       bedtime: total.bedtime ?
-        admin.firestore.Timestamp.fromDate(total.bedtime) : null,
+        Timestamp.fromDate(total.bedtime) : null,
       wakeTime: total.wakeTime ?
-        admin.firestore.Timestamp.fromDate(total.wakeTime) : null,
+        Timestamp.fromDate(total.wakeTime) : null,
       stages: total.stages,
       performance: whoopNumber(score.sleep_performance_percentage),
       consistency: whoopNumber(score.sleep_consistency_percentage),
@@ -1936,13 +1960,13 @@ async function saveAndReconcileWhoopSleep(
         continue;
       }
       const update = {
-        sleep: admin.firestore.FieldValue.delete(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        sleep: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
       };
       for (const key of ["resting_heart_rate", "hrv_rmssd",
         "blood_oxygen", "respiratory_rate"]) {
         if (snapshot.data()?.[key]?.source === "whoop") {
-          update[key] = admin.firestore.FieldValue.delete();
+          update[key] = FieldValue.delete();
         }
       }
       transaction.update(reconciliationReferences[index], update);
@@ -1953,13 +1977,13 @@ async function saveAndReconcileWhoopSleep(
       transaction.set(metricsCollection.doc(day), {
         ...metrics,
         date: day,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {mergeFields: [...Object.keys(metrics), "date", "updatedAt"]});
     }
     transaction.set(userReference, {
       whoopConnected: true,
-      lastWhoopSync: admin.firestore.FieldValue.serverTimestamp(),
-      lastWhoopSleepSync: admin.firestore.FieldValue.serverTimestamp(),
+      lastWhoopSync: FieldValue.serverTimestamp(),
+      lastWhoopSleepSync: FieldValue.serverTimestamp(),
     }, {merge: true});
     return removed;
   });
@@ -1976,7 +2000,7 @@ exports.beginWhoopConnection = onCall(
           .doc(state)
           .set({
             uid,
-            expiresAt: admin.firestore.Timestamp.fromMillis(
+            expiresAt: Timestamp.fromMillis(
                 Date.now() + 10 * 60 * 1000,
             ),
           });
@@ -2034,7 +2058,7 @@ exports.whoopOAuthCallback = onRequest(
         await saveWhoopTokens(values.uid, tokens);
         await admin.firestore().collection("users").doc(values.uid).set({
           whoopConnected: true,
-          whoopConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+          whoopConnectedAt: FieldValue.serverTimestamp(),
         }, {merge: true});
         return response.redirect(`${_WHOOP_IOS_CALLBACK}?status=success`);
       } catch (error) {
@@ -2147,7 +2171,7 @@ async function deleteWhoopImportedData(uid) {
   await userReference.set({
     whoopDataDeletionStatus: "pending",
     whoopDataDeletionStartedAt:
-      admin.firestore.FieldValue.serverTimestamp(),
+      FieldValue.serverTimestamp(),
   }, {merge: true});
 
   try {
@@ -2159,10 +2183,10 @@ async function deleteWhoopImportedData(uid) {
       if (!plan.changed) continue;
       const update = {
         ...plan.setFields,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       };
       for (const path of plan.deletePaths) {
-        update[path] = admin.firestore.FieldValue.delete();
+        update[path] = FieldValue.delete();
       }
       writer.update(document.ref, update);
       affectedDays += 1;
@@ -2171,7 +2195,7 @@ async function deleteWhoopImportedData(uid) {
     await userReference.set({
       whoopImportedDataRetained: false,
       whoopDataDeletionStatus: "complete",
-      whoopDataDeletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      whoopDataDeletedAt: FieldValue.serverTimestamp(),
       whoopDataDeletionAffectedDays: affectedDays,
     }, {merge: true});
     return affectedDays;
@@ -2179,7 +2203,7 @@ async function deleteWhoopImportedData(uid) {
     await userReference.set({
       whoopDataDeletionStatus: "failed",
       whoopDataDeletionFailedAt:
-        admin.firestore.FieldValue.serverTimestamp(),
+        FieldValue.serverTimestamp(),
     }, {merge: true});
     throw error;
   }
@@ -2210,7 +2234,7 @@ exports.disconnectWhoop = onCall(
       batch.delete(credentials);
       batch.set(admin.firestore().collection("users").doc(uid), {
         whoopConnected: false,
-        whoopDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        whoopDisconnectedAt: FieldValue.serverTimestamp(),
         whoopImportedDataRetained: deleteImportedData ? null : true,
         whoopDataDeletionStatus: deleteImportedData ?
           "pending" : "not_requested",
@@ -2236,7 +2260,7 @@ exports.beginFitbitConnection = onCall(
           .doc(state)
           .set({
             uid,
-            expiresAt: admin.firestore.Timestamp.fromMillis(
+            expiresAt: Timestamp.fromMillis(
                 Date.now() + 10 * 60 * 1000,
             ),
           });
@@ -2290,7 +2314,7 @@ exports.googleHealthOAuthCallback = onRequest(
         await saveGoogleHealthTokens(values.uid, tokens);
         await admin.firestore().collection("users").doc(values.uid).set({
           fitbitConnected: true,
-          fitbitConnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+          fitbitConnectedAt: FieldValue.serverTimestamp(),
         }, {merge: true});
         return response.redirect(`${_IOS_CALLBACK}?status=success`);
       } catch (error) {
@@ -2374,14 +2398,14 @@ exports.syncFitbit = onCall(
           transaction.set(references[index], {
             ...resolvedMetrics,
             date: day,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
           }, {mergeFields: [...Object.keys(resolvedMetrics),
             "date", "updatedAt"]});
           written += 1;
         }
         transaction.set(userReference, {
           fitbitConnected: true,
-          lastFitbitSync: admin.firestore.FieldValue.serverTimestamp(),
+          lastFitbitSync: FieldValue.serverTimestamp(),
         }, {merge: true});
         return written;
       });
@@ -2436,7 +2460,7 @@ async function deleteUserChallenges(uid) {
       );
       if (plan.deleteChallenge) return plan;
 
-      const now = admin.firestore.FieldValue.serverTimestamp();
+      const now = FieldValue.serverTimestamp();
       transaction.update(challengeReference, {...plan.update, updatedAt: now});
       transaction.delete(participantReference);
       for (const remainingUid of plan.remainingParticipantUids) {
@@ -2500,6 +2524,13 @@ async function deleteGlobalUserReferences(uid) {
     db.collectionGroup("circle_engagement").where("actorUid", "==", uid),
   ];
   for (const query of queries) await deleteQueryDocuments(query);
+  // Entries for this account left in other people's friends lists (the
+  // account's own list, walked above, may not name them all). Needs the
+  // friends.uid index; without it the rest of the deletion still goes on.
+  await deleteQueryDocuments(
+      db.collectionGroup("friends").where("uid", "==", uid),
+  ).catch((error) =>
+    console.error("[Account deletion] friend mirrors left", error));
 }
 
 async function revokeConnectedProviders(uid) {
@@ -2524,6 +2555,7 @@ async function deleteVivordoAccountData(uid) {
   await revokeConnectedProviders(uid);
   await deleteCircleRelationships(uid);
   await deleteUserChallenges(uid);
+  await eventInvites.deleteUserEventInvites(uid);
   await deleteGlobalUserReferences(uid);
   await Promise.all([
     db.recursiveDelete(db.collection("challenge_memberships").doc(uid)),
@@ -2535,6 +2567,8 @@ async function deleteVivordoAccountData(uid) {
     db.collection("ai_usage").doc(uid).delete(),
     db.collection("ai_usage").doc(`${uid}_planning`).delete(),
     db.collection("ai_usage").doc(`${uid}_tasks`).delete(),
+    ...Object.keys(rateLimit.LIMITS).map((kind) =>
+      db.collection("rate_limits").doc(`${uid}_${kind}`).delete()),
     db.collection("subscriptions").doc(uid).delete(),
   ]);
   await admin.storage().bucket().deleteFiles({
@@ -2570,8 +2604,8 @@ exports.deleteVivordoAccount = onCall(
           .doc(deletionId);
       await deletionJob.set({
         status: "deleting",
-        startedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        startedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
 
       await admin.auth().updateUser(uid, {disabled: true});
@@ -2580,9 +2614,9 @@ exports.deleteVivordoAccount = onCall(
         await admin.auth().deleteUser(uid);
         await deletionJob.set({
           status: "complete",
-          completedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          error: admin.firestore.FieldValue.delete(),
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+          error: FieldValue.delete(),
         }, {merge: true});
         return {deleted: true};
       } catch (error) {
@@ -2599,8 +2633,8 @@ exports.deleteVivordoAccount = onCall(
         }
         await deletionJob.set({
           status: "failed",
-          failedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          failedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
           error: "cleanup_failed",
         }, {merge: true});
         throw new HttpsError(
@@ -2623,7 +2657,7 @@ exports.disconnectFitbit = onCall(
       await reference.delete();
       await admin.firestore().collection("users").doc(uid).set({
         fitbitConnected: false,
-        fitbitDisconnectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        fitbitDisconnectedAt: FieldValue.serverTimestamp(),
       }, {merge: true});
       return {connected: false};
     },
@@ -2641,6 +2675,14 @@ exports.reportAlert = onDocumentCreated({
 }, async (event) => {
   const report = event.data?.data();
   if (!report) return;
+  // The report is stored either way; only the email is capped, so one
+  // account can't flood the inbox (or use up Gmail's daily sending limit).
+  if (typeof report.reporterUid !== "string" || !(await rateLimit.spend(
+      admin.firestore(), report.reporterUid, "reports"))) {
+    console.warn("[reportAlert] email skipped: daily limit",
+        event.params.reportId);
+    return;
+  }
   const mail = nodemailer.createTransport({
     service: "gmail",
     auth: {user: REPORT_EMAIL, pass: reportMailPassword.value()},
@@ -2669,7 +2711,10 @@ exports.revenueCatWebhook = onRequest({
     res.status(405).send("POST only");
     return;
   }
-  if (req.get("Authorization") !== revenueCatWebhookAuth.value()) {
+  const given = Buffer.from(req.get("Authorization") ?? "");
+  const expected = Buffer.from(revenueCatWebhookAuth.value());
+  if (given.length !== expected.length ||
+      !crypto.timingSafeEqual(given, expected)) {
     res.status(401).send("Unauthorized");
     return;
   }

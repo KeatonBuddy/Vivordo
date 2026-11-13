@@ -11,10 +11,8 @@ const _amber = Color(0xFFBA7517);
 
 String _time(DateTime t) => DateFormat.jm().format(t).replaceAll(':00', '');
 
-/// "2 h", "1 h 45".
-String _runText(int minutes) => minutes % 60 == 0
-    ? '${minutes ~/ 60} h'
-    : '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')}';
+/// "2h", "1h 45m".
+String _runText(int minutes) => hoursMinutes(minutes / 60);
 
 /// "Ways to lighten today" under My Day's brief when Demand outruns Capacity
 /// (docs/scores.md §2). The X hides it until tomorrow. With [tomorrow], the
@@ -115,7 +113,7 @@ class _FixRow extends StatelessWidget {
               height: 34,
               decoration: BoxDecoration(
                 color: tint.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, size: 19, color: tint),
             ),
@@ -129,7 +127,7 @@ class _FixRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: colors.textPrimary,
                     ),
@@ -238,7 +236,7 @@ class BriefFix extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFE6E1FF),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
       ),
       padding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
       child: Column(
@@ -345,7 +343,7 @@ Future<bool> showDayFixTimeSheet(
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (sheetContext) => SafeArea(
       child: SingleChildScrollView(
@@ -456,7 +454,7 @@ Future<DateTime?> showMovePrioritySheet(
     isScrollControlled: true,
     backgroundColor: colors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (sheetContext) => SafeArea(
       child: SingleChildScrollView(
@@ -660,7 +658,7 @@ class _DayOption extends StatelessWidget {
               Text(
                 '${option.demand.round()}',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: colors.textPrimary,
                 ),
@@ -703,7 +701,7 @@ class _BeforeAfter extends StatelessWidget {
             Text(
               value,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: highlight ? VivordoTheme.brand : colors.textPrimary,
               ),

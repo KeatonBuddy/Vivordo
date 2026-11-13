@@ -92,7 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
       isScrollControlled: true,
       backgroundColor: colors.card,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
@@ -129,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(
                 "Enter your email and we'll send you a link to reset your password.",
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: colors.textSecondary,
                   height: 1.5,
                 ),
@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ).copyWith(
                       fillColor: colors.input,
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: colors.border),
                       ),
                     ),
@@ -182,7 +182,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     backgroundColor: accentPurple,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     elevation: 0,
                   ),
@@ -278,7 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           Text(
                             'See your stress. Find your balance.',
-                            style: TextStyle(fontSize: 18, color: textGrey),
+                            style: TextStyle(fontSize: 17, color: textGrey),
                           ),
                         ],
                       ),
@@ -298,7 +298,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 4),
                     Text(
                       'Sign in to your account',
-                      style: TextStyle(fontSize: 14, color: textGrey),
+                      style: TextStyle(fontSize: 15, color: textGrey),
                     ),
                     const SizedBox(height: 28),
 
@@ -402,7 +402,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           backgroundColor: accentPurple,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           elevation: 0,
                         ),
@@ -470,7 +470,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ? const Color(0xFFD1D1D6)
                                 : const Color(0xFF2C2C2E),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                           ),
                           child: _isAppleLoading
@@ -519,7 +519,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           elevation: 0,
                           overlayColor: const Color(0xFF3367D6),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                         child: _isGoogleLoading
@@ -585,7 +585,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: accentPurple.withValues(alpha: 0.4),
                           ),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                         child: const Text(
@@ -636,21 +636,21 @@ class _LoginScreenState extends State<LoginScreen> {
     final colors = context.vivordoColors;
     return InputDecoration(
       hintText: hintText,
-      hintStyle: TextStyle(color: colors.textSecondary, fontSize: 14),
+      hintStyle: TextStyle(color: colors.textSecondary, fontSize: 15),
       prefixIcon: Icon(icon, color: colors.textSecondary, size: 20),
       filled: true,
       fillColor: colors.input,
       contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(color: colors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: accentPurple, width: 1.5),
       ),
     );

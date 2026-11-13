@@ -21,22 +21,25 @@ const WHAT = {
  * @return {{subject: string, text: string}} The email.
  */
 function reportEmail(reportId, report) {
+  // Reporter-written text is kept to one line each, so it can't add lines
+  // that look like the alert's own ("Reporter: ...", "Review it ...").
+  const line = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
   const what = WHAT[report.type] ?? "Feed post";
   const reason = String(report.reason ?? "other").replace(/_/g, " ");
   const author = report.commentAuthorUid ?? report.authorUid ??
     report.profileOwnerUid ?? report.postOwnerUid;
   const where = [
     report.postOwnerUid && `Post: users/${report.postOwnerUid}/` +
-      `circle_activity/${report.postId}`,
-    report.challengeId && `Challenge: challenges/${report.challengeId}`,
-    report.commentId && `Comment: ${report.commentId}`,
+      `circle_activity/${line(report.postId)}`,
+    report.challengeId && `Challenge: challenges/${line(report.challengeId)}`,
+    report.commentId && `Comment: ${line(report.commentId)}`,
   ].filter(Boolean);
   return {
     subject: `Vivordo report: ${what} · ${reason}`,
     text: [
       `${what} reported for ${reason}.`,
       "",
-      `Details: ${report.details?.trim() || "(none)"}`,
+      `Details: ${line(report.details) || "(none)"}`,
       `Reported user: ${author ?? "unknown"}`,
       `Reporter: ${report.reporterUid}`,
       ...where,

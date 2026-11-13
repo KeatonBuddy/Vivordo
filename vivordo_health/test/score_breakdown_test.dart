@@ -60,7 +60,7 @@ void main() {
     expect(rows[0].points, closeTo(-9, 1e-9)); // (70 − 90) × 45%
     expect(rows[1].points, closeTo(2.1, 1e-9)); // (76 − 70) × 35%
     expect(rows[2].points, closeTo(-4, 1e-9)); // (80 − 100) × 20%
-    expect(rows[0].detail, '5 h 50 · 1 h 13 under your need');
+    expect(rows[0].detail, '5h 50m · 1h 13m under your need');
     expect(
       rows[1].detail,
       'HRV above your normal · resting heart rate at your normal',

@@ -371,7 +371,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                               backgroundColor: _purple,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                           ),
@@ -393,7 +393,7 @@ class _FitnessScreenState extends State<FitnessScreen> {
                               color: _purple.withValues(alpha: .45),
                             ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                         ),
@@ -623,11 +623,11 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                 snapshot.hasData && !hasActivityData(history.values);
             return Material(
               color: Colors.transparent,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(20),
               clipBehavior: Clip.antiAlias,
               child: Ink(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: const Color(0xFFAA91FF).withValues(alpha: .6),
                   ),
@@ -694,7 +694,7 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                         ? 'Connect Apple Health'
                                         : '${3 - open.length} of 3 closed',
                                     style: const TextStyle(
-                                      fontSize: 21,
+                                      fontSize: 22,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
@@ -809,6 +809,8 @@ class _WorkoutStreakPillState extends State<_WorkoutStreakPill> {
           final streak = WorkoutService.calculateCurrentStreak(
             snapshot.data ?? const [],
           );
+          // Nothing to show off yet.
+          if (streak == 0) return const SizedBox.shrink();
           return _PillButton(
             icon: CupertinoIcons.flame_fill,
             label: '$streak-day streak',
@@ -1170,7 +1172,7 @@ class _SuggestRoutineRow extends StatelessWidget {
       child: Material(
         color: colors.card,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: _purple.withValues(alpha: .35)),
         ),
         clipBehavior: Clip.antiAlias,
@@ -1192,7 +1194,7 @@ class _SuggestRoutineRow extends StatelessWidget {
                   height: 36,
                   decoration: BoxDecoration(
                     color: _purple.withValues(alpha: .14),
-                    borderRadius: BorderRadius.circular(11),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
                     CupertinoIcons.sparkles,
@@ -1273,7 +1275,7 @@ class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: colors.card,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: colors.border),
                     ),
                     child: Column(
@@ -1680,7 +1682,7 @@ class _RecentWorkoutRow extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _showSummary(context),
@@ -2027,7 +2029,7 @@ class _FitnessGoalsScreenState extends State<FitnessGoalsScreen> {
             gradient: const LinearGradient(
               colors: [Color(0xFF7667F4), Color(0xFF5845DF)],
             ),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
           ),
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2758,7 +2760,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           Container(
             padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: const Color(0xFFAA91FF).withValues(alpha: .6),
               ),
@@ -2831,7 +2833,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
             decoration: BoxDecoration(
               color: colors.card,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: colors.border),
             ),
             child: Row(
@@ -2841,7 +2843,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                   height: 34,
                   decoration: BoxDecoration(
                     color: _purple.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
                     CupertinoIcons.person_2_fill,
@@ -2935,7 +2937,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 backgroundColor: _purple,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
@@ -2991,7 +2993,7 @@ class _WorkoutElapsedLabelState extends State<_WorkoutElapsedLabel> {
         '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
     return Text(
       elapsed,
-      style: const TextStyle(fontSize: 42, fontWeight: FontWeight.w800),
+      style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800),
     );
   }
 }
@@ -3096,7 +3098,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                     filled: true,
                     fillColor: context.vivordoColors.input,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide(
                         color: context.vivordoColors.border,
                       ),
@@ -3204,7 +3206,7 @@ class _SavedWorkoutsScreenState extends State<_SavedWorkoutsScreen> {
                     minimumSize: const Size.fromHeight(54),
                     backgroundColor: _purple,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                   child: const Text(
@@ -3250,7 +3252,7 @@ class _SavedWorkoutPickerRow extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 color: _purple.withValues(alpha: .10),
-                borderRadius: BorderRadius.circular(13),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.fitness_center_rounded, color: _purple),
             ),
@@ -3592,7 +3594,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
               color: context.vivordoColors.cardMuted,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
               children: [
@@ -3618,7 +3620,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               decoration: BoxDecoration(
                 color: context.vivordoColors.cardMuted,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
@@ -3742,7 +3744,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
               minimumSize: const Size.fromHeight(46),
               side: const BorderSide(color: _purple),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
@@ -4277,7 +4279,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                   filled: true,
                   fillColor: context.vivordoColors.input,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide(color: context.vivordoColors.border),
                   ),
                 ),
@@ -4423,7 +4425,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                   minimumSize: const Size.fromHeight(54),
                   backgroundColor: _purple,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: const Text(
@@ -4557,7 +4559,7 @@ class _ExerciseIcon extends StatelessWidget {
       height: 48,
       decoration: BoxDecoration(
         color: color.withValues(alpha: .10),
-        borderRadius: BorderRadius.circular(13),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Icon(icon, color: color),
     );
@@ -4749,7 +4751,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                   '${number.format(calories.round())} of ${number.format(goals.activeCalories)} kcal, '
                   '${exercise.round()} of ${goals.exerciseMinutes} min',
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 onTap: () => setState(
                   () => _pickedDay = DateUtils.isSameDay(date, today)
                       ? null
@@ -4763,7 +4765,7 @@ class _ThirtyDayActivityRingsState extends State<_ThirtyDayActivityRings> {
                       color: isSelected
                           ? _purple.withValues(alpha: .08)
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: isSelected ? _purple : Colors.transparent,
                         width: 1.4,
@@ -5003,7 +5005,7 @@ class _IconBox extends StatelessWidget {
     height: 44,
     decoration: BoxDecoration(
       color: color.withValues(alpha: .11),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
     ),
     child: Icon(icon, color: color, size: 18.5),
   );
@@ -5061,7 +5063,7 @@ class _ActivityStat extends StatelessWidget {
     children: [
       Text(
         value,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
       ),
       const SizedBox(height: 3),
       Text(label, style: const TextStyle(fontSize: 11, color: _muted)),

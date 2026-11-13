@@ -153,7 +153,7 @@ List<MetricsInsight> metricsInsights(
       MetricsInsight(
         MetricsInsightKind.afterHours,
         MetricsInsightTone.concern,
-        'You had ${_hoursMinutes(afterHoursTotal / 60)} of plans after '
+        'You had ${hoursMinutes(afterHoursTotal / 60)} of plans after '
         'your wrap-up time this past week.',
       ),
     );
@@ -181,10 +181,3 @@ DateTime _back(DateTime date, int days) =>
 
 double _mean(List<double> values) =>
     values.reduce((a, b) => a + b) / values.length;
-
-String _hoursMinutes(double hours) {
-  final minutes = (hours * 60).round();
-  final h = minutes ~/ 60, m = minutes % 60;
-  if (h == 0) return '${m}m';
-  return '${h}h ${m.toString().padLeft(2, '0')}m';
-}

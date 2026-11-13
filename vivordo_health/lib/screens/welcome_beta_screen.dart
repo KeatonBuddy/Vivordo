@@ -79,7 +79,7 @@ class WelcomeBetaScreen extends StatelessWidget {
                     backgroundColor: _purple,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                   ),
                   child: const Text(

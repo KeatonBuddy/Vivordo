@@ -1,8 +1,5 @@
-import 'dart:ui' as ui;
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
 import 'package:flutter/material.dart';
@@ -11,9 +8,10 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/src/services/activity_goals_service.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/detail_insights.dart';
-import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
-import '../src/utils/chart_text.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
+import 'metric_history_screen.dart';
 
 class ActiveCaloriesDetailScreen extends StatefulWidget {
   const ActiveCaloriesDetailScreen({super.key});
@@ -25,6 +23,12 @@ class ActiveCaloriesDetailScreen extends StatefulWidget {
 
 class _ActiveCaloriesDetailScreenState
     extends State<ActiveCaloriesDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    MetricHistoryView.preload();
+  }
+
   static const _orange = Color(0xFFFF6A00);
   static const _purple = Color(0xFF5B42F3);
   // Opens on Week; Day is a tap away.
@@ -134,6 +138,15 @@ class _ActiveCaloriesDetailScreenState
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _calories,
         builder: (context, snapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (_rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.calories,
+              months: _rangeIndex == 3 ? 6 : 12,
+              header: _rangeSelector(),
+            );
+          }
           if (snapshot.connectionState == ConnectionState.waiting &&
               !snapshot.hasData) {
             return const Center(child: CupertinoActivityIndicator());
@@ -185,9 +198,6 @@ class _ActiveCaloriesDetailScreenState
         : ((average - usual) / usual * 100).round();
     final goal = dailyGoal * _rangeDays;
     final progress = goal == 0 ? 0.0 : (total / goal).clamp(0.0, 1.0);
-    final best = data.isEmpty
-        ? null
-        : data.reduce((a, b) => a.activeCalories >= b.activeCalories ? a : b);
     final updated = DateFormat('h:mm a').format(DateTime.now());
 
     return SingleChildScrollView(
@@ -205,24 +215,51 @@ class _ActiveCaloriesDetailScreenState
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _summaryCard(total, average, change, goal, progress),
-          if (_rangeIndex != 0) ...[
-            const SizedBox(height: 26),
-            Text(
-              '$_rangeName trend',
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (_rangeIndex == 0)
+            _summaryCard(total, average, change, goal, progress)
+          else
+            MetricChartCard(
+              label: 'Daily average',
+              number: NumberFormat.decimalPattern().format(average),
+              unit: 'kcal',
+              range:
+                  '${dayRangeText(data.first.date)} · '
+                  '${NumberFormat.decimalPattern().format(total)} total',
+              note: change == null ? null : _changeText(change),
+              chart: _chartCard(data, dailyGoal),
+              caption:
+                  'Each bar is a day. The dashed line is your goal. The '
+                  'solid bar is your best day.',
+              footer: _goalProgress(goal, progress),
             ),
-            const SizedBox(height: 10),
-            _chartCard(data, usual),
-          ],
           if (_rangeIndex != 0) ...[
             const SizedBox(height: 26),
             const Text(
-              'Daily breakdown',
+              'By day',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
-            _breakdownCard(data, best),
+            MetricDayBreakdown(
+              month: _rangeIndex == 2,
+              color: _orange,
+              mark: dailyGoal.toDouble(),
+              compact: HistoryMetric.calories.compact,
+              selected: _day,
+              onSelected: _pick,
+              days: [
+                for (final day in data)
+                  (
+                    date: day.date,
+                    value: day.activeCalories.toDouble(),
+                    text:
+                        '${NumberFormat.decimalPattern().format(day.activeCalories)} kcal',
+                    note: _goalNote(day.activeCalories, dailyGoal),
+                    met: day.activeCalories >= dailyGoal,
+                    hours: hours[day.date],
+                  ),
+              ],
+            ),
           ],
           const SizedBox(height: 26),
           const Text(
@@ -247,9 +284,12 @@ class _ActiveCaloriesDetailScreenState
   }
 
   Widget _rangeSelector() => AppSegmented<int>(
-    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(
@@ -287,7 +327,7 @@ class _ActiveCaloriesDetailScreenState
                           child: Text(
                             NumberFormat.decimalPattern().format(total),
                             style: const TextStyle(
-                              fontSize: 42,
+                              fontSize: 40,
                               height: 1.15,
                               fontWeight: FontWeight.w900,
                             ),
@@ -308,22 +348,7 @@ class _ActiveCaloriesDetailScreenState
                     ),
                     if (change != null) ...[
                       const SizedBox(height: 10),
-                      Text(
-                        _rangeIndex == 0 && change.abs() < 10
-                            ? 'About usual for this time'
-                            : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
-                                  '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
-                        style: TextStyle(
-                          // Below usual by now isn't flagged on Day.
-                          color: _rangeIndex == 0 && change < 10
-                              ? context.vivordoColors.textSecondary
-                              : change >= 0
-                              ? context.vivordoColors.success
-                              : context.vivordoColors.danger,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                      _changeText(change),
                     ],
                   ],
                 ),
@@ -331,101 +356,86 @@ class _ActiveCaloriesDetailScreenState
             ],
           ),
           const SizedBox(height: 22),
-          Row(
-            children: [
-              Text('Goal ${NumberFormat.decimalPattern().format(goal)} kcal'),
-              const Spacer(),
-              Text('${(progress * 100).round()}%'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 9,
-              color: _orange,
-              backgroundColor: context.vivordoColors.cardMuted,
-            ),
-          ),
+          _goalProgress(goal, progress),
         ],
       ),
     );
   }
 
-  Widget _chartCard(List<_CalorieDay> data, double? usual) {
-    final maxValue = data.fold<int>(
-      0,
-      (max, day) => day.activeCalories > max ? day.activeCalories : max,
-    );
-    final maxY =
-        (([
-                      maxValue.toDouble(),
-                      usual ?? 0,
-                      1000,
-                    ].reduce((a, b) => a > b ? a : b) *
-                    1.2) /
-                1000)
-            .ceil() *
-        1000.0;
-    return _card(
-      padding: const EdgeInsets.fromLTRB(10, 18, 10, 8),
-      child: SizedBox(
-        height: 245,
-        child: _CaloriesChart(
-          values: data.map((day) => day.activeCalories.toDouble()).toList(),
-          labels: data.map((day) => _chartLabel(day.date)).toList(),
-          dates: data.map((day) => day.date).toList(),
-          maxY: maxY,
-          usual: usual,
+  Widget _changeText(int change) => Text(
+    _rangeIndex == 0 && change.abs() < 10
+        ? 'About usual for this time'
+        : '${change >= 0 ? '↑' : '↓'} ${change.abs()}% vs '
+              '${_rangeIndex == 0 ? 'usual for this time' : 'your usual'}',
+    style: TextStyle(
+      // Below usual by now isn't flagged on Day.
+      color: _rangeIndex == 0 && change < 10
+          ? context.vivordoColors.textSecondary
+          : change >= 0
+          ? context.vivordoColors.success
+          : context.vivordoColors.danger,
+      fontSize: 16,
+      fontWeight: FontWeight.w800,
+    ),
+  );
+
+  Widget _goalProgress(int goal, double progress) => Column(
+    children: [
+      Row(
+        children: [
+          Text('Goal ${NumberFormat.decimalPattern().format(goal)} kcal'),
+          const Spacer(),
+          Text('${(progress * 100).round()}%'),
+        ],
+      ),
+      const SizedBox(height: 8),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: 9,
+          color: _orange,
+          backgroundColor: context.vivordoColors.cardMuted,
         ),
       ),
+    ],
+  );
+
+  Widget _chartCard(List<_CalorieDay> data, int dailyGoal) {
+    final values = [for (final day in data) day.activeCalories.toDouble()];
+    final best = bestBar(values);
+    final kcal = NumberFormat.decimalPattern();
+    return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
+      values: values,
+      labels: dayBarLabels([for (final day in data) day.date]),
+      tooltips: [
+        for (final day in data)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n'
+              '${kcal.format(day.activeCalories)} kcal',
+      ],
+      best: best,
+      goal: dailyGoal.toDouble(),
+      color: _orange,
+      summary: best == null
+          ? 'Last ${data.length} days: no active calories recorded.'
+          : 'Active calories for the last ${data.length} days against '
+                'your goal. Most on '
+                '${DateFormat('EEEE, MMMM d').format(data[best].date)} '
+                'with ${kcal.format(data[best].activeCalories)} kcal.',
     );
   }
 
-  String _chartLabel(DateTime date) => _rangeIndex == 2
-      ? DateFormat('M/d').format(date)
-      : DateFormat('E').format(date);
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
 
-  Widget _breakdownCard(List<_CalorieDay> data, _CalorieDay? best) {
-    final ordered = [...data]..sort((a, b) => b.date.compareTo(a.date));
-    return _card(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      child: Column(
-        children: [
-          for (var i = 0; i < ordered.length; i++) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      DateFormat('EEEE, MMM d').format(ordered[i].date),
-                    ),
-                  ),
-                  Text(
-                    '${NumberFormat.decimalPattern().format(ordered[i].activeCalories)} kcal',
-                    style: const TextStyle(
-                      color: _orange,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (best?.date == ordered[i].date &&
-                      ordered[i].activeCalories > 0) ...[
-                    const SizedBox(width: 10),
-                    _badge('Best day'),
-                  ],
-                ],
-              ),
-            ),
-            if (i != ordered.length - 1)
-              Divider(height: 1, color: context.vivordoColors.border),
-          ],
-        ],
-      ),
-    );
-  }
+  void _pick(int? day) => setState(() => _day = day);
+
+  String _goalNote(int value, int goal) => value >= goal
+      ? 'Goal met'
+      : '${NumberFormat.decimalPattern().format(goal - value)} short';
 
   Widget _insightCard(DetailInsight insight) {
     final (icon, color) = insightStyle(insight.tone);
@@ -449,7 +459,7 @@ class _ActiveCaloriesDetailScreenState
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -464,268 +474,10 @@ class _ActiveCaloriesDetailScreenState
     ),
     child: Icon(icon, color: color, size: 29),
   );
-
-  Widget _badge(String text) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-    decoration: BoxDecoration(
-      color: const Color(0xFF20B26B).withValues(alpha: .1),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: TextStyle(
-        color: context.vivordoColors.success,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
 }
 
 class _CalorieDay {
   const _CalorieDay(this.date, this.activeCalories);
   final DateTime date;
   final int activeCalories;
-}
-
-class _CaloriesChart extends StatefulWidget {
-  const _CaloriesChart({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.maxY,
-    required this.usual,
-  });
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double maxY;
-  final double? usual;
-
-  @override
-  State<_CaloriesChart> createState() => _CaloriesChartState();
-}
-
-class _CaloriesChartState extends State<_CaloriesChart> {
-  int? selected;
-
-  void _select(double x, double width) {
-    if (widget.values.isEmpty) return;
-    const left = 38.0;
-    final chartWidth = width - left;
-    final index = widget.values.length == 1
-        ? 0
-        : (((x - left) / chartWidth) * (widget.values.length - 1))
-              .round()
-              .clamp(0, widget.values.length - 1);
-    if (selected != index) setState(() => selected = index);
-  }
-
-  @override
-  void didUpdateWidget(covariant _CaloriesChart oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.values, widget.values)) selected = null;
-  }
-
-  /// What the line shows, for VoiceOver: the period's average and best day.
-  String get _summary {
-    final days = widget.values.where((v) => v > 0).toList();
-    final period = 'Active calories, last ${widget.values.length} days';
-    if (days.isEmpty) return '$period: none recorded.';
-    final kcal = NumberFormat.decimalPattern();
-    final average = days.reduce((a, b) => a + b) / days.length;
-    var best = 0;
-    for (var i = 1; i < widget.values.length; i++) {
-      if (widget.values[i] > widget.values[best]) best = i;
-    }
-    final day = DateFormat(widget.values.length <= 7 ? 'EEEE' : 'MMM d');
-    return '$period: average ${kcal.format(average.round())} kcal, '
-        'most on ${day.format(widget.dates[best])} with '
-        '${kcal.format(widget.values[best].round())} kcal.';
-  }
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: _summary,
-    child: ExcludeSemantics(
-      child: LayoutBuilder(
-        builder: (context, constraints) => GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          onHorizontalDragUpdate: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: _CaloriesChartPainter(
-              values: widget.values,
-              labels: widget.labels,
-              dates: widget.dates,
-              maxY: widget.maxY,
-              usual: widget.usual,
-              selected: selected,
-              dark: Theme.of(context).brightness == Brightness.dark,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _CaloriesChartPainter extends CustomPainter {
-  const _CaloriesChartPainter({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.maxY,
-    required this.usual,
-    required this.selected,
-    required this.dark,
-  });
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double maxY;
-  final double? usual;
-  final int? selected;
-  final bool dark;
-  static const left = 38.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const bottom = 25.0;
-    final height = size.height - bottom;
-    final width = size.width - left;
-    final grid = Paint()
-      ..color = (dark ? Colors.white : Colors.black).withValues(alpha: .08)
-      ..strokeWidth = 1;
-    for (var i = 0; i <= 4; i++) {
-      final y = height * i / 4;
-      canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
-      _text(canvas, _compact(maxY * (1 - i / 4)), Offset(0, y - 6), 10);
-    }
-    if (values.isEmpty) return;
-    final points = List.generate(values.length, (i) {
-      final x = values.length == 1
-          ? left + width / 2
-          : left + width * i / (values.length - 1);
-      return Offset(x, height * (1 - (values[i] / maxY).clamp(0.0, 1.0)));
-    });
-    final usualValue = usual;
-    if (usualValue != null) {
-      final y = height * (1 - (usualValue / maxY).clamp(0.0, 1.0));
-      canvas.drawLine(
-        Offset(left, y),
-        Offset(size.width, y),
-        Paint()
-          ..color = Colors.grey
-          ..strokeWidth = 1.2,
-      );
-    }
-    final line = smoothChartPath(points);
-    final fill = Path.from(line)
-      ..lineTo(points.last.dx, height)
-      ..lineTo(points.first.dx, height)
-      ..close();
-    canvas.drawPath(
-      fill,
-      Paint()
-        ..shader = ui.Gradient.linear(Offset.zero, Offset(0, height), [
-          const Color(0xFFFF6A00).withValues(alpha: .24),
-          const Color(0xFFFF6A00).withValues(alpha: 0),
-        ]),
-    );
-    canvas.drawPath(
-      line,
-      Paint()
-        ..color = const Color(0xFFFF6A00)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    for (var i = 0; i < points.length; i++) {
-      if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
-        _centerText(canvas, labels[i], Offset(points[i].dx, height + 7), 9);
-      }
-    }
-    final index = selected;
-    if (index != null && index < points.length) {
-      final point = points[index];
-      canvas.drawLine(
-        Offset(point.dx, 0),
-        Offset(point.dx, height),
-        Paint()
-          ..color = const Color(0xFFFF6A00).withValues(alpha: .2)
-          ..strokeWidth = 1,
-      );
-      final label =
-          '${DateFormat('MMM d').format(dates[index])}\n${NumberFormat.decimalPattern().format(values[index].round())} kcal';
-      final painter = TextPainter(
-        textScaler: chartTextScaler,
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            color: dark ? Colors.white : Colors.black,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textAlign: TextAlign.center,
-        textDirection: ui.TextDirection.ltr,
-      )..layout();
-      final boxWidth = painter.width + 18;
-      final boxHeight = painter.height + 14;
-      final x = (point.dx - boxWidth / 2).clamp(left, size.width - boxWidth);
-      final y = (point.dy - boxHeight - 12).clamp(0.0, height - boxHeight);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, y, boxWidth, boxHeight),
-          const Radius.circular(9),
-        ),
-        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
-      );
-      painter.paint(canvas, Offset(x + 9, y + 7));
-    }
-  }
-
-  static String _compact(double value) =>
-      value >= 1000 ? '${(value / 1000).round()}K' : value.round().toString();
-
-  void _text(Canvas canvas, String value, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white54 : Colors.black45,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, offset);
-  }
-
-  void _centerText(Canvas canvas, String value, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: value,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white54 : Colors.black45,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, Offset(offset.dx - painter.width / 2, offset.dy));
-  }
-
-  @override
-  bool shouldRepaint(covariant _CaloriesChartPainter oldDelegate) =>
-      !listEquals(values, oldDelegate.values) ||
-      selected != oldDelegate.selected ||
-      maxY != oldDelegate.maxY ||
-      dark != oldDelegate.dark;
 }

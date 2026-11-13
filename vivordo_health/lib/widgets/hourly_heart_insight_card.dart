@@ -224,7 +224,7 @@ class HomeInsightRow extends StatelessWidget {
           height: 34,
           decoration: BoxDecoration(
             color: color.withValues(alpha: .13),
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(icon, color: color, size: 19),
         ),
@@ -237,7 +237,7 @@ class HomeInsightRow extends StatelessWidget {
                 title,
                 style: TextStyle(
                   color: context.vivordoColors.textPrimary,
-                  fontSize: 14.5,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -246,7 +246,7 @@ class HomeInsightRow extends StatelessWidget {
                 subtitle,
                 style: TextStyle(
                   color: context.vivordoColors.textSecondary,
-                  fontSize: 12.5,
+                  fontSize: 12,
                   height: 1.4,
                 ),
               ),

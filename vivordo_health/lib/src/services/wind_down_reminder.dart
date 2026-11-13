@@ -97,6 +97,32 @@ class WindDownReminders {
     }
   }
 
+  /// [day]'s energy forecast from the same sleep history the reminder reads
+  /// (reused for a few hours). Null without any sleep or usual sleep times.
+  static Future<EnergyForecast?> forecastFor(DateTime day) async {
+    final user = _user;
+    if (user == null) return null;
+    final now = DateTime.now();
+    var inputs = _inputs;
+    if (inputs == null ||
+        inputs.uid != user.id ||
+        !inputsFresh(inputs.at, now)) {
+      inputs = _inputs = await _readInputs(
+        user,
+        DateTime(now.year, now.month, now.day),
+      );
+    }
+    final preferences = (await user.get()).data()?['preferences'] as Map?;
+    final schedule = SleepSchedule.fromPreferences(preferences);
+    if (inputs.nights.isEmpty && schedule == null) return null;
+    return forecastEnergy(
+      day: day,
+      nights: inputs.nights,
+      sleepNeedHours: inputs.need,
+      schedule: schedule,
+    );
+  }
+
   static Future<_Inputs> _readInputs(
     DocumentReference<Map<String, dynamic>> user,
     DateTime today,

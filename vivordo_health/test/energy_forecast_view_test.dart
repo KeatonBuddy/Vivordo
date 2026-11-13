@@ -118,7 +118,7 @@ void main() {
       sleepNeedHours: 8,
     );
     final text = energyReasons(short).map((r) => r.$2).join('\n');
-    expect(text, contains('You slept 6 h 40, 1 h 20 under your need'));
+    expect(text, contains('You slept 6h 40m, 1h 20m under your need'));
     expect(text, contains('You woke at 7:00'));
     expect(text, contains('Best for focus:'));
     expect(text, contains('about average'));
@@ -130,7 +130,7 @@ void main() {
     );
     expect(
       energyReasons(rested).first.$2,
-      'You slept 8 h, about what you need.',
+      'You slept 8h, about what you need.',
     );
     expect(
       energyReasons(forecastEnergy(day: day, nights: const [])).first.$2,
@@ -168,7 +168,7 @@ void main() {
     expect(
       textbook.first.body,
       startsWith(
-        'Bed by ${t('11:00 PM')} for 8 h before you wake at ${t('7:00 AM')}.',
+        'Bed by ${t('11:00 PM')} for 8h before you wake at ${t('7:00 AM')}.',
       ),
     );
     expect(textbook.first.body, contains("Tomorrow's peak is"));
@@ -189,7 +189,7 @@ void main() {
     expect(
       lateRiser.first.body,
       startsWith(
-        'Bed by ${t('11:00 PM')} for 7 h before you wake at ${t('7:30 AM')}.',
+        'Bed by ${t('11:00 PM')} for 7h before you wake at ${t('7:30 AM')}.',
       ),
     );
     final placeholder = windDownReminders(
@@ -203,7 +203,7 @@ void main() {
           ),
       ],
     );
-    expect(placeholder.first.body, contains('8 h of sleep before you wake'));
+    expect(placeholder.first.body, contains('8h of sleep before you wake'));
     expect(textbook.last.at, DateTime(2026, 10, 14, 22));
 
     // A 6:30 AM start tomorrow pulls only tonight earlier: 6:30 − 1 h prep
@@ -270,7 +270,7 @@ void main() {
     expect(text, startsWith('Today: woke ${t('7:00 AM')}, groggy until'));
     expect(text, contains('peak '));
     expect(text, contains('Bed by '));
-    expect(text, contains('Last night: slept 6 h 40 (needs 8 h).'));
+    expect(text, contains('Last night: slept 6h 40m (needs 8h).'));
     expect(
       text,
       contains(
@@ -297,5 +297,55 @@ void main() {
     expect(usual, isNot(contains('Last night')));
     expect(usual, contains('No hard work still ahead'));
     expect(usual, isNot(contains('Tomorrow')));
+  });
+
+  test('short nights are counted, never shown as hours owed', () {
+    SleepPeriod night(int daysAgo, double hours) {
+      final end = DateTime(2026, 10, 8 - daysAgo, 7);
+      return (
+        start: end.subtract(Duration(minutes: (hours * 60).round())),
+        end: end,
+        asleepHours: null,
+      );
+    }
+
+    String? text(Map<int, double> short, {double rest = 8}) => shortNightsText(
+      forecastEnergy(
+        day: day,
+        nights: [for (var i = 0; i < 14; i++) night(i, short[i] ?? rest)],
+        sleepNeedHours: 8,
+      ),
+    );
+
+    // Three this week and two the week before, still weighing on today.
+    expect(
+      text({0: 6, 2: 6.5, 4: 6, 9: 6, 11: 6.5}),
+      "You've been short on sleep 5 of your last 14 nights, 3 of them this "
+      'week. The recent ones weigh most on today.',
+    );
+    // Short last week, then two long nights: mostly made up.
+    expect(
+      text({0: 9.5, 1: 9.5, 8: 6.5, 9: 6.5, 10: 6.5}),
+      'You were short on 3 of your last 14 nights, but longer nights since '
+      'have made up for most of it.',
+    );
+    // Two short nights say nothing; nor does the 8 h placeholder need.
+    expect(text({0: 6, 1: 6}), isNull);
+    expect(
+      shortNightsText(forecastEnergy(day: day, nights: nights(hours: 6))),
+      isNull,
+    );
+    for (final t in [
+      text({0: 6, 1: 6, 2: 6}),
+      energyContext(
+        today: forecastEnergy(
+          day: day,
+          nights: nights(hours: 6),
+          sleepNeedHours: 8,
+        ),
+      ),
+    ]) {
+      expect(t, isNot(matches(RegExp(r'\d+\s*h\b.*debt|debt.*\d+\s*h'))));
+    }
   });
 }

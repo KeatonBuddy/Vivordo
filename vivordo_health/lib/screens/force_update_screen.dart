@@ -65,7 +65,7 @@ class ForceUpdateScreen extends StatelessWidget {
                   'supported. Update to keep using the app.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     color: colors.textSecondary,
                     height: 1.5,
                   ),
@@ -83,7 +83,7 @@ class ForceUpdateScreen extends StatelessWidget {
                         alpha: 0.3,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       elevation: 0,
                     ),

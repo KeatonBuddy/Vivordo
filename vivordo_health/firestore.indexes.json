@@ -1,6 +1,48 @@
 {
   "indexes": [
     {
+      "collectionGroup": "event_invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "recipientUids",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "expireAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "event_invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fromUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expireAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "event_invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fromUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recipientUids",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
       "collectionGroup": "metrics_daily",
       "queryScope": "COLLECTION",
       "fields": [
@@ -83,6 +125,21 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "event_invites",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
+        {
+          "queryScope": "COLLECTION",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "insights",
       "fieldPath": "createdAt",
       "indexes": [
@@ -108,6 +165,20 @@
       "collectionGroup": "friend_requests",
       "fieldPath": "fromUid",
       "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "friends",
+      "fieldPath": "uid",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "order": "ASCENDING"
+        },
         {
           "queryScope": "COLLECTION_GROUP",
           "order": "ASCENDING"

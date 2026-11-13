@@ -18,8 +18,11 @@ import 'package:vivordo_health/src/utils/heart_rate_zones.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
+
 import 'package:vivordo_health/widgets/whoop_source_badge.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 class HeartRateDetailScreen extends StatefulWidget {
   const HeartRateDetailScreen({super.key});
@@ -51,6 +54,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   @override
   void initState() {
     super.initState();
+    MetricHistoryView.preload();
     _heartDataStream = _heartDataSnapshots();
     if (_wearableCollapsed == null) {
       _storage
@@ -172,6 +176,15 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _heartDataStream,
         builder: (context, snapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.heartRate,
+              months: rangeIndex == 3 ? 6 : 12,
+              header: rangeSelector(),
+            );
+          }
           if (!snapshot.hasData &&
               snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CupertinoActivityIndicator());
@@ -186,9 +199,16 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
               final hasConnectedWearable =
                   user?['whoopConnected'] == true ||
                   user?['fitbitConnected'] == true;
+              final since = DateUtils.dateOnly(
+                DateTime.now(),
+              ).subtract(const Duration(days: 28));
               return content(
                 currentDays(all),
                 previousDays(all),
+                usual: usualRange([
+                  for (final day in all)
+                    if (!day.date.isBefore(since)) ?day.resting,
+                ]),
                 hasConnectedWearable: hasConnectedWearable,
                 restingNormal: restingNormal({
                   for (final day in all) day.date: ?day.resting,
@@ -204,6 +224,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget content(
     List<_HeartDay> days,
     List<_HeartDay> previous, {
+    required (double, double)? usual,
     required bool hasConnectedWearable,
     double? restingNormal,
   }) {
@@ -292,10 +313,31 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
             const SizedBox(height: 18),
           ],
           summary(avg, low, high),
-          section(
-            rangeIndex == 0 ? '$rangeName trend' : 'Resting heart rate trend',
-          ),
-          chart(chartDays, chartEntries, restingAvg),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (rangeIndex == 0) ...[
+            section('$rangeName trend'),
+            chart(chartDays, chartEntries, restingAvg, usual),
+          ] else ...[
+            const SizedBox(height: 18),
+            MetricChartCard(
+              label: 'Average resting',
+              number: restingAvg?.round().toString() ?? '–',
+              unit: restingAvg == null ? '' : 'bpm',
+              range: dayRangeText(chartDays.first.date),
+              chart: restingBars(chartDays, usual),
+              caption:
+                  "Each bar is a day's resting heart rate."
+                  '${usual == null ? '' : ' The band is your usual range over the last 28 days.'}'
+                  ' The solid bar is your lowest day.',
+            ),
+            const SizedBox(height: 26),
+            const Text(
+              'By day',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            _byDay(chartDays, usual),
+          ],
           section('Heart rate zones'),
           zones(storedReadings),
           if (hrvKind != null && hrvAvg != null) ...[
@@ -321,32 +363,12 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   }
 
   Future<void> _pairWearable() async {
+    final selected = await showAppleSheet<WhoopBleDevice>(
+      context,
+      builder: (_) => const _PairWearableSheet(),
+    );
+    if (selected == null) return;
     try {
-      final devices = await WhoopBleHeartRateService.instance.scanForDevices();
-      if (!mounted) return;
-      if (devices.isEmpty) {
-        showToast(
-          context,
-          'No heart-rate broadcast found. Turn on heart-rate sharing or broadcasting on your wearable and try again.',
-          kind: ToastKind.error,
-        );
-        return;
-      }
-      final selected = devices.length == 1
-          ? devices.first
-          : await showAppleActionSheet<WhoopBleDevice>(
-              context,
-              title: 'Choose your wearable',
-              message: 'Nearby heart-rate broadcasters',
-              actions: [
-                for (final device in devices)
-                  AppleSheetAction(
-                    '${device.name} · ${_signalLabel(device.rssi)}',
-                    device,
-                  ),
-              ],
-            );
-      if (selected == null) return;
       await WhoopBleHeartRateService.instance.pairAndStart(selected);
     } catch (error) {
       debugPrint('Could not pair wearable: $error');
@@ -361,12 +383,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
       );
     }
   }
-
-  static String _signalLabel(int rssi) => rssi >= -60
-      ? 'Strong signal'
-      : rssi >= -75
-      ? 'Fair signal'
-      : 'Weak signal';
 
   void _toggleWearableCollapsed() {
     final collapsed = !(_wearableCollapsed ?? false);
@@ -588,7 +604,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: context.vivordoColors.textSecondary,
-                    fontSize: 14,
+                    fontSize: 15,
                   ),
                 ),
               ],
@@ -627,7 +643,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(13),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       icon: Icon(
@@ -676,46 +692,14 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
     ),
   );
 
-  Widget rangeSelector() {
-    const labels = ['Day', 'Week', 'Month'];
-    return Container(
-      height: 52,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.vivordoColors.cardMuted,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: context.vivordoColors.border),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (index) {
-          final selected = index == rangeIndex;
-          return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () => setState(() => rangeIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? purple : Colors.transparent,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  labels[index],
-                  style: TextStyle(
-                    color: selected
-                        ? Colors.white
-                        : context.vivordoColors.textSecondary,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  Widget rangeSelector() => AppSegmented<int>(
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
+    value: rangeIndex,
+    onChanged: (index) => setState(() {
+      rangeIndex = index;
+      _day = null;
+    }),
+  );
 
   Widget summary(double? avg, int? low, int? high) => card(
     padding: const EdgeInsets.all(20),
@@ -760,7 +744,6 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
           ),
           maxLines: 1,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: red),
         ),
       ],
     ),
@@ -769,12 +752,83 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
   Widget divider() =>
       Container(width: 1, height: 44, color: context.vivordoColors.border);
 
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
+  /// Each day's resting heart rate against the usual band. The line starts
+  /// just under the lowest day, as the chart does.
+  Widget _byDay(List<_HeartDay> days, (double, double)? usual) {
+    final resting = [for (final day in days) ?day.resting];
+    final low = resting.isEmpty ? 0.0 : resting.reduce(math.min) - 5;
+    final high = resting.isEmpty ? 1.0 : resting.reduce(math.max) + 3;
+    return MetricDayBreakdown(
+      month: rangeIndex == 2,
+      color: HistoryMetric.heartRate.color,
+      mark: usual == null ? null : (usual.$1 + usual.$2) / 2,
+      scaleMin: low,
+      scaleMax: high,
+      compact: HistoryMetric.heartRate.compact,
+      selected: _day,
+      onSelected: _pick,
+      days: [
+        for (final day in days)
+          (
+            date: day.date,
+            value: day.resting ?? 0,
+            text: day.resting == null
+                ? 'No reading'
+                : '${day.resting!.round()} bpm',
+            note: day.resting == null || usual == null
+                ? ''
+                : day.resting! > usual.$2
+                ? 'Above usual'
+                : day.resting! < usual.$1
+                ? 'Below usual'
+                : 'About usual',
+            met: false,
+            hours: null,
+          ),
+      ],
+    );
+  }
+
+  /// W and M: a bar per day's resting heart rate, like the 6M and Y views.
+  Widget restingBars(List<_HeartDay> days, (double, double)? usual) {
+    final values = [for (final day in days) day.resting ?? 0];
+    final best = bestBar(values, lowest: true);
+    return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
+      values: values,
+      labels: dayBarLabels([for (final day in days) day.date]),
+      tooltips: [
+        for (final day in days)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n'
+              '${day.resting?.round() ?? '--'} bpm resting',
+      ],
+      best: best,
+      usual: usual,
+      fromLowest: true,
+      color: HistoryMetric.heartRate.color,
+      summary: best == null
+          ? 'Last ${days.length} days: no resting heart rate.'
+          : 'Resting heart rate for the last ${days.length} days. Lowest '
+                'on ${DateFormat('EEEE, MMMM d').format(days[best].date)} '
+                'at ${days[best].resting!.round()} bpm.',
+    );
+  }
+
   Widget chart(
     List<_HeartDay> days,
     List<_HeartReading> entries,
     double? resting,
+    (double, double)? usual,
   ) {
     final isDay = rangeIndex == 0;
+    if (!isDay) return restingBars(days, usual);
     final scoredDays = isDay
         ? const <_HeartDay>[]
         : days.where((day) => day.resting != null).toList();
@@ -943,7 +997,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
                       TextSpan(
                         text: avg.round().toString(),
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -1001,7 +1055,7 @@ class _HeartRateDetailScreenState extends State<HeartRateDetailScreen> {
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -1337,7 +1391,7 @@ class _HeartChartPainter extends CustomPainter {
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, boxWidth, boxHeight),
-          const Radius.circular(9),
+          const Radius.circular(8),
         ),
         Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
       );
@@ -1482,4 +1536,149 @@ class _HeartChartPainter extends CustomPainter {
       resting != oldDelegate.resting ||
       showTime != oldDelegate.showTime ||
       dark != oldDelegate.dark;
+}
+
+/// Opens straight away and lists nearby heart-rate broadcasts as the scan
+/// finds them, with how to turn sharing on; closes with the one tapped.
+class _PairWearableSheet extends StatefulWidget {
+  const _PairWearableSheet();
+
+  @override
+  State<_PairWearableSheet> createState() => _PairWearableSheetState();
+}
+
+class _PairWearableSheetState extends State<_PairWearableSheet> {
+  final _ble = WhoopBleHeartRateService.instance;
+  List<WhoopBleDevice> _devices = const [];
+  bool _scanning = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _scan();
+  }
+
+  @override
+  void dispose() {
+    _ble.stopScan();
+    super.dispose();
+  }
+
+  Future<void> _scan() async {
+    try {
+      final devices = await _ble.scanForDevices(
+        onFound: (devices) {
+          if (mounted) setState(() => _devices = devices);
+        },
+      );
+      if (mounted) setState(() => _devices = devices);
+    } catch (error) {
+      debugPrint('Wearable scan failed: $error');
+      // The service's StateErrors carry our own plain-language messages.
+      if (mounted) {
+        setState(
+          () => _error = error is StateError
+              ? error.message
+              : "Couldn't search for wearables. Try again.",
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  void _searchAgain() {
+    setState(() {
+      _scanning = true;
+      _error = null;
+      _devices = const [];
+    });
+    _scan();
+  }
+
+  static String _signalLabel(int rssi) => rssi >= -60
+      ? 'Strong signal'
+      : rssi >= -75
+      ? 'Fair signal'
+      : 'Weak signal';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.vivordoColors;
+    Widget howTo(String name, String steps) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            name,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            steps,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.3,
+              color: colors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+    return AppleFormSheet(
+      title: 'Pair a wearable',
+      doneLabel: 'Search again',
+      onDone: _scanning ? null : _searchAgain,
+      children: [
+        AppleFormGroup(
+          header: 'Nearby',
+          footer:
+              _error ??
+              (!_scanning && _devices.isEmpty
+                  ? 'Turn on heart-rate sharing, keep the wearable close to '
+                        'your phone, then search again.'
+                  : null),
+          children: [
+            for (final device in _devices)
+              AppleFormRow(
+                label: device.name,
+                value: _signalLabel(device.rssi),
+                chevron: true,
+                onTap: () {
+                  _ble.stopScan();
+                  Navigator.pop(context, device);
+                },
+              ),
+            if (_scanning)
+              const AppleFormRow(
+                label: 'Looking for wearables…',
+                trailing: CupertinoActivityIndicator(),
+              )
+            else if (_devices.isEmpty)
+              const AppleFormRow(label: 'None found'),
+          ],
+        ),
+        AppleFormGroup(
+          header: 'Turn on heart-rate sharing first',
+          children: [
+            howTo('WHOOP', 'In the WHOOP app, turn on Heart Rate Broadcast.'),
+            howTo(
+              'Fitbit',
+              'In the Google Health app, open Connections → Fitbit Air and tap Share heart rate.',
+            ),
+            howTo(
+              'Chest straps and others',
+              'Most start sharing as soon as you put them on.',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }

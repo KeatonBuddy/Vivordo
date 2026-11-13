@@ -158,10 +158,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Plan for today'), findsOneWidget);
     expect(find.textContaining('In your peak'), findsOneWidget);
-    // Reel Upload's 2:15 is Outlook's: it can't be picked yet.
-    final reelAt215 = find.text(DateFormat.jm().format(at(14, 15))).last;
-    await tester.tap(reelAt215);
-    await tester.pumpAndSettle();
+    expect(find.text('2 of 3 placed'), findsOneWidget);
+    // Reel Upload's 2:15 is Outlook's: it isn't offered yet.
+    final at215 = find.text(DateFormat.jm().format(at(14, 15)));
+    expect(at215, findsOneWidget);
     expect(
       find.text('Its open times are taken by your other picks'),
       findsOneWidget,
@@ -169,7 +169,9 @@ void main() {
     // Outlook to tomorrow frees it.
     await tester.tap(find.text('Tomorrow').first);
     await tester.pumpAndSettle();
-    await tester.tap(reelAt215);
+    // The priorities scroll under the pinned day strip.
+    await tester.ensureVisible(at215.last);
+    await tester.tap(at215.last);
     await tester.pumpAndSettle();
     expect(find.text('Moves to tomorrow'), findsOneWidget);
     await tester.tap(find.text('Set these times'));
@@ -179,6 +181,73 @@ void main() {
       ['Reel upload', 'App submission'],
     );
     expect([for (final t in choice!.tomorrow) t.id], ['Outlook verification']);
+  });
+
+  testWidgets('an unpicked suggestion stays on offer', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (c) {
+              context = c;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    final quick = task('Cancel subscription', 5, 'light');
+    final reel = task('Reel upload', 60, 'moderate');
+    PlannedSlot slot(PlanTask t, DateTime start) => (
+      task: t,
+      start: start,
+      end: start.add(Duration(minutes: t.minutes)),
+      reason: 'The next open time',
+    );
+    showPlanMyDaySheet(
+      context,
+      plan: (
+        placed: [slot(quick, at(14, 30)), slot(reel, at(14, 45))],
+        unplaced: [],
+        // The plan's own option for the quick one is where the reel went.
+        options: {
+          quick.id: [slot(quick, at(14, 45))],
+          reel.id: [slot(reel, at(14, 45))],
+        },
+      ),
+      from: at(14, 0),
+      until: at(18, 0),
+    );
+    // The strip's block for the 2:30 pick: full while picked, and it
+    // drains (rather than vanishing) when unpicked.
+    double filled() => tester
+        .getSize(
+          find.descendant(
+            of: find.byKey(ValueKey('${quick.id}@${at(14, 30)}')),
+            matching: find.byType(Align),
+          ),
+        )
+        .width;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final opening = filled();
+    await tester.pumpAndSettle();
+    final full = filled();
+    expect(opening, inExclusiveRange(0, full));
+    final at230 = find.text(DateFormat.jm().format(at(14, 30)));
+    await tester.tap(at230);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(filled(), inExclusiveRange(0, full));
+    await tester.pumpAndSettle();
+    expect(filled(), 0);
+    expect(find.text('1 of 2 placed'), findsOneWidget);
+    // Still there to pick again.
+    expect(at230, findsOneWidget);
+    await tester.tap(at230);
+    await tester.pumpAndSettle();
+    expect(find.text('2 of 2 placed'), findsOneWidget);
   });
 
   test('every free stretch offers a time', () {

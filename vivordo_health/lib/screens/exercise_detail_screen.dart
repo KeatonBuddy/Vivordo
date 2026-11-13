@@ -15,10 +15,12 @@ import 'package:vivordo_health/src/utils/detail_insights.dart';
 import 'package:vivordo_health/src/utils/smooth_chart_path.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
+import 'package:vivordo_health/widgets/metric_day_breakdown.dart';
 
 import '../widgets/apple_ui.dart';
 import '../widgets/muscle_sets_card.dart';
 import '../src/utils/chart_text.dart';
+import 'metric_history_screen.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key});
@@ -28,6 +30,12 @@ class ExerciseDetailScreen extends StatefulWidget {
 }
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    MetricHistoryView.preload();
+  }
+
   static const _purple = Color(0xFF5B28E6);
   int _rangeIndex = 0;
   String? _selectedExercise;
@@ -91,6 +99,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _metrics,
         builder: (context, metricsSnapshot) {
+          // 6M and Y read the lifetime history instead; the stream stays
+          // subscribed so going back to D/W/M is instant.
+          if (_rangeIndex > 2) {
+            return MetricHistoryView(
+              metric: HistoryMetric.exercise,
+              months: _rangeIndex == 3 ? 6 : 12,
+              header: _rangeSelector(),
+            );
+          }
           if (!metricsSnapshot.hasData &&
               metricsSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CupertinoActivityIndicator());
@@ -203,23 +220,71 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           const SizedBox(height: 18),
           _rangeSelector(),
           const SizedBox(height: 18),
-          _summaryCard(
-            total,
-            average,
-            changeMinutes,
-            goal,
-            progress,
-            rangeWorkouts.length,
-            restDays,
-          ),
+          // W and M use the same card as 6M and Y, so the bars morph.
+          if (_rangeIndex == 0)
+            _summaryCard(
+              total,
+              average,
+              changeMinutes,
+              goal,
+              progress,
+              rangeWorkouts.length,
+              restDays,
+            )
+          else
+            MetricChartCard(
+              label: 'Daily average',
+              number: '$average',
+              unit: 'min',
+              range:
+                  '${dayRangeText(days.first.date)} · '
+                  '${hoursMinutes(total / 60)} total',
+              note: changeMinutes == null ? null : _changeText(changeMinutes),
+              chart: _minutesChart(days, goals.exerciseMinutes.toDouble()),
+              caption:
+                  'Each bar is a day. The dashed line is your goal. The '
+                  'solid bar is your best day.',
+              footer: _goalAndStats(
+                goal,
+                progress,
+                rangeWorkouts.length,
+                restDays,
+              ),
+            ),
           if (_rangeIndex != 0) ...[
-            const SizedBox(height: 24),
+            const SizedBox(height: 26),
             const Text(
-              'Exercise time',
+              'By day',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 10),
-            _minutesChart(days, goals.exerciseMinutes.toDouble()),
+            MetricDayBreakdown(
+              month: _rangeIndex == 2,
+              color: HistoryMetric.exercise.color,
+              mark: goals.exerciseMinutes.toDouble(),
+              compact: HistoryMetric.exercise.compact,
+              selected: _day,
+              onSelected: _pick,
+              days: [
+                for (final day in days)
+                  (
+                    date: day.date,
+                    value: day.minutes.toDouble(),
+                    // The week runs to Sunday: days still to come say so
+                    // rather than reading as missed.
+                    text: day.date.isAfter(today) ? '–' : '${day.minutes} min',
+                    note: day.date.isAfter(today)
+                        ? ''
+                        : day.minutes >= goals.exerciseMinutes
+                        ? 'Goal met'
+                        : '${goals.exerciseMinutes - day.minutes} min short',
+                    met:
+                        !day.date.isAfter(today) &&
+                        day.minutes >= goals.exerciseMinutes,
+                    hours: null,
+                  ),
+              ],
+            ),
           ],
           MuscleSetsSection(workouts: workouts, rangeIndex: _rangeIndex),
           const SizedBox(height: 24),
@@ -253,10 +318,19 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  /// The day picked in the chart or in "By day" (an index into the range's
+  /// days); both show the same one.
+  int? _day;
+
+  void _pick(int? day) => setState(() => _day = day);
+
   Widget _rangeSelector() => AppSegmented<int>(
-    segments: const {0: 'Day', 1: 'Week', 2: 'Month'},
+    segments: const {0: 'D', 1: 'W', 2: 'M', 3: '6M', 4: 'Y'},
     value: _rangeIndex,
-    onChanged: (index) => setState(() => _rangeIndex = index),
+    onChanged: (index) => setState(() {
+      _rangeIndex = index;
+      _day = null;
+    }),
   );
 
   Widget _summaryCard(
@@ -268,8 +342,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     int workouts,
     int restDays,
   ) {
-    final hours = total ~/ 60;
-    final minutes = total % 60;
     return _card(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -292,9 +364,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       ),
                     ),
                     Text(
-                      hours > 0 ? '$hours h  $minutes m' : '$minutes min',
+                      hoursMinutes(total / 60),
                       style: const TextStyle(
-                        fontSize: 38,
+                        fontSize: 40,
                         height: 1.15,
                         fontWeight: FontWeight.w900,
                       ),
@@ -308,15 +380,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                     if (change != null) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        '${change >= 0 ? '↑' : '↓'} ${change.abs()} min${_rangeIndex == 0 ? '' : ' a day'} vs $_previousName',
-                        style: TextStyle(
-                          color: change >= 0
-                              ? context.vivordoColors.success
-                              : context.vivordoColors.danger,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      _changeText(change),
                     ],
                   ],
                 ),
@@ -324,6 +388,44 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             ],
           ),
           const SizedBox(height: 20),
+          _goalAndStats(goal, progress, workouts, restDays),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryStat(IconData icon, String value, String label) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(icon, color: _purple),
+      const SizedBox(width: 8),
+      Text(
+        value,
+        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(width: 5),
+      Flexible(
+        child: Text(
+          label,
+          style: TextStyle(color: context.vivordoColors.textSecondary),
+        ),
+      ),
+    ],
+  );
+
+  Widget _changeText(int change) => Text(
+    '${change >= 0 ? '↑' : '↓'} ${change.abs()} min${_rangeIndex == 0 ? '' : ' a day'} vs $_previousName',
+    style: TextStyle(
+      color: change >= 0
+          ? context.vivordoColors.success
+          : context.vivordoColors.danger,
+      fontWeight: FontWeight.w700,
+    ),
+  );
+
+  Widget _goalAndStats(int goal, double progress, int workouts, int restDays) =>
+      Column(
+        children: [
           Divider(color: context.vivordoColors.border),
           Row(
             children: [
@@ -368,53 +470,40 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             ],
           ),
         ],
-      ),
+      );
+
+  /// W and M: a bar per day's minutes, like the 6M and Y views.
+  Widget _minutesChart(List<_ExerciseDay> days, double dailyGoal) {
+    final values = [for (final day in days) day.minutes.toDouble()];
+    final best = bestBar(values);
+    return MetricBarChart(
+      selected: _day,
+      onSelected: _pick,
+      values: values,
+      labels: dayBarLabels([for (final day in days) day.date]),
+      tooltips: [
+        for (final day in days)
+          '${DateFormat('EEE, MMM d').format(day.date)}\n${day.minutes} min',
+      ],
+      best: best,
+      goal: dailyGoal,
+      color: HistoryMetric.exercise.color,
+      summary: best == null
+          ? 'Last ${days.length} days: no exercise recorded.'
+          : 'Exercise minutes for the last ${days.length} days against your '
+                'goal. Most on '
+                '${DateFormat('EEEE, MMMM d').format(days[best].date)} with '
+                '${days[best].minutes} min.',
     );
   }
-
-  Widget _summaryStat(IconData icon, String value, String label) => Row(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      Icon(icon, color: _purple),
-      const SizedBox(width: 8),
-      Text(
-        value,
-        style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
-      ),
-      const SizedBox(width: 5),
-      Flexible(
-        child: Text(
-          label,
-          style: TextStyle(color: context.vivordoColors.textSecondary),
-        ),
-      ),
-    ],
-  );
-
-  Widget _minutesChart(List<_ExerciseDay> days, double dailyGoal) => _card(
-    padding: const EdgeInsets.fromLTRB(10, 16, 10, 8),
-    child: SizedBox(
-      height: 245,
-      child: _ExerciseTimeChart(
-        values: days.map((day) => day.minutes.toDouble()).toList(),
-        labels: days.map((day) => _chartLabel(day.date)).toList(),
-        dates: days.map((day) => day.date).toList(),
-        dailyGoal: dailyGoal,
-      ),
-    ),
-  );
-
-  String _chartLabel(DateTime date) => _rangeIndex == 2
-      ? DateFormat('M/d').format(date)
-      : DateFormat('E').format(date);
 
   Widget _exerciseSelector(List<String> names, String? selected) => _card(
     padding: EdgeInsets.zero,
     child: Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         onTap: names.isEmpty
             ? null
             : () => _showExercisePicker(names, selected),
@@ -492,7 +581,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         children: [
           Text(
             exercise,
-            style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
           ),
           Text(
             change == 0
@@ -595,7 +684,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         padding: padding,
         decoration: BoxDecoration(
           color: context.vivordoColors.card,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.vivordoColors.border),
         ),
         child: child,
@@ -694,7 +783,7 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
                 filled: true,
                 fillColor: colors.cardMuted,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -767,246 +856,6 @@ class _WeightPoint {
   const _WeightPoint(this.date, this.weight);
   final DateTime date;
   final double weight;
-}
-
-class _ExerciseTimeChart extends StatefulWidget {
-  const _ExerciseTimeChart({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.dailyGoal,
-  });
-
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double dailyGoal;
-
-  @override
-  State<_ExerciseTimeChart> createState() => _ExerciseTimeChartState();
-}
-
-class _ExerciseTimeChartState extends State<_ExerciseTimeChart> {
-  int? selected;
-
-  void _select(double x, double width) {
-    if (widget.values.isEmpty) return;
-    const left = 34.0;
-    final slot = (width - left) / widget.values.length;
-    final index = ((x - left) / slot).floor().clamp(
-      0,
-      widget.values.length - 1,
-    );
-    if (selected != index) setState(() => selected = index);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ExerciseTimeChart oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.values, widget.values) ||
-        !listEquals(oldWidget.dates, widget.dates)) {
-      selected = null;
-    }
-  }
-
-  /// What the bars show, for VoiceOver: the total and the days at goal.
-  String get _summary {
-    final v = widget.values;
-    final total = v.fold<double>(0, (a, b) => a + b).round();
-    final atGoal = v.where((m) => m >= widget.dailyGoal).length;
-    return 'Exercise, last ${v.length} days: $total min in all, '
-        'goal of ${widget.dailyGoal.round()} min met on $atGoal '
-        '${atGoal == 1 ? 'day' : 'days'}.';
-  }
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: _summary,
-    child: ExcludeSemantics(
-      child: LayoutBuilder(
-        builder: (context, constraints) => GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          onHorizontalDragUpdate: (event) =>
-              _select(event.localPosition.dx, constraints.maxWidth),
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: _ExerciseBarPainter(
-              values: widget.values,
-              labels: widget.labels,
-              dates: widget.dates,
-              dailyGoal: widget.dailyGoal,
-              selected: selected,
-              dark: Theme.of(context).brightness == Brightness.dark,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-class _ExerciseBarPainter extends CustomPainter {
-  const _ExerciseBarPainter({
-    required this.values,
-    required this.labels,
-    required this.dates,
-    required this.dailyGoal,
-    required this.selected,
-    required this.dark,
-  });
-  final List<double> values;
-  final List<String> labels;
-  final List<DateTime> dates;
-  final double dailyGoal;
-  final int? selected;
-  final bool dark;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const left = 34.0;
-    const bottom = 28.0;
-    const top = 12.0;
-    final height = size.height - bottom - top;
-    final maxValue = math.max(
-      dailyGoal * 1.25,
-      values.isEmpty ? 60.0 : values.reduce(math.max) * 1.2,
-    );
-    final axis = Paint()..color = dark ? Colors.white24 : Colors.black12;
-    canvas.drawLine(
-      Offset(left, top + height),
-      Offset(size.width, top + height),
-      axis,
-    );
-    if (dailyGoal > 0) {
-      final y = top + height - (dailyGoal / maxValue * height);
-      canvas.drawLine(
-        Offset(left, y),
-        Offset(size.width, y),
-        Paint()
-          ..color = _ExerciseDetailScreenState._purple.withValues(alpha: .65)
-          ..strokeWidth = 1,
-      );
-      _rightText(
-        canvas,
-        'Goal ${dailyGoal.round()} min',
-        Offset(size.width - 8, top),
-        10,
-      );
-    }
-    if (values.isEmpty) return;
-    final slot = (size.width - left) / values.length;
-    final barWidth = math.min(28.0, slot * .55);
-    for (var i = 0; i < values.length; i++) {
-      final x = left + slot * i + slot / 2;
-      final barHeight = values[i] / maxValue * height;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            x - barWidth / 2,
-            top + height - barHeight,
-            barWidth,
-            barHeight,
-          ),
-          const Radius.circular(10),
-        ),
-        Paint()..color = _ExerciseDetailScreenState._purple,
-      );
-      if (selected == i) {
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(
-              x - barWidth / 2 - 4,
-              top + height - barHeight - 4,
-              barWidth + 8,
-              barHeight + 8,
-            ),
-            const Radius.circular(12),
-          ),
-          Paint()
-            ..color = _ExerciseDetailScreenState._purple.withValues(alpha: .2)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3,
-        );
-      }
-      if (values.length <= 10 || i % 5 == 0 || i == values.length - 1) {
-        _center(canvas, labels[i], Offset(x, top + height + 8), 9);
-      }
-    }
-
-    final index = selected;
-    if (index != null && index < values.length && index < dates.length) {
-      final x = left + slot * index + slot / 2;
-      final barHeight = values[index] / maxValue * height;
-      final barTop = top + height - barHeight;
-      final label =
-          '${DateFormat('MMM d').format(dates[index])}\n${values[index].round()} min';
-      final painter = TextPainter(
-        textScaler: chartTextScaler,
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            color: dark ? Colors.white : Colors.black,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textAlign: TextAlign.center,
-        textDirection: ui.TextDirection.ltr,
-      )..layout();
-      final boxWidth = painter.width + 18;
-      final boxHeight = painter.height + 14;
-      final boxX = (x - boxWidth / 2).clamp(0.0, size.width - boxWidth);
-      final boxY = (barTop - boxHeight - 10).clamp(0.0, height - boxHeight);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(boxX, boxY, boxWidth, boxHeight),
-          const Radius.circular(9),
-        ),
-        Paint()..color = dark ? const Color(0xFF302B48) : Colors.white,
-      );
-      painter.paint(canvas, Offset(boxX + 9, boxY + 7));
-    }
-  }
-
-  void _rightText(Canvas canvas, String text, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white60 : Colors.black54,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, Offset(offset.dx - painter.width, offset.dy));
-  }
-
-  void _center(Canvas canvas, String text, Offset offset, double size) {
-    final painter = TextPainter(
-      textScaler: chartTextScaler,
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          fontSize: size,
-          color: dark ? Colors.white60 : Colors.black54,
-        ),
-      ),
-      textDirection: ui.TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, Offset(offset.dx - painter.width / 2, offset.dy));
-  }
-
-  @override
-  bool shouldRepaint(covariant _ExerciseBarPainter oldDelegate) =>
-      !listEquals(oldDelegate.values, values) ||
-      !listEquals(oldDelegate.dates, dates) ||
-      oldDelegate.dailyGoal != dailyGoal ||
-      oldDelegate.selected != selected ||
-      oldDelegate.dark != dark;
 }
 
 class _WeightChartPainter extends CustomPainter {

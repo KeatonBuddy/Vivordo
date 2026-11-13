@@ -81,7 +81,7 @@ void main() {
     expect(find.textContaining('recorded'), findsNothing);
     hours.value = 6.8;
     await tester.pump();
-    expect(find.textContaining('6 h 48 m recorded'), findsOneWidget);
+    expect(find.textContaining('6h 48m recorded'), findsOneWidget);
 
     // Feel first, then sleep: whichever comes second starts the wait.
     await tester.tap(find.text('Good').last);

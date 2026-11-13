@@ -66,7 +66,7 @@ class IosPullDownMenu<T> extends StatelessWidget {
         minWidth: 250,
         maxWidth: (MediaQuery.sizeOf(context).width - 32).clamp(250, 320),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       onSelected: onSelected,
       itemBuilder: (_) => [

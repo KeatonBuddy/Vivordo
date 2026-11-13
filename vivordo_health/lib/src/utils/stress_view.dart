@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 import 'home_stress_card_logic.dart';
+import 'units.dart';
 
 /// What the stress detail screen shows, from `metrics_daily/{day}.stress`
 /// (written by StressScoreService) plus the day's mood, sleep and steps.
@@ -216,7 +217,7 @@ String stressDriverDetail(
           : 'more restful than usual';
       return hours == null
           ? 'Last night was $quality'
-          : '${_hm(hours)} last night, $quality';
+          : '${hoursMinutes(hours)} last night, $quality';
     case StressSignalKind.feel:
       if (day.moodLabel case final label?) {
         return day.moodAt == null
@@ -436,11 +437,6 @@ double _quantile(List<double> sorted, double q) {
   final position = (sorted.length - 1) * q;
   final low = position.floor(), high = position.ceil();
   return sorted[low] + (sorted[high] - sorted[low]) * (position - low);
-}
-
-String _hm(double hours) {
-  final minutes = (hours * 60).round();
-  return '${minutes ~/ 60}h ${(minutes % 60).toString().padLeft(2, '0')}m';
 }
 
 String _thousands(int n) =>

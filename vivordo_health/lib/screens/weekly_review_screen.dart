@@ -168,7 +168,7 @@ class WeeklyReviewCard extends StatelessWidget {
                                 child: Text(
                                   'Remind me on Sundays',
                                   style: TextStyle(
-                                    fontSize: 14,
+                                    fontSize: 15,
                                     color: colors.textPrimary,
                                   ),
                                 ),
@@ -190,7 +190,7 @@ class WeeklyReviewCard extends StatelessWidget {
                         style: TextButton.styleFrom(
                           foregroundColor: _purple,
                           textStyle: const TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -251,7 +251,7 @@ class WeeklyReviewScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final secondary = TextStyle(
-      fontSize: 14,
+      fontSize: 15,
       height: 1.45,
       color: colors.textSecondary,
     );
@@ -291,7 +291,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                 height: 32,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(_icon(line.kind), size: 18, color: color),
               ),
@@ -344,7 +344,7 @@ class WeeklyReviewScreen extends StatelessWidget {
             Text(
               review.headline,
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: colors.textPrimary,
               ),
@@ -372,7 +372,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                         child: Text(
                           row.label,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 15,
                             color: colors.textPrimary,
                           ),
                         ),
@@ -409,7 +409,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                   '${review.burnout == 'warning' ? 'Warning' : 'Watch'} '
                   'this week.',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: colors.textPrimary,
                   ),
@@ -482,7 +482,7 @@ class WeeklyReviewScreen extends StatelessWidget {
                   Text(
                     suggestion,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 15,
                       height: 1.45,
                       color: colors.textPrimary,
                     ),

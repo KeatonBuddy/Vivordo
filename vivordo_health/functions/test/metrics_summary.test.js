@@ -38,6 +38,25 @@ test("projection is compact, keeps zero/missing distinct and rejects invalid tot
   assert.equal(result.schemaVersion, 1);
 });
 
+test("sleep, resting heart rate and mood keep one daily value, null when absent", () => {
+  const result = projectActivity({sleep: {avg: 7.4, bedtime: "x", stages: [1, 2]},
+    resting_heart_rate: {avg: 58, entries: [1, 2]}, mood: {avg: "3"}});
+  assert.deepEqual(result.sleep, {avg: 7.4});
+  assert.deepEqual(result.resting_heart_rate, {avg: 58});
+  // Written even without a value, so readers can spot older summaries.
+  assert.deepEqual(result.mood, {avg: null});
+  assert.deepEqual(projectActivity({}).sleep, {avg: null});
+  assert.deepEqual(projectActivity({resting_heart_rate: {avg: -1}}).resting_heart_rate, {avg: null});
+});
+
+test("a changed resting heart rate rewrites the summary", async () => {
+  const f = fixture();
+  await f.refresh();
+  f.documents.get("users/a/metrics_daily/2026-09-24").resting_heart_rate = {avg: 61};
+  assert.equal(await f.refresh(), "written");
+  assert.equal(f.documents.get("users/a/metric_summaries_daily/2026-09-24").resting_heart_rate.avg, 61);
+});
+
 test("duplicates and unrelated metric changes do not rewrite summary", async () => {
   const f = fixture();
   assert.equal(await f.refresh(), "written");

@@ -56,6 +56,16 @@ function projectActivity(data) {
       scan?.source === "camera_ppg" || typeof scan?.avg === "number");
   result.moods = countEntries(mood,
       typeof mood?.avg === "number" || typeof mood?.label === "string");
+  // One value a day for the 6M and Y views of sleep, resting heart rate and
+  // mood. Always written, null on a day without one, so a reader can tell
+  // that apart from a summary projected before these fields existed.
+  for (const key of ["sleep", "resting_heart_rate", "mood"]) {
+    const avg = data?.[key]?.avg;
+    result[key] = {
+      avg: typeof avg === "number" && Number.isFinite(avg) && avg >= 0 ?
+        avg : null,
+    };
+  }
   return result;
 }
 

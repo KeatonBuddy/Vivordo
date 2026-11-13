@@ -68,7 +68,7 @@ class DailyBriefCard extends StatelessWidget {
       ? child
       : InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: child,
         );
 
@@ -84,7 +84,7 @@ class DailyBriefCard extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: const Color(0xFFAA91FF).withValues(alpha: .6)),
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
@@ -127,7 +127,7 @@ class DailyBriefCard extends StatelessWidget {
                 headline,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 24,
+                  fontSize: 22,
                   height: 1.15,
                   fontWeight: FontWeight.w700,
                 ),
@@ -324,12 +324,18 @@ BriefState briefEnergyState({
 }
 
 /// Words mode's live Capacity: what's left against the plan still ahead
-/// ([CapacityLeft.fit]).
-BriefState capacityLeftWords(CapacityLeft live) => switch (live.fit) {
-  DemandFit.roomToSpare => (word: 'Plenty left', tone: BriefTone.good),
-  DemandFit.full => (word: 'Some room', tone: BriefTone.usual),
-  DemandFit.over => (word: 'Short today', tone: BriefTone.low),
-};
+/// ([CapacityLeft.fit]). With [easy] (an alert is showing under the brief),
+/// room left isn't called plenty.
+BriefState capacityLeftWords(CapacityLeft live, {bool easy = false}) =>
+    switch (live.fit) {
+      DemandFit.roomToSpare when easy => (
+        word: 'Go easy',
+        tone: BriefTone.usual,
+      ),
+      DemandFit.roomToSpare => (word: 'Plenty left', tone: BriefTone.good),
+      DemandFit.full => (word: 'Some room', tone: BriefTone.usual),
+      DemandFit.over => (word: 'Short today', tone: BriefTone.low),
+    };
 
 /// Demand against the Capacity it's set beside, as the headline
 /// ([demandFit]).
@@ -690,7 +696,7 @@ class _CapacityLeftRow extends StatelessWidget {
                               text,
                               style: TextStyle(
                                 color: color == null ? _over : Colors.white,
-                                fontSize: 12.5,
+                                fontSize: 12,
                               ),
                             ),
                           ),

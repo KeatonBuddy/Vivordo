@@ -14,6 +14,10 @@ void main() {
     expect(notificationDestination(null), (tab: 0, push: null));
   });
 
+  test('event invite pushes open Invites over My Day', () {
+    expect(notificationDestination('invites'), (tab: 1, push: '/invites'));
+  });
+
   test('Circle opens over Home, so back has somewhere to go', () {
     expect(notificationDestination('circle'), (tab: 0, push: '/circle'));
   });

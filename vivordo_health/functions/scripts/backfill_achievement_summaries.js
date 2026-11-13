@@ -12,6 +12,9 @@
 //   --enable  verify, then switch the account's achievement reader on.
 //   --all-users  run for every account not already enabled; accounts that
 //             fail are listed and left on full history.
+//   --include-enabled  with --all-users, enabled accounts too: after the
+//             projection gains fields, run --apply --enable with it so their
+//             summaries are rewritten and the reader switched back on.
 // Rollback: set `enabled: false` on the marker; readers fall back to
 // metrics_daily on their next session.
 const admin = require("firebase-admin");
@@ -117,8 +120,10 @@ async function migrateAccount(db, uid, flags, log) {
 /** Run an explicitly requested migration. */
 async function main() {
   const [projectId, target, ...flags] = process.argv.slice(2);
-  const known = ["--apply", "--verify", "--enable"];
+  const known = ["--apply", "--verify", "--enable", "--include-enabled"];
   const allUsers = target === "--all-users";
+  const includeEnabled = flags.includes("--include-enabled");
+  const dryRun = flags.every((f) => f === "--include-enabled");
   if (!projectId || !target || target.includes("/") ||
       (!allUsers && target.startsWith("--")) ||
       flags.some((f) => !known.includes(f))) {
@@ -129,7 +134,7 @@ async function main() {
   const db = admin.firestore();
 
   if (!allUsers) {
-    if (flags.length === 0) console.log("Dry run: nothing written.");
+    if (dryRun) console.log("Dry run: nothing written.");
     const problems = await migrateAccount(db, target, flags, console.log);
     for (const problem of problems) console.log(problem);
     if (problems.length > 0) {
@@ -144,11 +149,13 @@ async function main() {
   for (const user of users) {
     const marker = await user.collection("metrics_summary_migrations")
         .doc("achievements").get();
-    if (marker.data()?.enabled !== true) pending.push(user.id);
+    if (includeEnabled || marker.data()?.enabled !== true) {
+      pending.push(user.id);
+    }
   }
   console.log(`${users.length} accounts; ${users.length - pending.length} ` +
     `already enabled; ${pending.length} to migrate.`);
-  if (flags.length === 0) {
+  if (dryRun) {
     console.log("Dry run: nothing written.");
     return;
   }

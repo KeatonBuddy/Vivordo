@@ -17,7 +17,12 @@ class ScreenInsight {
     this.onAction,
     this.actionLabel,
     this.busy = false,
+    this.source,
   });
+
+  /// Where the insight comes from, shown with it when the bar is opened
+  /// (Sleep credits WHOOP's measurements here).
+  final String? source;
   final VoidCallback? onAction;
   final String? actionLabel;
   final bool busy;
@@ -68,6 +73,7 @@ class ScreenInsightController extends ChangeNotifier {
         old?.$2.screen == insight.screen &&
         old?.$2.message == insight.message &&
         old?.$2.context == insight.context &&
+        old?.$2.source == insight.source &&
         old?.$2.busy == insight.busy &&
         old?.$2.actionLabel == insight.actionLabel &&
         old?.$2.onAction == insight.onAction) {
@@ -594,6 +600,13 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         children: [
           Text(insight.message, style: TextStyle(color: colors.textPrimary)),
           const SizedBox(height: 8),
+          if (insight.source case final source?) ...[
+            Text(
+              source,
+              style: TextStyle(fontSize: 12, color: colors.textSecondary),
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
             'Based on the data shown on this screen. Wellness guidance, not medical advice.',
             style: TextStyle(fontSize: 12, color: colors.textSecondary),

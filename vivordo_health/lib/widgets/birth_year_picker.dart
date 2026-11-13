@@ -22,7 +22,7 @@ Future<int?> showBirthYearPicker(BuildContext context, {int? initial}) {
     useRootNavigator: true,
     backgroundColor: context.vivordoColors.card,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (sheetContext) => SafeArea(
       child: Column(

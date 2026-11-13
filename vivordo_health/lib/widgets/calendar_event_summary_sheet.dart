@@ -509,7 +509,7 @@ class _CalendarEventSummarySheetState
                         style: FilledButton.styleFrom(
                           backgroundColor: _summaryPurple,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                         ),
                         child: Text(
@@ -597,7 +597,7 @@ class _Fact extends StatelessWidget {
               maxLines: 2,
               style: TextStyle(
                 color: colors.textPrimary,
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1187,7 +1187,7 @@ class _SummaryDetailRow extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.end,
-              style: TextStyle(color: colors.textSecondary, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 15),
             ),
           ),
           if (busy) ...[

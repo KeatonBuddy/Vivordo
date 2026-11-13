@@ -277,7 +277,7 @@ class _FriendCodeCard extends StatelessWidget {
           profile.friendCode,
           style: TextStyle(
             color: context.vivordoColors.textPrimary,
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             letterSpacing: 2.5,
           ),
@@ -431,7 +431,7 @@ class _FriendQuickLookSheetState extends State<_FriendQuickLookSheet> {
     return Container(
       decoration: BoxDecoration(
         color: colors.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
@@ -498,7 +498,7 @@ class _FriendQuickLookSheetState extends State<_FriendQuickLookSheet> {
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Text(
                         'Nothing shared today yet.',
-                        style: TextStyle(color: context.muted, fontSize: 14),
+                        style: TextStyle(color: context.muted, fontSize: 15),
                       ),
                     );
                   }

@@ -332,7 +332,7 @@ class _Ring extends StatelessWidget {
         else
           Text(
             score == null ? '--' : '$score',
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
           ),
       ],
     ),
@@ -349,7 +349,7 @@ class _Card extends StatelessWidget {
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
     ),
     child: child,

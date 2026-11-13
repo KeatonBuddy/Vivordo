@@ -1213,6 +1213,9 @@ class WorkoutService {
         .map((exercise) => _withoutPersonalBestMetadata(exercise.toMap()))
         .toList(growable: false);
     var personalBestCount = 0;
+    // PRs shown on the Circle post: only lifts that beat an earlier record,
+    // so a first-ever attempt at an exercise isn't announced as one.
+    final circlePersonalRecords = <Map<String, dynamic>>[];
     // Offline without the phone having a copy, the previous lift and best
     // can't be read, so this workout gets no comparison or personal best.
     // Stamp the account so the next online start rebuilds them from history.
@@ -1270,6 +1273,16 @@ class WorkoutService {
       );
       if (!isPersonalBest) continue;
       personalBestCount++;
+      if (previousEstimate != null) {
+        circlePersonalRecords.add({
+          'name': candidate.exerciseName,
+          'weightLbs': candidate.performance.weightLbs,
+          'reps': candidate.performance.reps,
+          'previousWeightLbs': ?(previousData?['weightLbs'] as num?)
+              ?.toDouble(),
+          'previousReps': ?(previousData?['reps'] as num?)?.toInt(),
+        });
+      }
       exerciseMap['personalBest'] = true;
       _addPersonalBestMetadata(
         exerciseMap,
@@ -1314,6 +1327,12 @@ class WorkoutService {
         'day': Timestamp.fromDate(completedAt),
         'sets': setCount,
         'kind': 'workout',
+        if (circlePersonalRecords.isNotEmpty)
+          'personalRecords': circlePersonalRecords,
+        'exercises': [
+          for (final exercise in exercises)
+            if (exercise.sets.isNotEmpty) _circleExerciseSummary(exercise),
+        ],
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
@@ -1324,6 +1343,24 @@ class WorkoutService {
     }, SetOptions(merge: true));
     return (id: document.id, synced: await syncedOrQueued(batch.commit()));
   }
+}
+
+/// What a Circle post shows for one exercise: its set count and best set
+/// (heaviest by estimated max; most reps when it's bodyweight).
+Map<String, dynamic> _circleExerciseSummary(WorkoutExerciseRecord exercise) {
+  final best = bestPersonalBestPerformance(
+    exercise.sets.map((set) => (weightLbs: set.weightLbs, reps: set.reps)),
+  );
+  final mostReps = exercise.sets.fold<int>(
+    0,
+    (most, set) => set.reps > most ? set.reps : most,
+  );
+  return {
+    'name': exercise.name,
+    'sets': exercise.sets.length,
+    if (best != null) 'bestWeightLbs': best.weightLbs,
+    'bestReps': best?.reps ?? mostReps,
+  };
 }
 
 Map<String, _PersonalBestCandidate> _bestCandidatesForExerciseRecords(

@@ -196,7 +196,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
                         backgroundColor: _purple,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                     ),
@@ -332,7 +332,7 @@ class _PersonalProfileScreenState extends State<PersonalProfileScreen> {
     isScrollControlled: true,
     backgroundColor: raisedColors(context).page,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (_) => RaisedSheetTheme(
       child: Builder(
@@ -470,7 +470,7 @@ class _ProfileHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: const Color(0xFFAA91FF).withValues(alpha: .6),
         ),
@@ -1211,7 +1211,7 @@ class _Panel extends StatelessWidget {
     padding: padding,
     decoration: BoxDecoration(
       color: context.vivordoColors.card,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.vivordoColors.border),
       boxShadow: [
         BoxShadow(
@@ -1417,7 +1417,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
       child: Container(
         decoration: BoxDecoration(
           color: colors.page,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           border: Border.all(
             color: colors.textSecondary.withValues(alpha: .25),
           ),
@@ -1538,7 +1538,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                 _group(
                   InkWell(
                     onTap: _pickDate,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(12),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       child: Row(
@@ -1592,7 +1592,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                     gradient: const LinearGradient(
                       colors: [Color(0xFF4935F4), Color(0xFF7865F5)],
                     ),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: TextButton(
                     onPressed: _save,
@@ -1603,7 +1603,7 @@ class _MeasurementEditorDialogState extends State<MeasurementEditorSheet> {
                     child: const Text(
                       'Save Measurement',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 17,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

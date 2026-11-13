@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/screens/paywall_screen.dart';
 import 'package:vivordo_health/src/services/subscription_service.dart';
+import 'package:vivordo_health/src/utils/access_recap.dart';
 
 void main() {
   final now = DateTime(2026, 11, 1, 12);
@@ -62,6 +63,7 @@ void main() {
     WidgetTester tester,
     List<PremiumPlan> plans, {
     PremiumEnded? ended,
+    AccessRecap recap = const AccessRecap('', '', []),
   }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
@@ -72,6 +74,7 @@ void main() {
           uid: 'u',
           ended: ended,
           loadPlans: () async => plans,
+          loadRecap: () async => recap,
         ),
       ),
     );
@@ -153,5 +156,48 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
     expect(find.text('Start free month'), findsOneWidget);
+  });
+
+  testWidgets('when access ends, the recap takes the feature list\'s place', (
+    tester,
+  ) async {
+    const plans = [
+      PremiumPlan(yearly: true, price: r'$69.99', amount: 69.99),
+      PremiumPlan(yearly: false, price: r'$9.99', amount: 9.99),
+    ];
+    await show(
+      tester,
+      plans,
+      ended: PremiumEnded.trial,
+      recap: const AccessRecap(
+        'What Vivordo learned this month',
+        'Nov 6 – Dec 6',
+        [
+          (
+            icon: RecapIcon.capacity,
+            title: 'Your usual Capacity is 61',
+            detail: 'learned from 4 weeks of your days',
+          ),
+          (
+            icon: RecapIcon.planned,
+            title: 'Vivordo helped plan 12 of your days',
+            detail: 'with day fixes, Plan my day and Vivordo AI',
+          ),
+        ],
+      ),
+    );
+    expect(find.text('What Vivordo learned this month'), findsOneWidget);
+    expect(find.text('Your usual Capacity is 61'), findsOneWidget);
+    expect(find.text('Vivordo helped plan 12 of your days'), findsOneWidget);
+    expect(find.text('Capacity, Demand and Effort every day'), findsNothing);
+    expect(find.text(r'Subscribe for $69.99/year'), findsOneWidget);
+  });
+
+  testWidgets('with nothing to recap, the feature list stays', (tester) async {
+    await show(tester, const [
+      PremiumPlan(yearly: true, price: r'$69.99', amount: 69.99),
+    ], ended: PremiumEnded.subscription);
+    expect(find.text('Your subscription has ended'), findsOneWidget);
+    expect(find.text('Capacity, Demand and Effort every day'), findsOneWidget);
   });
 }

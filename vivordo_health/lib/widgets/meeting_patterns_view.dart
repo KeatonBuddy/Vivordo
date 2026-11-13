@@ -232,7 +232,7 @@ class MeetingPatternsRow extends StatelessWidget {
       child: Material(
         color: colors.card,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: colors.border),
         ),
         clipBehavior: Clip.antiAlias,
@@ -247,7 +247,7 @@ class MeetingPatternsRow extends StatelessWidget {
                   height: 32,
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: .14),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, size: 18, color: accent),
                 ),
@@ -261,7 +261,7 @@ class MeetingPatternsRow extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: colors.textPrimary,
                         ),

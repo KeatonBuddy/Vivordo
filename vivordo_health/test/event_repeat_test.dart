@@ -91,4 +91,43 @@ void main() {
       'RRULE:FREQ=MONTHLY;BYMONTHDAY=15;UNTIL=20261014',
     );
   });
+
+  test('next occurrences follow the rule, from now and until its end', () {
+    final first = DateTime(2026, 11, 4, 18); // a Wednesday
+    final weekly = EventRepeat.parse(['RRULE:FREQ=WEEKLY;BYDAY=MO,WE']);
+    expect(weekly.nextOccurrences(first, from: DateTime(2026, 11, 10)), [
+      DateTime(2026, 11, 11, 18),
+      DateTime(2026, 11, 16, 18),
+      DateTime(2026, 11, 18, 18),
+      DateTime(2026, 11, 23, 18),
+    ]);
+    final fortnightly = EventRepeat.parse([
+      'RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20261202',
+    ]);
+    expect(fortnightly.nextOccurrences(first, from: first), [
+      DateTime(2026, 11, 4, 18),
+      DateTime(2026, 11, 18, 18),
+      DateTime(2026, 12, 2, 18),
+    ]);
+    // Months without a 31st are skipped, as calendars do.
+    final monthly = EventRepeat.parse(['RRULE:FREQ=MONTHLY']);
+    expect(
+      monthly.nextOccurrences(
+        DateTime(2026, 10, 31, 9),
+        from: DateTime(2026, 11),
+      ),
+      [
+        DateTime(2026, 12, 31, 9),
+        DateTime(2027, 1, 31, 9),
+        DateTime(2027, 3, 31, 9),
+        DateTime(2027, 5, 31, 9),
+      ],
+    );
+    expect(
+      EventRepeat.parse([
+        'RRULE:FREQ=DAILY',
+      ]).nextOccurrences(first, from: first, count: 2),
+      [first, DateTime(2026, 11, 5, 18)],
+    );
+  });
 }
