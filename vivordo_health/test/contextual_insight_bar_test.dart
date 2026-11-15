@@ -8,7 +8,8 @@ void main() {
     required InsightMemory memory,
     String message = 'Advice',
     bool suppressed = false,
-    ValueNotifier<double>? lift,
+    bool room = true,
+    VoidCallback? onNeedRoom,
     List<int>? waves,
     List<int>? cheers,
     VoidCallback? onTap,
@@ -23,7 +24,8 @@ void main() {
               : ScreenInsight(screen, 'Title', message),
           suppressed: suppressed,
           memory: memory,
-          lift: lift,
+          room: room,
+          onNeedRoom: onNeedRoom,
           button: (_, waveCount, cheerCount) {
             waves?.add(waveCount);
             cheers?.add(cheerCount);
@@ -44,27 +46,18 @@ void main() {
   testWidgets('a new insight opens once with a cheer; later visits show a '
       'dot and wave', (tester) async {
     final memory = InsightMemory();
-    final lift = ValueNotifier<double>(0);
     final waves = <int>[];
     final cheers = <int>[];
     await tester.pumpWidget(
-      bar(
-        screen: 'my_day',
-        memory: memory,
-        lift: lift,
-        waves: waves,
-        cheers: cheers,
-      ),
+      bar(screen: 'my_day', memory: memory, waves: waves, cheers: cheers),
     );
     await settle(tester);
     expect(find.text('Advice'), findsOneWidget);
-    expect(cheers.last, 1, reason: 'arms up as it rises, then a wave');
+    expect(cheers.last, 1, reason: 'arms up as it opens, then a wave');
     expect(waves.last, 0);
-    expect(lift.value, 1, reason: 'the button rises so the bar can widen');
     await tester.tap(find.byTooltip('Dismiss insights for this screen'));
     await tester.pumpAndSettle();
     expect(find.text('Advice'), findsNothing);
-    expect(lift.value, 0);
     expect(find.bySemanticsLabel(RegExp('insight available')), findsOne);
 
     // Another screen, then back: the same insight doesn't open by itself,
@@ -109,6 +102,49 @@ void main() {
     );
     await settle(tester);
     expect(find.text('New advice'), findsOneWidget);
+  });
+
+  testWidgets('opens only beside the shrunk tab bar', (tester) async {
+    final memory = InsightMemory();
+    final cheers = <int>[];
+    var asked = 0;
+    Widget at({required bool room}) => bar(
+      screen: 'home',
+      memory: memory,
+      room: room,
+      cheers: cheers,
+      onNeedRoom: () => asked++,
+    );
+
+    // New, but the full bar is showing: it waits behind a dot.
+    await tester.pumpWidget(at(room: false));
+    await settle(tester);
+    expect(find.text('Advice'), findsNothing);
+    expect(find.bySemanticsLabel(RegExp('insight available')), findsOne);
+    expect(cheers.last, 0);
+
+    // The bar shrinks: it opens by itself, with the cheer.
+    await tester.pumpWidget(at(room: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Advice'), findsOneWidget);
+    expect(cheers.last, 1);
+
+    // The bar comes back: back to the dot, and it stays closed next time.
+    await tester.pumpWidget(at(room: false));
+    await tester.pumpAndSettle();
+    expect(find.text('Advice'), findsNothing);
+    await tester.pumpWidget(at(room: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Advice'), findsNothing);
+
+    // Tapping the dot with the full bar showing asks for room first.
+    await tester.pumpWidget(at(room: false));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Robot'));
+    expect(asked, 1);
+    await tester.pumpWidget(at(room: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Advice'), findsOneWidget);
   });
 
   testWidgets('without an insight the button opens Vivordo AI', (tester) async {
