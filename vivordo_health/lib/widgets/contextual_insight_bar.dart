@@ -226,13 +226,12 @@ class InsightMemory {
 }
 
 /// The Vivordo AI button beside the tab bar, and the screen's insight.
-/// The insight opens as a pill grown out of the button, leftwards into the
-/// space the tab bar gives up when it shrinks to one icon ([room]). A new
-/// insight plays once by itself, as soon as there is room; every time it
-/// opens the robot raises both arms, then waves. Otherwise the button
-/// carries a dot, the robot waves the first time that happens, and tapping
-/// the button opens it, asking for room through [onNeedRoom] if needed.
-/// Without an insight the button calls [onButtonTap].
+/// A new insight plays once by itself: the button rises above the tab bar
+/// (reporting how far through [lift], so the bar can widen into the space),
+/// then opens into a pill. Every time it rises the robot raises both arms,
+/// then waves as it opens. An insight already seen leaves a dot on the
+/// button, the robot waves the first time that happens, and tapping the
+/// button opens it. Without an insight the button calls [onButtonTap].
 class ContextualInsightBar extends StatefulWidget {
   const ContextualInsightBar({
     super.key,
@@ -241,8 +240,7 @@ class ContextualInsightBar extends StatefulWidget {
     required this.onButtonTap,
     required this.onAsk,
     this.suppressed = false,
-    this.room = true,
-    this.onNeedRoom,
+    this.lift,
     this.memory,
   });
   final ScreenInsight? insight;
@@ -253,14 +251,14 @@ class ContextualInsightBar extends StatefulWidget {
   final ValueChanged<BuildContext> onButtonTap;
   final ValueChanged<String> onAsk;
   final bool suppressed;
-
-  /// Whether the pill has space to open; losing it closes the pill.
-  final bool room;
-  final VoidCallback? onNeedRoom;
+  final ValueNotifier<double>? lift;
   final InsightMemory? memory;
 
   /// The button's size, matching the tab bar's height.
   static const buttonSize = 62.0;
+
+  /// How far the button rises: above the tab bar, with a gap.
+  static const rise = buttonSize + 10;
 
   @override
   State<ContextualInsightBar> createState() => _ContextualInsightBarState();
@@ -282,6 +280,15 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
   // Kept while the pill closes, so its content can shrink back into the
   // button after the insight itself has gone.
   ScreenInsight? _shown;
+  late final AnimationController _lift = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  )..addListener(() => widget.lift?.value = _liftCurve.value);
+  late final Animation<double> _liftCurve = CurvedAnimation(
+    parent: _lift,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
   late final AnimationController _reveal = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 340),
@@ -298,15 +305,14 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     reverseCurve: const Interval(.55, 1, curve: Curves.easeIn),
   );
 
-  bool get _open =>
-      _wantOpen && widget.room && widget.insight != null && !widget.suppressed;
+  bool get _open => _wantOpen && widget.insight != null && !widget.suppressed;
 
-  /// An insight already seen, or a new one waiting for room, while closed.
+  /// Only for an insight already seen; a new one opens by itself instead.
   bool get _dot {
     final insight = widget.insight;
     return insight != null &&
         !widget.suppressed &&
-        !_open &&
+        !_wantOpen &&
         _memory.seen(insight);
   }
 
@@ -325,6 +331,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     _reveal.duration = still
         ? Duration.zero
         : const Duration(milliseconds: 340);
+    _lift.duration = still ? Duration.zero : const Duration(milliseconds: 300);
   }
 
   void _trackPointer(PointerEvent event) {
@@ -352,7 +359,10 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
       if (!mounted || widget.insight != insight || widget.suppressed) return;
       if (!_memory.seen(insight)) {
         _memory.markSeen(insight);
-        setState(() => _wantOpen = true);
+        setState(() {
+          _wantOpen = true;
+          _cheers++;
+        });
         _sync();
       } else if (!_memory.waved(insight)) {
         _memory.markWaved(insight);
@@ -361,16 +371,23 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     });
   }
 
-  /// Drives the pill toward the current open/closed state, with a cheer
-  /// each time it starts opening.
+  /// Drives the motion toward the current open/closed state: rise, then
+  /// open; close, then settle back beside the tab bar.
   void _sync() {
     if (_open) {
       _shown = widget.insight;
-      if (_reveal.isDismissed) _cheers++;
-      unawaited(_reveal.forward());
+      unawaited(
+        _lift.forward().orCancel.then((_) {
+          if (mounted && _open) unawaited(_reveal.forward());
+        }, onError: (_) {}),
+      );
     } else {
       _expanded = false;
-      unawaited(_reveal.reverse());
+      unawaited(
+        _reveal.reverse().orCancel.then((_) {
+          if (mounted && !_open) unawaited(_lift.reverse());
+        }, onError: (_) {}),
+      );
     }
   }
 
@@ -381,8 +398,10 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
 
   void _tapButton(BuildContext buttonContext) {
     if (_dot) {
-      setState(() => _wantOpen = true);
-      if (!widget.room) widget.onNeedRoom?.call();
+      setState(() {
+        _wantOpen = true;
+        _cheers++;
+      });
       _sync();
       return;
     }
@@ -395,11 +414,6 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
     if (oldWidget.insight?.screen != widget.insight?.screen ||
         oldWidget.suppressed != widget.suppressed) {
       _schedule();
-    } else if (oldWidget.room != widget.room) {
-      // Back to the dot when the bar takes the space back; a new insight
-      // still waiting opens once there is room.
-      if (!widget.room) _wantOpen = false;
-      _sync();
     } else if (_open) {
       _shown = widget.insight; // same screen, refreshed text
     }
@@ -409,6 +423,7 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
   void dispose() {
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_trackPointer);
     _delay?.cancel();
+    _lift.dispose();
     _reveal.dispose();
     super.dispose();
   }
@@ -422,70 +437,79 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         return Align(
           alignment: Alignment.bottomRight,
           child: AnimatedBuilder(
-            animation: _reveal,
+            animation: Listenable.merge([_reveal, _lift]),
             builder: (context, _) {
               final t = _width.value;
               final insight = _shown;
               final showContent = _reveal.value > 0 && insight != null;
-              return SizedBox(
-                width: _buttonSize + (fullWidth - _buttonSize) * t,
-                child: Material(
-                  // The pill is the button stretched open: same spot, same
-                  // corner radius, taking on the card colour as it widens.
-                  color: colors.card.withValues(alpha: t),
-                  elevation: 8 * t,
-                  shadowColor: Colors.black,
-                  animationDuration: Duration.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(_buttonSize / 2),
-                    side: BorderSide(
-                      color: VivordoTheme.brand.withValues(alpha: t),
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: AnimatedSize(
-                    duration: _reveal.duration!,
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment.bottomCenter,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.sizeOf(context).height * .45,
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: ContextualInsightBar.rise * _liftCurve.value,
+                ),
+                child: SizedBox(
+                  width: _buttonSize + (fullWidth - _buttonSize) * t,
+                  child: Material(
+                    // The pill is the button stretched open: same spot, same
+                    // corner radius, taking on the card colour as it widens.
+                    color: colors.card.withValues(alpha: t),
+                    elevation: 8 * t,
+                    shadowColor: Colors.black,
+                    animationDuration: Duration.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(_buttonSize / 2),
+                      side: BorderSide(
+                        color: VivordoTheme.brand.withValues(alpha: t),
                       ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              height: _buttonSize,
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: showContent
-                                        ? ClipRect(
-                                            // Laid out at full width and
-                                            // uncovered as the pill widens,
-                                            // so nothing reflows mid-motion.
-                                            child: OverflowBox(
-                                              alignment: Alignment.centerRight,
-                                              minWidth: fullWidth - _buttonSize,
-                                              maxWidth: fullWidth - _buttonSize,
-                                              child: FadeTransition(
-                                                opacity: _content,
-                                                child: _header(insight),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: AnimatedSize(
+                      duration: _reveal.duration!,
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.bottomCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * .45,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                height: _buttonSize,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: showContent
+                                          ? ClipRect(
+                                              // Laid out at full width and
+                                              // uncovered as the pill widens,
+                                              // so nothing reflows mid-motion.
+                                              child: OverflowBox(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                minWidth:
+                                                    fullWidth - _buttonSize,
+                                                maxWidth:
+                                                    fullWidth - _buttonSize,
+                                                child: FadeTransition(
+                                                  opacity: _content,
+                                                  child: _header(insight),
+                                                ),
                                               ),
-                                            ),
-                                          )
-                                        : const SizedBox.shrink(),
-                                  ),
-                                  SizedBox.square(
-                                    dimension: _buttonSize,
-                                    child: _buttonWithDot(),
-                                  ),
-                                ],
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                    SizedBox.square(
+                                      dimension: _buttonSize,
+                                      child: _buttonWithDot(),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            if (_expanded && insight != null) _details(insight),
-                          ],
+                              if (_expanded && insight != null)
+                                _details(insight),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -553,7 +577,6 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         ),
         IconButton(
           tooltip: _expanded ? 'Collapse insight' : 'Expand insight',
-          visualDensity: VisualDensity.compact,
           onPressed: () => setState(() => _expanded = !_expanded),
           icon: Icon(
             _expanded ? CupertinoIcons.chevron_down : CupertinoIcons.chevron_up,
@@ -561,7 +584,6 @@ class _ContextualInsightBarState extends State<ContextualInsightBar>
         ),
         IconButton(
           tooltip: 'Dismiss insights for this screen',
-          visualDensity: VisualDensity.compact,
           onPressed: _dismiss,
           icon: const Icon(CupertinoIcons.xmark, size: 20),
         ),

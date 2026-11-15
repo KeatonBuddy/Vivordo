@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../widgets/app_tour.dart';
-import '../widgets/chat_reveal.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
@@ -9,7 +8,6 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'home_screen.dart';
@@ -109,10 +107,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   // Asked from a screen's insight bar, the chat rises as a sheet over that
   // screen; the robot button (or expanding the sheet) shows the full thread.
   final _chatSheet = ValueNotifier<bool>(false);
-  // The chat header's robot, which flies there from the button as it opens.
-  final _chatRobotKey = GlobalKey();
-  final _chatScreenKey = GlobalKey();
-  final _chatRobotHidden = ValueNotifier<bool>(false);
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
@@ -163,17 +157,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   final Color primaryPurple = VivordoTheme.brand;
   LiquidGlassSettings? _cachedGlassSettings;
   bool? _cachedGlassSettingsIsDark;
-  // The tab bar shrinks to the open tab's icon while a page is dragged
-  // down, as in iOS 26 (0 full, 1 one icon); the screen's insight opens in
-  // the space it gives up.
-  late final AnimationController _navCollapse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 320),
-  );
-  late final Animation<double> _navCollapseCurve = CurvedAnimation(
-    parent: _navCollapse,
-    curve: Curves.easeOutCubic,
-  );
+  // How far the AI button has risen above the tab bar (0 to 1); the bar
+  // widens into its space as it goes.
+  final _insightLift = ValueNotifier<double>(0);
 
   /// The floating tab bar's size and its gap to the screen's sides and
   /// bottom, as in Apple's apps.
@@ -231,15 +217,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     _tabPages = List.generate(5, _buildCachedTabPage);
     _persistentChatScreen = AssistantScreen(
-      // Keeps the chat's state when its wrapper changes (sheet or circle).
-      key: _chatScreenKey,
       onClose: _closeChat,
       contextPrompt: _contextPrompt,
       onOpenScreen: _openFromAssistant,
       sheet: _chatSheet,
       onExpand: () => setState(() => _chatSheet.value = false),
-      robotKey: _chatRobotKey,
-      robotHidden: _chatRobotHidden,
     );
     _insights.onAsk = _askAbout;
     // A detail screen's one-tap fix: back to the tabs, then there.
@@ -542,11 +524,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       activity.dispose();
     }
     _homeStressReveal.dispose();
-    _navCollapse.dispose();
+    _insightLift.dispose();
     _insights.dispose();
     _contextPrompt.dispose();
     _chatSheet.dispose();
-    _chatRobotHidden.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -688,7 +669,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     if (index < 0 || index >= _tabPages.length) return;
     if (index == _selectedIndex) return;
     final previousIndex = _selectedIndex;
-    _setNavCompact(false);
     _logScreenView(index);
     _tabActivity[previousIndex].value = false;
     _tabActivity[index].value = !_chatOpen && !_tabHasDetail(index);
@@ -756,46 +736,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _chatOpen = true;
     });
     _logScreenView(5);
-    if (sheet) {
-      _chatRevealController.forward(from: 0);
-    } else {
-      unawaited(_settleChat(1));
-    }
-  }
-
-  /// Springs the robot-button chat open (1) or shut (0), carrying on from a
-  /// drag's [velocity] (progress per second). Reduce Motion fades instead.
-  Future<void> _settleChat(double target, [double velocity = 0]) {
-    if (MediaQuery.disableAnimationsOf(context)) {
-      return _chatRevealController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.linear,
-      );
-    }
-    return _chatRevealController.animateWith(
-      SpringSimulation(
-        chatRevealSpring,
-        _chatRevealController.value,
-        target,
-        velocity,
-      ),
-    );
-  }
-
-  void _dragChat(double dy) {
-    _chatRevealController.value =
-        _chatRevealController.value - dy / CircleChatReveal.dragDistance;
-  }
-
-  /// Let go of a header drag: a flick or a long pull closes, else it opens.
-  void _releaseChat(double dyPerSecond) {
-    final velocity = -dyPerSecond / CircleChatReveal.dragDistance;
-    if (dyPerSecond > 450 || _chatRevealController.value < .7) {
-      unawaited(_closeChat(velocity));
-    } else {
-      unawaited(_settleChat(1, velocity));
-    }
+    _chatRevealController.forward(from: 0);
   }
 
   /// A source chip or chart in Vivordo AI: close the chat and show where
@@ -824,14 +765,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     });
   }
 
-  Future<void> _closeChat([double velocity = 0]) async {
+  Future<void> _closeChat() async {
     if (!_chatOpen) return;
-    if (_chatSheet.value) {
-      await _chatRevealController.reverse();
-    } else {
-      await _settleChat(0, velocity);
-      if (_chatRevealController.value > 0) return; // reopened meanwhile
-    }
+    await _chatRevealController.reverse();
     if (mounted) {
       setState(() => _chatOpen = false);
       _tabActivity[_selectedIndex].value = !_detailRouteOpen;
@@ -842,7 +778,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final detailOpen = _tabHasDetail(_selectedIndex);
-      _setNavCompact(false);
       _tabActivity[_selectedIndex].value = !detailOpen && !_chatOpen;
       _insights.select(
         _tabObservers[_selectedIndex].topRoute,
@@ -862,26 +797,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   void _openScan() => _selectTab(2);
 
-  void _setNavCompact(bool compact) {
-    _navCollapse.duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 320);
-    unawaited(compact ? _navCollapse.forward() : _navCollapse.reverse());
-  }
-
-  /// Dragging a page down past its first few lines shrinks the tab bar;
-  /// dragging back up, or reaching the top, brings it back.
-  bool _onTabScroll(ScrollUpdateNotification n) {
-    if (n.metrics.axis != Axis.vertical) return false;
-    final delta = n.scrollDelta ?? 0;
-    if (n.metrics.pixels <= n.metrics.minScrollExtent) {
-      _setNavCompact(false);
-    } else if (n.dragDetails != null && delta.abs() > 1) {
-      _setNavCompact(delta > 0 && n.metrics.pixels > 40);
-    }
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     final detailRouteVisible = _detailRouteOpen;
@@ -895,13 +810,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         _chatOpen || keyboardOpen || (_tourScreen != null && !_tourShowsChat);
     // iOS hides the tab bar behind the keyboard.
     final showNavBar = !keyboardOpen;
-    // The full bar leaves room for the AI button beside it.
-    final fullBarWidth =
-        MediaQuery.sizeOf(context).width -
-        2 * _navBarInset -
-        (hideAssistant ? 0 : ContextualInsightBar.buttonSize + 8);
-    double barWidth() =>
-        fullBarWidth + (_navBarHeight - fullBarWidth) * _navCollapseCurve.value;
     final theme = Theme.of(context);
     // Screens pushed in a tab end above the floating tab bar; the tab pages
     // themselves already leave room for it.
@@ -969,41 +877,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         body: Stack(
           children: [
             Positioned.fill(
-              child: AnimatedBuilder(
-                animation: _chatRevealController,
-                // Behind the robot-button chat, the screen sinks back a little.
-                builder: (context, child) {
-                  final p =
-                      _chatOpen &&
-                          !_chatSheet.value &&
-                          !MediaQuery.disableAnimationsOf(context)
-                      ? _chatRevealController.value.clamp(0.0, 1.0)
-                      : 0.0;
-                  if (p == 0) return child!;
-                  return ColorFiltered(
-                    colorFilter: ColorFilter.mode(
-                      Colors.black.withValues(alpha: .25 * p),
-                      BlendMode.srcATop,
-                    ),
-                    child: Transform.translate(
-                      offset: Offset(0, 8 * p),
-                      child: Transform.scale(
-                        scale: 1 - .05 * p,
-                        alignment: Alignment.topCenter,
-                        child: child,
-                      ),
-                    ),
-                  );
-                },
-                child: RepaintBoundary(
-                  child: ScreenInsightScope(
-                    controller: _insights,
-                    child: NotificationListener<ScrollUpdateNotification>(
-                      onNotification: _onTabScroll,
-                      child: tabs,
-                    ),
-                  ),
-                ),
+              child: RepaintBoundary(
+                child: ScreenInsightScope(controller: _insights, child: tabs),
               ),
             ),
             // A scroll-edge fade: the bar is glass, and text passing right
@@ -1031,29 +906,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 ),
               ),
             if (showNavBar)
-              AnimatedBuilder(
-                animation: _navCollapseCurve,
-                builder: (context, _) => Positioned(
+              ValueListenableBuilder<double>(
+                valueListenable: _insightLift,
+                builder: (context, lift, bar) => Positioned(
                   bottom: _navBarInset,
                   left: _navBarInset,
-                  width: barWidth(),
-                  child: _buildFloatingNavBar(
-                    _navCollapseCurve.value,
-                    fullBarWidth,
-                  ),
+                  // Leaves room for the AI button beside it, and takes that
+                  // room back while the button is raised or hidden.
+                  right: hideAssistant
+                      ? _navBarInset
+                      : _navBarInset +
+                            (1 - lift) * (ContextualInsightBar.buttonSize + 8),
+                  child: bar!,
                 ),
+                child: _buildFloatingNavBar(),
               ),
-            AnimatedBuilder(
-              animation: _navCollapseCurve,
-              // Just the button beside the full bar; the insight pill opens
-              // left into whatever the shrinking bar gives up.
-              builder: (context, layer) => Positioned(
-                key: const ValueKey('ai-chat-bubble-layer'),
-                right: _navBarInset,
-                left: _navBarInset + barWidth() + 8,
-                bottom: _navBarInset,
-                child: layer!,
-              ),
+            Positioned(
+              key: const ValueKey('ai-chat-bubble-layer'),
+              right: _navBarInset,
+              left: _navBarInset,
+              bottom: _navBarInset,
               child: IgnorePointer(
                 key: _chatLayerKey,
                 ignoring: hideAssistant,
@@ -1064,7 +936,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                     animation: Listenable.merge([
                       _insights,
                       FitnessWorkoutTimerState.isRunning,
-                      _navCollapse,
                     ]),
                     builder: (context, _) => ContextualInsightBar(
                       insight: _insights.current,
@@ -1074,8 +945,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                       button: (context, waves, cheers) =>
                           _buildChatButton(waves, cheers),
                       onButtonTap: (from) => _openChat(from: from),
-                      room: _navCollapse.isCompleted,
-                      onNeedRoom: () => _setNavCompact(true),
+                      lift: _insightLift,
                       onAsk: (_) => _askAbout(_insights.current),
                     ),
                   ),
@@ -1118,20 +988,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                           0,
                           _chatSheet.value ? 1 - _chatRevealAnimation.value : 0,
                         ),
-                        child: _chatSheet.value
-                            ? ClipPath(
-                                clipper: const _SheetClipper(),
-                                child: child,
-                              )
-                            : CircleChatReveal(
-                                progress: _chatRevealController,
-                                origin: _chatRevealOrigin,
-                                robotKey: _chatRobotKey,
-                                robotHidden: _chatRobotHidden,
-                                onDrag: _dragChat,
-                                onDragEnd: _releaseChat,
-                                child: child!,
-                              ),
+                        child: ClipPath(
+                          clipper: _chatSheet.value
+                              ? const _SheetClipper()
+                              : _CircularRevealClipper(
+                                  origin: _chatRevealOrigin,
+                                  progress: _chatRevealAnimation.value,
+                                ),
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
@@ -1249,7 +1114,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     return _cachedGlassSettings!;
   }
 
-  Widget _buildFloatingNavBar(double collapse, double fullWidth) {
+  Widget _buildFloatingNavBar() {
     final colors = context.vivordoColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
@@ -1260,14 +1125,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       (Icons.fitness_center_rounded, 'Fitness'),
       (CupertinoIcons.chart_bar_fill, 'Metrics'),
     ];
-
-    final lens = Alignment(-1 + 2 * _selectedIndex / (items.length - 1), 0);
-    final selection = DecoratedBox(
-      decoration: ShapeDecoration(
-        shape: const StadiumBorder(),
-        color: primaryPurple,
-      ),
-    );
 
     // Apple's iOS 26 tab bar shape and size, measured from Files: a 62pt
     // capsule whose selected tab sits in a capsule inset 4pt. Colours stay
@@ -1298,70 +1155,36 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   color: Colors.white.withValues(alpha: isDark ? .10 : .6),
                 ),
               ),
-              // Shrinking, the full row keeps its layout and is clipped
-              // around the selected tab as it fades; the lone icon fades in.
               child: Stack(
-                fit: StackFit.expand,
                 children: [
-                  if (collapse < 1)
-                    Opacity(
-                      opacity: (1 - 2 * collapse).clamp(0, 1),
-                      child: IgnorePointer(
-                        ignoring: collapse > 0,
-                        child: ClipRect(
-                          child: OverflowBox(
-                            alignment: lens,
-                            minWidth: fullWidth - 8,
-                            maxWidth: fullWidth - 8,
-                            child: Stack(
-                              children: [
-                                // The selection lens slides to the chosen tab.
-                                AnimatedAlign(
-                                  duration: reduceMotion
-                                      ? Duration.zero
-                                      : const Duration(milliseconds: 260),
-                                  curve: Curves.easeOutCubic,
-                                  alignment: lens,
-                                  child: FractionallySizedBox(
-                                    widthFactor: 1 / items.length,
-                                    heightFactor: 1,
-                                    child: selection,
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    for (final (index, (icon, label))
-                                        in items.indexed)
-                                      Expanded(
-                                        child: _navItem(icon, label, index),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                  // The selection lens slides to the chosen tab. Placed
+                  // by fraction, so it keeps up while the bar widens.
+                  AnimatedAlign(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment(
+                      -1 + 2 * _selectedIndex / (items.length - 1),
+                      0,
+                    ),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / items.length,
+                      heightFactor: 1,
+                      child: DecoratedBox(
+                        decoration: ShapeDecoration(
+                          shape: const StadiumBorder(),
+                          color: primaryPurple,
                         ),
                       ),
                     ),
-                  if (collapse > 0)
-                    Opacity(
-                      opacity: (2 * collapse - 1).clamp(0, 1),
-                      child: IgnorePointer(
-                        ignoring: collapse < 1,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            selection,
-                            _navItem(
-                              items[_selectedIndex].$1,
-                              items[_selectedIndex].$2,
-                              _selectedIndex,
-                              onTap: () => _setNavCompact(false),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  ),
+                  Row(
+                    children: [
+                      for (final (index, (icon, label)) in items.indexed)
+                        Expanded(child: _navItem(icon, label, index)),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1371,13 +1194,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
   }
 
-  /// [onTap] replaces the usual select or reselect, for the shrunk bar.
-  Widget _navItem(
-    IconData icon,
-    String label,
-    int index, {
-    VoidCallback? onTap,
-  }) {
+  Widget _navItem(IconData icon, String label, int index) {
     bool isActive = _selectedIndex == index;
     final isWorkoutPulse =
         index == 3 && FitnessWorkoutTimerState.isRunning.value;
@@ -1385,14 +1202,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       child: Semantics(
         button: true,
         selected: isActive,
-        child: _navItemButton(
-          icon,
-          label,
-          index,
-          isActive,
-          isWorkoutPulse,
-          onTap,
-        ),
+        child: _navItemButton(icon, label, index, isActive, isWorkoutPulse),
       ),
     );
   }
@@ -1403,7 +1213,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     int index,
     bool isActive,
     bool isWorkoutPulse,
-    VoidCallback? onTap,
   ) {
     final color = isActive
         ? Colors.white
@@ -1413,7 +1222,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final iconWidget = Icon(icon, color: color, size: 24);
     return InkWell(
       onTap: () {
-        if (onTap != null) return onTap();
         if (index == _selectedIndex) {
           _reselectTab(index);
           return;
@@ -1576,4 +1384,24 @@ class _SheetClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(_SheetClipper oldClipper) => false;
+}
+
+class _CircularRevealClipper extends CustomClipper<Path> {
+  const _CircularRevealClipper({required this.origin, required this.progress});
+
+  final Offset origin;
+  final double progress;
+
+  @override
+  Path getClip(Size size) {
+    final horizontal = math.max(origin.dx, size.width - origin.dx);
+    final vertical = math.max(origin.dy, size.height - origin.dy);
+    final radius = math.sqrt(horizontal * horizontal + vertical * vertical);
+    return Path()
+      ..addOval(Rect.fromCircle(center: origin, radius: radius * progress));
+  }
+
+  @override
+  bool shouldReclip(covariant _CircularRevealClipper oldClipper) =>
+      oldClipper.origin != origin || oldClipper.progress != progress;
 }
