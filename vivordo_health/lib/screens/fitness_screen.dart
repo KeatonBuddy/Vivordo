@@ -2261,7 +2261,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
       (total, exercise) =>
           exercise.isDistanceExercise || exercise.isSportsExercise
           ? total
-          : total + exercise.sets.length,
+          : total +
+                exercise.sets.length +
+                exercise.sets.where((set) => set.partner != null).length,
     );
   }
 
@@ -2546,7 +2548,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         ? await _refreshTrackedDistance(force: true)
         : null;
     if (!mounted) return;
-    for (final set in exercises.expand((exercise) => exercise.sets)) {
+    for (final set in exercises.expand(
+      (exercise) => exercise.sets.expand((set) => set.rows),
+    )) {
       set.invalid = false;
     }
     var assignedTrackedDistance = false;
@@ -2580,37 +2584,64 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         );
         continue;
       }
-      final sets = <WorkoutSetRecord>[];
-      for (final set in exercise.sets) {
-        // Untouched rows are dropped; half-filled ones are outlined.
-        if (set.isEmpty) continue;
+      // Typed in Settings → Units, saved in lb (weightLbs). Untouched rows
+      // are dropped; half-filled ones are outlined.
+      WorkoutSetRecord? record(
+        _WorkoutSet set, {
+        List<WorkoutSetRecord> drops = const [],
+      }) {
         final weight = double.tryParse(set.lbs);
         final reps = int.tryParse(set.reps);
         if (weight == null || weight < 0 || reps == null || reps <= 0) {
           set.invalid = true;
-          continue;
+          return null;
         }
-        // Typed in Settings → Units, saved in lb (weightLbs).
-        sets.add(
-          WorkoutSetRecord(
-            weightLbs: units.liftToLbs(weight),
-            reps: reps,
-            loggedAt: set.loggedAt,
+        return WorkoutSetRecord(
+          weightLbs: units.liftToLbs(weight),
+          reps: reps,
+          loggedAt: set.loggedAt,
+          drops: drops,
+        );
+      }
+
+      final sets = <WorkoutSetRecord>[];
+      final partnerSets = <WorkoutSetRecord>[];
+      for (final set in exercise.sets) {
+        final drops = [
+          for (final drop in set.drops)
+            if (!drop.isEmpty) ?record(drop),
+        ];
+        // Drops need the set they come after.
+        if (!set.isEmpty || drops.isNotEmpty) {
+          if (record(set, drops: drops) case final saved?) sets.add(saved);
+        }
+        if (set.partner case final partner? when !partner.isEmpty) {
+          if (record(partner) case final saved?) partnerSets.add(saved);
+        }
+      }
+      if (sets.isNotEmpty) {
+        records.add(
+          WorkoutExerciseRecord(
+            name: exercise.definition.name,
+            category: exercise.definition.category,
+            sets: sets,
           ),
         );
       }
-      if (sets.isEmpty) continue;
-      records.add(
-        WorkoutExerciseRecord(
-          name: exercise.definition.name,
-          category: exercise.definition.category,
-          sets: sets,
-        ),
-      );
+      if (exercise.superset case final partner? when partnerSets.isNotEmpty) {
+        records.add(
+          WorkoutExerciseRecord(
+            name: partner.name,
+            category: partner.category,
+            sets: partnerSets,
+            supersetWith: exercise.definition.name,
+          ),
+        );
+      }
     }
 
     final firstInvalid = exercises
-        .expand((exercise) => exercise.sets)
+        .expand((exercise) => exercise.sets.expand((set) => set.rows))
         .where((set) => set.invalid)
         .firstOrNull;
     if (firstInvalid != null) {
@@ -2899,7 +2930,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 unawaited(draft.persist());
               },
               onRemove: () async {
-                final filled = exercise.sets.where((set) => !set.isEmpty);
+                final filled = exercise.sets.where(
+                  (set) => set.rows.any((row) => !row.isEmpty),
+                );
                 if (filled.isNotEmpty &&
                     !await confirmAction(
                       context,
@@ -3370,14 +3403,39 @@ class _WorkoutSet {
   /// Finds the row to scroll to when [invalid].
   final rowKey = GlobalKey();
 
+  /// Drop set: lighter rows straight after this set.
+  final List<_WorkoutSet> drops = [];
+
+  /// The superset exercise's row done after this set.
+  _WorkoutSet? partner;
+
   bool get isEmpty => lbs.trim().isEmpty && reps.trim().isEmpty;
+
+  /// This row, its drops and its superset row.
+  Iterable<_WorkoutSet> get rows => [this, ...drops, ?partner];
 
   Map<String, dynamic> toJson() => {
     'lbs': lbs,
     'reps': reps,
     'previous': previous?.toMap(),
     'loggedAt': ?loggedAt?.toIso8601String(),
+    if (drops.isNotEmpty) 'drops': [for (final drop in drops) drop.toJson()],
+    'partner': ?partner?.toJson(),
   };
+
+  static _WorkoutSet fromJson(Map<String, dynamic> map) {
+    final set = _WorkoutSet(previous: _previousSetFromJson(map['previous']))
+      ..lbs = map['lbs'] as String? ?? ''
+      ..reps = map['reps'] as String? ?? ''
+      ..loggedAt = DateTime.tryParse(map['loggedAt'] as String? ?? '');
+    for (final drop in map['drops'] as List? ?? const []) {
+      if (drop is Map) set.drops.add(fromJson(Map<String, dynamic>.from(drop)));
+    }
+    if (map['partner'] case final Map partner) {
+      set.partner = fromJson(Map<String, dynamic>.from(partner));
+    }
+    return set;
+  }
 }
 
 WorkoutSetRecord? _previousSetFromJson(dynamic value) {
@@ -3417,6 +3475,39 @@ class _WorkoutExercise {
   final List<_WorkoutSet> sets;
   String distanceKm = '';
 
+  /// Done one set at a time straight after each set of this exercise.
+  _ExerciseDefinition? superset;
+
+  /// The superset exercise's last sets, for its rows' Previous.
+  final List<WorkoutSetRecord> supersetPrevious = [];
+
+  /// A new set row, with a superset row under it when there is a superset.
+  _WorkoutSet newSet() {
+    final index = sets.length;
+    return _WorkoutSet(previous: previousSets.elementAtOrNull(index))
+      ..partner = superset == null
+          ? null
+          : _WorkoutSet(previous: supersetPrevious.elementAtOrNull(index));
+  }
+
+  /// Sets or clears the superset, with fresh rows for it under every set.
+  void setSuperset(_ExerciseDefinition? partner) {
+    superset = partner;
+    supersetPrevious.clear();
+    for (final set in sets) {
+      set.partner = partner == null ? null : _WorkoutSet();
+    }
+  }
+
+  void applySupersetHistory(List<WorkoutSetRecord> history) {
+    supersetPrevious
+      ..clear()
+      ..addAll(history);
+    for (var i = 0; i < sets.length; i++) {
+      sets[i].partner?.previous ??= history.elementAtOrNull(i);
+    }
+  }
+
   String get name => definition.name;
 
   /// "Target 4 × 6-8", or null without targets.
@@ -3435,6 +3526,10 @@ class _WorkoutExercise {
     'historyLoaded': historyLoaded,
     'previousSets': previousSets.map((s) => s.toMap()).toList(),
     'sets': sets.map((set) => set.toJson()).toList(),
+    if (superset case final partner?) ...{
+      'superset': {'name': partner.name, 'category': partner.category},
+      'supersetPrevious': supersetPrevious.map((s) => s.toMap()).toList(),
+    },
   };
 
   factory _WorkoutExercise.fromJson(Map<String, dynamic> json) {
@@ -3457,17 +3552,21 @@ class _WorkoutExercise {
       exercise.sets
         ..clear()
         ..addAll(
-          savedSets.whereType<Map>().map((value) {
-            final map = Map<String, dynamic>.from(value);
-            final set = _WorkoutSet(
-              previous: _previousSetFromJson(map['previous']),
-            );
-            set.lbs = map['lbs'] as String? ?? '';
-            set.reps = map['reps'] as String? ?? '';
-            set.loggedAt = DateTime.tryParse(map['loggedAt'] as String? ?? '');
-            return set;
-          }),
+          savedSets.whereType<Map>().map(
+            (value) => _WorkoutSet.fromJson(Map<String, dynamic>.from(value)),
+          ),
         );
+    }
+    if (json['superset'] case final Map partner) {
+      exercise.superset = _ExerciseDefinition(
+        name: partner['name'] as String? ?? 'Exercise',
+        category: partner['category'] as String? ?? 'Other',
+      );
+      exercise.supersetPrevious.addAll(
+        (json['supersetPrevious'] as List? ?? [])
+            .map(_previousSetFromJson)
+            .whereType<WorkoutSetRecord>(),
+      );
     }
     return exercise;
   }
@@ -3525,6 +3624,93 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
   void onChanged() {
     setState(() {});
     widget.onChanged();
+  }
+
+  static final _outlined = OutlinedButton.styleFrom(
+    minimumSize: const Size.fromHeight(46),
+    side: const BorderSide(color: _purple),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  );
+
+  /// A drop under the last set with anything in it (or the last set),
+  /// about 25% lighter than the row above it.
+  void _addDrop() {
+    final set = exercise.sets.lastWhere(
+      (set) => !set.isEmpty,
+      orElse: () => exercise.sets.last,
+    );
+    final above = double.tryParse(
+      (set.drops.isEmpty ? set : set.drops.last).lbs,
+    );
+    final step = context.read<ThemeController>().units.liftWeight == MassUnit.kg
+        ? 2.5
+        : 5;
+    final lighter = above == null || above <= 0
+        ? null
+        : math.max(step, (above * .75 / step).round() * step);
+    set.drops.add(
+      _WorkoutSet()
+        ..lbs = lighter == null
+            ? ''
+            : lighter == lighter.roundToDouble()
+            ? '${lighter.round()}'
+            : '$lighter',
+    );
+    onChanged();
+  }
+
+  /// The superset exercise, picked on the Add Exercise screen.
+  Future<void> _pickSuperset() async {
+    final picked = await Navigator.of(context).push<List<_ExerciseDefinition>>(
+      MaterialPageRoute(
+        builder: (_) => _AddExerciseScreen(
+          initiallySelected: [?exercise.superset],
+          supersetFor: exercise.name,
+        ),
+      ),
+    );
+    final partner = picked?.firstOrNull;
+    if (partner == null || !mounted) return;
+    if (partner.name == exercise.superset?.name) return;
+    if (!await _changeSuperset(partner)) return;
+    try {
+      final history = await WorkoutService.loadLatestExerciseSets([
+        partner.name,
+      ]);
+      if (!mounted || exercise.superset?.name != partner.name) return;
+      exercise.applySupersetHistory(
+        history[partner.name.trim().toLowerCase()] ?? [],
+      );
+      onChanged();
+    } catch (error) {
+      debugPrint('Could not load previous superset sets: $error');
+    }
+  }
+
+  /// Swaps or removes the superset, checking first when its rows have
+  /// anything in them. False when the user keeps them.
+  Future<bool> _changeSuperset(_ExerciseDefinition? partner) async {
+    final current = exercise.superset;
+    final filled = exercise.sets.any((set) => set.partner?.isEmpty == false);
+    if (current != null &&
+        filled &&
+        !await confirmAction(
+          context,
+          title: partner == null
+              ? 'Remove the superset?'
+              : 'Change the superset?',
+          message:
+              'The ${current.name} sets entered with ${exercise.name} will '
+              'be removed.',
+          confirmLabel: partner == null ? 'Remove' : 'Change',
+          destructive: true,
+        )) {
+      return false;
+    }
+    if (!mounted) return false;
+    exercise.setSuperset(partner);
+    onChanged();
+    return true;
   }
 
   @override
@@ -3716,7 +3902,8 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
           for (var index = 0; index < exercise.sets.length; index++) ...[
             _WorkoutSetRow(
               key: exercise.sets[index].rowKey,
-              number: index + 1,
+              label: '${index + 1}',
+              name: 'Set ${index + 1}',
               set: exercise.sets[index],
               repsHint: exercise.definition.targetReps,
               onChanged: onChanged,
@@ -3725,28 +3912,67 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                 onChanged();
               },
             ),
+            for (final (dropIndex, drop) in exercise.sets[index].drops.indexed)
+              _WorkoutSetRow(
+                key: drop.rowKey,
+                label: 'D',
+                name: 'Set ${index + 1} drop ${dropIndex + 1}',
+                set: drop,
+                onChanged: onChanged,
+                onRemove: () {
+                  exercise.sets[index].drops.removeAt(dropIndex);
+                  onChanged();
+                },
+              ),
+            if (exercise.sets[index].partner case final partner?)
+              _WorkoutSetRow(
+                key: partner.rowKey,
+                label: 'B',
+                name: 'Set ${index + 1} ${exercise.superset?.name ?? ''}',
+                set: partner,
+                onChanged: onChanged,
+                onRemove: () {
+                  exercise.sets[index].partner = null;
+                  onChanged();
+                },
+              ),
             if (index < exercise.sets.length - 1) const Divider(height: 14),
           ],
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () {
-              final index = exercise.sets.length;
-              exercise.sets.add(
-                _WorkoutSet(
-                  previous: exercise.previousSets.elementAtOrNull(index),
-                ),
-              );
+              exercise.sets.add(exercise.newSet());
               onChanged();
             },
             icon: const Icon(CupertinoIcons.add),
             label: const Text('Add Set'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(46),
-              side: const BorderSide(color: _purple),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            style: _outlined,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: exercise.sets.isEmpty ? null : _addDrop,
+                  style: _outlined,
+                  child: const Text('Drop set'),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: exercise.superset == null
+                    ? OutlinedButton(
+                        onPressed: _pickSuperset,
+                        style: _outlined,
+                        child: const Text('Superset'),
+                      )
+                    : _SupersetButton(
+                        name: exercise.superset!.name,
+                        onChange: _pickSuperset,
+                        onRemove: () => _changeSuperset(null),
+                      ),
+              ),
+            ],
           ),
         ],
       ],
@@ -3757,14 +3983,19 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
 class _WorkoutSetRow extends StatelessWidget {
   const _WorkoutSetRow({
     super.key,
-    required this.number,
+    required this.label,
+    required this.name,
     required this.set,
     required this.onChanged,
     required this.onRemove,
     this.repsHint,
   });
 
-  final int number;
+  /// The set number, or D for a drop and B for a superset row.
+  final String label;
+
+  /// "Set 2", "Set 2 drop 1": what VoiceOver reads before each field.
+  final String name;
   final _WorkoutSet set;
 
   /// The routine's target reps, shown until the user types their own.
@@ -3795,15 +4026,35 @@ class _WorkoutSetRow extends StatelessWidget {
       ),
       SizedBox(
         width: 38,
-        child: Text(
-          '$number',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
+        child: int.tryParse(label) != null
+            ? Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              )
+            : Center(
+                child: Container(
+                  width: 22,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _purple.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: _purple,
+                    ),
+                  ),
+                ),
+              ),
       ),
       Expanded(
         child: Semantics(
-          label: 'Set $number weight, ${_units(context).liftLabel}',
+          label: '$name weight, ${_units(context).liftLabel}',
           child: TextFormField(
             initialValue: set.lbs,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -3828,7 +4079,7 @@ class _WorkoutSetRow extends StatelessWidget {
       const SizedBox(width: 8),
       Expanded(
         child: Semantics(
-          label: 'Set $number reps',
+          label: '$name reps',
           child: TextFormField(
             initialValue: set.reps,
             keyboardType: TextInputType.number,
@@ -3865,6 +4116,71 @@ class _WorkoutSetRow extends StatelessWidget {
   );
 }
 
+/// The superset exercise under Add Set: tap the name to change it, ✕ to
+/// remove it.
+class _SupersetButton extends StatelessWidget {
+  const _SupersetButton({
+    required this.name,
+    required this.onChange,
+    required this.onRemove,
+  });
+
+  final String name;
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: _purple.withValues(alpha: .12),
+    shape: RoundedRectangleBorder(
+      side: const BorderSide(color: _purple),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: SizedBox(
+      height: 46,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: onChange,
+              child: Semantics(
+                button: true,
+                label: 'Superset with $name. Change',
+                excludeSemantics: true,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _purple,
+                        fontSize: 13,
+                        height: 1.15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove superset',
+            onPressed: onRemove,
+            constraints: const BoxConstraints.tightFor(width: 34, height: 46),
+            padding: EdgeInsets.zero,
+            icon: const Icon(CupertinoIcons.xmark, size: 15, color: _purple),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 List<WorkoutExerciseCatalogItem>? _librarySource;
 List<_ExerciseDefinition>? _libraryCache;
 
@@ -3889,9 +4205,16 @@ List<_ExerciseDefinition> get _exerciseLibrary {
 }
 
 class _AddExerciseScreen extends StatefulWidget {
-  const _AddExerciseScreen({this.initiallySelected = const []});
+  const _AddExerciseScreen({
+    this.initiallySelected = const [],
+    this.supersetFor,
+  });
 
   final List<_ExerciseDefinition> initiallySelected;
+
+  /// Picking one exercise to superset with this one, rather than adding
+  /// exercises to the workout.
+  final String? supersetFor;
 
   @override
   State<_AddExerciseScreen> createState() => _AddExerciseScreenState();
@@ -4110,16 +4433,32 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
 
   void _toggle(_ExerciseDefinition exercise) {
     setState(() {
-      if (_selected.add(exercise.name)) {
-        // The active workout is ordered newest-first, so the last exercise
-        // the user adds becomes both the top card and the Live Activity title.
-        _selectedOrder.insert(0, exercise.name);
+      if (!_selected.contains(exercise.name)) {
+        _select(exercise.name);
       } else {
         _selected.remove(exercise.name);
         _selectedOrder.remove(exercise.name);
       }
     });
   }
+
+  void _select(String name) {
+    // A superset takes one exercise.
+    if (widget.supersetFor != null) {
+      _selected.clear();
+      _selectedOrder.clear();
+    }
+    // The active workout is ordered newest-first, so the last exercise the
+    // user adds becomes both the top card and the Live Activity title.
+    if (_selected.add(name)) _selectedOrder.insert(0, name);
+  }
+
+  /// For a superset: not the exercise itself, nor cardio or sports.
+  bool _offered(_ExerciseDefinition exercise) =>
+      widget.supersetFor == null ||
+      (exercise.name != widget.supersetFor &&
+          exercise.category != 'Cardio' &&
+          exercise.category != 'Sports');
 
   void _finish() {
     final definitionsByName = {
@@ -4215,7 +4554,7 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
     setState(() {
       if (matchingExercise == null) _customExercises.add(created);
       final selectedName = matchingExercise?.name ?? created.name;
-      if (_selected.add(selectedName)) _selectedOrder.insert(0, selectedName);
+      if (!_selected.contains(selectedName)) _select(selectedName);
     });
     try {
       await WorkoutService.saveCustomExercise(
@@ -4235,8 +4574,14 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
   @override
   Widget build(BuildContext context) {
     final results = _pickerResults;
-    final customResults = results.custom.map(_definitionFor).toList();
-    final exercises = results.defaults.map(_definitionFor).toList();
+    final customResults = results.custom
+        .map(_definitionFor)
+        .where(_offered)
+        .toList();
+    final exercises = results.defaults
+        .map(_definitionFor)
+        .where(_offered)
+        .toList();
     final noResults = customResults.isEmpty && exercises.isEmpty;
 
     return Scaffold(
@@ -4414,10 +4759,13 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                '${_selected.length} ${_selected.length == 1 ? 'exercise' : 'exercises'} selected',
-                style: const TextStyle(color: _muted),
-              ),
+              Text(switch (widget.supersetFor) {
+                final name? when _selected.isNotEmpty =>
+                  'Done after each $name set',
+                _? => 'Pick an exercise to superset',
+                null =>
+                  '${_selected.length} ${_selected.length == 1 ? 'exercise' : 'exercises'} selected',
+              }, style: const TextStyle(color: _muted)),
               const SizedBox(height: 10),
               FilledButton(
                 onPressed: _selected.isEmpty ? null : _finish,
@@ -4428,9 +4776,14 @@ class _AddExerciseScreenState extends State<_AddExerciseScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Add to Workout',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                child: Text(
+                  widget.supersetFor == null
+                      ? 'Add to Workout'
+                      : 'Add Superset',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],

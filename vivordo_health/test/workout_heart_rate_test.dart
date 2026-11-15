@@ -203,5 +203,30 @@ void main() {
       ];
       expect(workoutExercisesInOrder(untimed), same(untimed));
     });
+
+    test('a superset stays with its exercise, as one span', () {
+      final row = WorkoutExerciseRecord(
+        name: 'Row',
+        category: 'Back',
+        sets: lift([4, 8]).sets,
+        supersetWith: 'Bench',
+      );
+      final bench = WorkoutExerciseRecord(
+        name: 'Bench',
+        category: 'Chest',
+        sets: lift([2, 6]).sets,
+      );
+      final curl = lift([12, 15]);
+      // Saved newest-first: the curl, then Bench with its superset after it.
+      final ordered = workoutExercisesInOrder([curl, bench, row]);
+      expect(ordered, [bench, row, curl]);
+      final spans = workoutExerciseSpans(
+        ordered,
+        start: start,
+        end: start.add(const Duration(minutes: 20)),
+      )!;
+      expect([for (final s in spans) s.index], [0, 2]);
+      expect(spans.first.end, start.add(const Duration(minutes: 8)));
+    });
   });
 }
