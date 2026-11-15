@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../widgets/app_tour.dart';
+import '../widgets/chat_reveal.dart';
 import '../widgets/contextual_insight_bar.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
@@ -8,6 +9,7 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'home_screen.dart';
@@ -107,6 +109,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   // Asked from a screen's insight bar, the chat rises as a sheet over that
   // screen; the robot button (or expanding the sheet) shows the full thread.
   final _chatSheet = ValueNotifier<bool>(false);
+  // The chat header's robot, which flies there from the button as it opens.
+  final _chatRobotKey = GlobalKey();
+  final _chatScreenKey = GlobalKey();
+  // Where the robot-button chat is heading (0 shut, 1 open).
+  double _chatTarget = 0;
+  final _chatRobotHidden = ValueNotifier<bool>(false);
   Offset _chatRevealOrigin = Offset.zero;
   bool _chatOpen = false;
   bool _detailRouteOpen = false;
@@ -217,11 +225,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     _tabPages = List.generate(5, _buildCachedTabPage);
     _persistentChatScreen = AssistantScreen(
+      // Keeps the chat's state when its wrapper changes (sheet or circle).
+      key: _chatScreenKey,
       onClose: _closeChat,
       contextPrompt: _contextPrompt,
       onOpenScreen: _openFromAssistant,
       sheet: _chatSheet,
       onExpand: () => setState(() => _chatSheet.value = false),
+      robotKey: _chatRobotKey,
+      robotHidden: _chatRobotHidden,
     );
     _insights.onAsk = _askAbout;
     // A detail screen's one-tap fix: back to the tabs, then there.
@@ -528,6 +540,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _insights.dispose();
     _contextPrompt.dispose();
     _chatSheet.dispose();
+    _chatRobotHidden.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -736,7 +749,48 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _chatOpen = true;
     });
     _logScreenView(5);
-    _chatRevealController.forward(from: 0);
+    if (sheet) {
+      _chatRevealController.forward(from: 0);
+    } else {
+      unawaited(_settleChat(1));
+    }
+  }
+
+  /// Springs the robot-button chat open (1) or shut (0), carrying on from a
+  /// drag's [velocity] (progress per second). Reduce Motion fades instead.
+  Future<void> _settleChat(double target, [double velocity = 0]) {
+    _chatTarget = target;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return _chatRevealController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.linear,
+      );
+    }
+    return _chatRevealController.animateWith(
+      SpringSimulation(
+        chatRevealSpring,
+        _chatRevealController.value,
+        target,
+        velocity,
+      ),
+    );
+  }
+
+  void _dragChat(double dy) {
+    _chatTarget = -1; // following the finger
+    _chatRevealController.value =
+        _chatRevealController.value - dy / CircleChatReveal.dragDistance;
+  }
+
+  /// Let go of a header drag: a flick or a long pull closes, else it opens.
+  void _releaseChat(double dyPerSecond) {
+    final velocity = -dyPerSecond / CircleChatReveal.dragDistance;
+    if (dyPerSecond > 450 || _chatRevealController.value < .7) {
+      unawaited(_closeChat(velocity));
+    } else {
+      unawaited(_settleChat(1, velocity));
+    }
   }
 
   /// A source chip or chart in Vivordo AI: close the chat and show where
@@ -765,9 +819,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     });
   }
 
-  Future<void> _closeChat() async {
+  Future<void> _closeChat([double velocity = 0]) async {
     if (!_chatOpen) return;
-    await _chatRevealController.reverse();
+    if (_chatSheet.value) {
+      await _chatRevealController.reverse();
+    } else {
+      await _settleChat(0, velocity);
+      if (_chatTarget != 0) return; // reopened meanwhile
+      _chatRevealController.value = 0;
+    }
     if (mounted) {
       setState(() => _chatOpen = false);
       _tabActivity[_selectedIndex].value = !_detailRouteOpen;
@@ -877,8 +937,35 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         body: Stack(
           children: [
             Positioned.fill(
-              child: RepaintBoundary(
-                child: ScreenInsightScope(controller: _insights, child: tabs),
+              child: AnimatedBuilder(
+                animation: _chatRevealController,
+                // Behind the robot-button chat, the screen sinks back a little.
+                builder: (context, child) {
+                  final p =
+                      _chatOpen &&
+                          !_chatSheet.value &&
+                          !MediaQuery.disableAnimationsOf(context)
+                      ? _chatRevealController.value.clamp(0.0, 1.0)
+                      : 0.0;
+                  if (p == 0) return child!;
+                  return ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      Colors.black.withValues(alpha: .25 * p),
+                      BlendMode.srcATop,
+                    ),
+                    child: Transform.translate(
+                      offset: Offset(0, 8 * p),
+                      child: Transform.scale(
+                        scale: 1 - .05 * p,
+                        alignment: Alignment.topCenter,
+                        child: child,
+                      ),
+                    ),
+                  );
+                },
+                child: RepaintBoundary(
+                  child: ScreenInsightScope(controller: _insights, child: tabs),
+                ),
               ),
             ),
             // A scroll-edge fade: the bar is glass, and text passing right
@@ -988,15 +1075,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                           0,
                           _chatSheet.value ? 1 - _chatRevealAnimation.value : 0,
                         ),
-                        child: ClipPath(
-                          clipper: _chatSheet.value
-                              ? const _SheetClipper()
-                              : _CircularRevealClipper(
-                                  origin: _chatRevealOrigin,
-                                  progress: _chatRevealAnimation.value,
-                                ),
-                          child: child,
-                        ),
+                        child: _chatSheet.value
+                            ? ClipPath(
+                                clipper: const _SheetClipper(),
+                                child: child,
+                              )
+                            : CircleChatReveal(
+                                progress: _chatRevealController,
+                                origin: _chatRevealOrigin,
+                                robotKey: _chatRobotKey,
+                                robotHidden: _chatRobotHidden,
+                                onDrag: _dragChat,
+                                onDragEnd: _releaseChat,
+                                child: child!,
+                              ),
                       ),
                     ),
                   ),
@@ -1384,24 +1476,4 @@ class _SheetClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(_SheetClipper oldClipper) => false;
-}
-
-class _CircularRevealClipper extends CustomClipper<Path> {
-  const _CircularRevealClipper({required this.origin, required this.progress});
-
-  final Offset origin;
-  final double progress;
-
-  @override
-  Path getClip(Size size) {
-    final horizontal = math.max(origin.dx, size.width - origin.dx);
-    final vertical = math.max(origin.dy, size.height - origin.dy);
-    final radius = math.sqrt(horizontal * horizontal + vertical * vertical);
-    return Path()
-      ..addOval(Rect.fromCircle(center: origin, radius: radius * progress));
-  }
-
-  @override
-  bool shouldReclip(covariant _CircularRevealClipper oldClipper) =>
-      oldClipper.origin != origin || oldClipper.progress != progress;
 }
