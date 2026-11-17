@@ -777,6 +777,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
   }
 
+  /// How much of the screen the chat covers (0 to 1), for the tab bar and
+  /// AI button: the robot-button chat's circle as it grows or shrinks, or
+  /// all of it while the sheet is up.
+  double _chatCover() {
+    if (!_chatOpen) return 0;
+    if (_chatSheet.value) return 1;
+    return _chatRevealController.value.clamp(0.0, 1.0);
+  }
+
   void _dragChat(double dy) {
     _chatTarget = -1; // following the finger
     _chatRevealController.value =
@@ -866,8 +875,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // The assistant would otherwise sit on top of text fields' send buttons.
     // During the tour the robot has left its button; it is back for the
     // final step, which points at it.
-    final hideAssistant =
-        _chatOpen || keyboardOpen || (_tourScreen != null && !_tourShowsChat);
+    final hideForScreen =
+        keyboardOpen || (_tourScreen != null && !_tourShowsChat);
+    final hideAssistant = _chatOpen || hideForScreen;
     // iOS hides the tab bar behind the keyboard.
     final showNavBar = !keyboardOpen;
     final theme = Theme.of(context);
@@ -993,17 +1003,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 ),
               ),
             if (showNavBar)
-              ValueListenableBuilder<double>(
-                valueListenable: _insightLift,
-                builder: (context, lift, bar) => Positioned(
+              AnimatedBuilder(
+                animation: Listenable.merge([
+                  _insightLift,
+                  _chatRevealController,
+                ]),
+                builder: (context, bar) => Positioned(
                   bottom: _navBarInset,
                   left: _navBarInset,
                   // Leaves room for the AI button beside it, and takes that
-                  // room back while the button is raised or hidden.
-                  right: hideAssistant
-                      ? _navBarInset
-                      : _navBarInset +
-                            (1 - lift) * (ContextualInsightBar.buttonSize + 8),
+                  // room back while the button is raised or hidden; with the
+                  // chat it moves in step, so the robot has room as it lands.
+                  right:
+                      _navBarInset +
+                      (1 - (hideForScreen ? 1 : _chatCover())) *
+                          (1 - _insightLift.value) *
+                          (ContextualInsightBar.buttonSize + 8),
                   child: bar!,
                 ),
                 child: _buildFloatingNavBar(),
@@ -1017,23 +1032,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 key: _chatLayerKey,
                 ignoring: hideAssistant,
                 child: AnimatedOpacity(
-                  opacity: hideAssistant ? 0 : 1,
+                  opacity: hideForScreen ? 0 : 1,
                   duration: const Duration(milliseconds: 140),
                   child: AnimatedBuilder(
-                    animation: Listenable.merge([
-                      _insights,
-                      FitnessWorkoutTimerState.isRunning,
-                    ]),
-                    builder: (context, _) => ContextualInsightBar(
-                      insight: _insights.current,
-                      suppressed:
-                          hideAssistant ||
-                          FitnessWorkoutTimerState.isRunning.value,
-                      button: (context, waves, cheers) =>
-                          _buildChatButton(waves, cheers),
-                      onButtonTap: (from) => _openChat(from: from),
-                      lift: _insightLift,
-                      onAsk: (_) => _askAbout(_insights.current),
+                    animation: _chatRevealController,
+                    // Back as the circle shrinks into it, not after.
+                    builder: (context, layer) => Opacity(
+                      opacity: 1 - (_chatCover() * 5).clamp(0.0, 1.0),
+                      child: layer,
+                    ),
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([
+                        _insights,
+                        FitnessWorkoutTimerState.isRunning,
+                      ]),
+                      builder: (context, _) => ContextualInsightBar(
+                        insight: _insights.current,
+                        suppressed:
+                            hideAssistant ||
+                            FitnessWorkoutTimerState.isRunning.value,
+                        button: (context, waves, cheers) =>
+                            _buildChatButton(waves, cheers),
+                        onButtonTap: (from) => _openChat(from: from),
+                        lift: _insightLift,
+                        onAsk: (_) => _askAbout(_insights.current),
+                      ),
                     ),
                   ),
                 ),

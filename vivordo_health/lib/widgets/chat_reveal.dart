@@ -22,9 +22,9 @@ const _glowColors = [
 ];
 
 /// The chat growing out of the robot button in a circle. Inside it the chat
-/// settles in from slightly larger; a glowing ring rides the circle's edge,
-/// the robot lifts from the button into the header, and the screen's edges
-/// flash once as it lands. Dragging the header down shrinks it back.
+/// settles in from slightly larger, a glowing ring rides the circle's edge
+/// and the robot lifts from the button into the header. Dragging the header
+/// down shrinks it back.
 ///
 /// [progress] is the raw spring value (0 closed, 1 open). [robotKey] marks
 /// the header robot, which [robotHidden] hides while its copy is in flight.
@@ -65,11 +65,6 @@ class _CircleChatRevealState extends State<CircleChatReveal>
     vsync: this,
     duration: const Duration(seconds: 3),
   );
-  late final _flash = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 750),
-  );
-  bool _landed = false;
 
   @override
   void initState() {
@@ -90,7 +85,6 @@ class _CircleChatRevealState extends State<CircleChatReveal>
   void dispose() {
     widget.progress.removeListener(_onProgress);
     _spin.dispose();
-    _flash.dispose();
     super.dispose();
   }
 
@@ -101,11 +95,6 @@ class _CircleChatRevealState extends State<CircleChatReveal>
     final moving = p > 0 && p < 1;
     if (moving && !_spin.isAnimating && !_reduceMotion) _spin.repeat();
     if (!moving && _spin.isAnimating) _spin.stop();
-    if (!_landed && p > .93) {
-      _landed = true;
-      if (!_reduceMotion) _flash.forward(from: 0);
-    }
-    if (p < .5) _landed = false;
     // The header robot shows only while its copy isn't flying.
     final hide = moving && !_reduceMotion;
     if (widget.robotHidden.value != hide) {
@@ -158,7 +147,7 @@ class _CircleChatRevealState extends State<CircleChatReveal>
             ) +
             18;
         return AnimatedBuilder(
-          animation: Listenable.merge([widget.progress, _spin, _flash]),
+          animation: Listenable.merge([widget.progress, _spin]),
           child: widget.child,
           builder: (context, child) {
             final p = widget.progress.value.clamp(0.0, 1.0);
@@ -200,15 +189,6 @@ class _CircleChatRevealState extends State<CircleChatReveal>
                     ),
                   ),
                 if (end != null) _flyingRobot(o, end, p),
-                if (_flash.isAnimating)
-                  IgnorePointer(
-                    child: CustomPaint(
-                      painter: _EdgeGlowPainter(
-                        turn: turn,
-                        opacity: math.sin(math.pi * _flash.value) * .9,
-                      ),
-                    ),
-                  ),
                 drag,
               ],
             );
@@ -297,32 +277,4 @@ class _RingPainter extends CustomPainter {
   @override
   bool shouldRepaint(_RingPainter old) =>
       old.radius != radius || old.turn != turn || old.opacity != opacity;
-}
-
-/// The screen's edges lit once in the same colours, as the chat lands.
-class _EdgeGlowPainter extends CustomPainter {
-  const _EdgeGlowPainter({required this.turn, required this.opacity});
-  final double turn;
-  final double opacity;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (opacity <= 0) return;
-    final rect = (Offset.zero & size).deflate(3);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(52)),
-      Paint()
-        ..shader = SweepGradient(
-          colors: [for (final c in _glowColors) c.withValues(alpha: opacity)],
-          transform: GradientRotation(turn),
-        ).createShader(rect)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 9
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_EdgeGlowPainter old) =>
-      old.turn != turn || old.opacity != opacity;
 }
