@@ -765,6 +765,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     }
   }
 
+  static final _floatingChatSpring = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 60,
+    ratio: 1,
+  );
+
   /// Springs the robot-button chat open (1) or shut (0), carrying on from a
   /// drag's [velocity] (progress per second). Reduce Motion fades instead.
   Future<void> _settleChat(double target, [double velocity = 0]) {
@@ -778,7 +784,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     }
     return _chatRevealController.animateWith(
       SpringSimulation(
-        chatRevealSpring,
+        // The floating box opens more slowly, so its morph out of the
+        // robot can be followed. Closing it, and the full-screen reveal
+        // both ways, keep the quicker spring.
+        _chatFloats && target == 1 ? _floatingChatSpring : chatRevealSpring,
         _chatRevealController.value,
         target,
         velocity,
@@ -1137,6 +1146,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 reveal: _chatRevealController,
                 open: _chatOpen,
                 rail: railClearance,
+                origin: _chatRevealOrigin,
                 child: _persistentChatScreen,
               )
             else if (_pandaHasBeenOpened)

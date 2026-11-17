@@ -32,6 +32,27 @@ void main() {
     );
   });
 
+  test('the box opens out of the robot button and ends as itself', () {
+    const box = Rect.fromLTWH(64, 120, 340, 440);
+    const robot = Offset(893, 482);
+    final start = chatMorph(t: 0, box: box, origin: robot);
+    // A circle the button's size, centred on the button.
+    expect(box.center + start.offset, robot);
+    expect(start.scaleX * box.width, closeTo(62, .001));
+    expect(start.scaleY * box.height, closeTo(62, .001));
+    expect(start.radius, 31);
+    final end = chatMorph(t: 1, box: box, origin: robot);
+    expect(end.offset, Offset.zero);
+    expect(end.scaleX, 1);
+    expect(end.scaleY, 1);
+    expect(end.radius, 26);
+    // Part way, it has reached further across than it has filled out.
+    final mid = chatMorph(t: .4, box: box, origin: robot);
+    expect(mid.scaleX, greaterThan(mid.scaleY));
+    // A spring that overshoots never grows it past full size.
+    expect(chatMorph(t: 1.2, box: box, origin: robot).scaleX, 1);
+  });
+
   test('the box stays above the keyboard', () {
     const typing = FloatingBoxBounds(
       screen: Size(951, 669),

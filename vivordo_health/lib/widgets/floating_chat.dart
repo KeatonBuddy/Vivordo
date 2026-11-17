@@ -78,6 +78,35 @@ class FloatingBoxBounds {
   }
 }
 
+/// How the box looks part way through opening: pulled out of the robot
+/// button as a bubble that swells into the window, the way a minimised
+/// window leaves the Dock. [t] runs 0 (the button) to 1 (the box).
+///
+/// [offset] moves the box's centre, [scaleX] and [scaleY] size it, and
+/// [radius] is its corner on screen: a circle the button's size at first.
+({Offset offset, double scaleX, double scaleY, double radius}) chatMorph({
+  required double t,
+  required Rect box,
+  required Offset origin,
+  double button = 62,
+}) {
+  final p = t.clamp(0.0, 1.0);
+  // It reaches out sideways first, then fills out downwards.
+  final across = Curves.easeOutCubic.transform(p);
+  final down = Curves.easeInOutCubic.transform(p);
+  final startX = (button / box.width).clamp(0.0, 1.0);
+  final startY = (button / box.height).clamp(0.0, 1.0);
+  return (
+    offset: Offset(
+      (origin.dx - box.center.dx) * (1 - across),
+      (origin.dy - box.center.dy) * (1 - down),
+    ),
+    scaleX: startX + (1 - startX) * across,
+    scaleY: startY + (1 - startY) * down,
+    radius: button / 2 + (26 - button / 2) * p,
+  );
+}
+
 /// Vivordo AI on an unfolded iPhone Duo: a box above both panes instead of
 /// a full screen. Drag the header to move it and the bottom-right corner to
 /// resize it; let go and it settles on one half.
@@ -90,7 +119,12 @@ class FloatingChat extends StatefulWidget {
     required this.open,
     required this.rail,
     required this.child,
+    this.origin,
   });
+
+  /// The centre of the robot button the box opens out of and closes
+  /// back into; without it the box grows from its own centre.
+  final Offset? origin;
 
   final Animation<double> reveal;
   final bool open;
@@ -130,83 +164,99 @@ class _FloatingChatState extends State<FloatingChat> {
             animation: widget.reveal,
             builder: (context, child) {
               final t = widget.reveal.value.clamp(0.0, 1.0);
+              final morph = chatMorph(
+                t: MediaQuery.disableAnimationsOf(context) ? 1 : t,
+                box: box,
+                origin: widget.origin ?? box.center,
+              );
+              // The corner is set on screen, so undo the stretch for it.
+              final corner = BorderRadius.all(
+                Radius.elliptical(
+                  morph.radius / morph.scaleX,
+                  morph.radius / morph.scaleY,
+                ),
+              );
               return Opacity(
-                opacity: t,
-                child: Transform.scale(scale: .9 + .1 * t, child: child),
+                // Solid almost at once, so it reads as one shape growing.
+                opacity: (t * 4).clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: morph.offset,
+                  child: Transform.scale(
+                    scaleX: morph.scaleX,
+                    scaleY: morph.scaleY,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: corner,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x4D14103C),
+                            blurRadius: 50,
+                            offset: Offset(0, 18),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(borderRadius: corner, child: child),
+                    ),
+                  ),
+                ),
               );
             },
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x4D14103C),
-                    blurRadius: 50,
-                    offset: Offset(0, 18),
+            child: Stack(
+              children: [
+                // The box has no status bar or keyboard of its own; it
+                // moves clear of the keyboard instead.
+                Positioned.fill(
+                  child: MediaQuery(
+                    data: media.copyWith(
+                      padding: EdgeInsets.zero,
+                      viewPadding: EdgeInsets.zero,
+                      viewInsets: EdgeInsets.zero,
+                    ),
+                    child: widget.child,
                   ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(26),
-                child: Stack(
-                  children: [
-                    // The box has no status bar or keyboard of its own; it
-                    // moves clear of the keyboard instead.
-                    Positioned.fill(
-                      child: MediaQuery(
-                        data: media.copyWith(
-                          padding: EdgeInsets.zero,
-                          viewPadding: EdgeInsets.zero,
-                          viewInsets: EdgeInsets.zero,
-                        ),
-                        child: widget.child,
-                      ),
-                    ),
-                    // The header between its buttons moves the box.
-                    Positioned(
-                      top: 0,
-                      left: 52,
-                      right: 110,
-                      height: 56,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onPanStart: (_) => setState(() => _moving = true),
-                        onPanUpdate: (d) => setState(
-                          () => _box = bounds.follow(_box.shift(d.delta)),
-                        ),
-                        onPanEnd: (_) => _letGo(bounds),
-                        onPanCancel: () => _letGo(bounds),
-                      ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      width: 30,
-                      height: 30,
-                      child: Semantics(
-                        label: 'Resize Vivordo AI',
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanStart: (_) => setState(() => _moving = true),
-                          onPanUpdate: (d) => setState(
-                            () => _box = bounds.resize(_box, d.delta),
-                          ),
-                          onPanEnd: (_) => _letGo(bounds),
-                          onPanCancel: () => _letGo(bounds),
-                          child: Align(
-                            alignment: const Alignment(.3, .3),
-                            child: Icon(
-                              Icons.south_east_rounded,
-                              size: 14,
-                              color: colors.onSurface.withValues(alpha: .35),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
-              ),
+                // The header between its buttons moves the box.
+                Positioned(
+                  top: 0,
+                  left: 52,
+                  right: 110,
+                  height: 56,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (_) => setState(() => _moving = true),
+                    onPanUpdate: (d) => setState(
+                      () => _box = bounds.follow(_box.shift(d.delta)),
+                    ),
+                    onPanEnd: (_) => _letGo(bounds),
+                    onPanCancel: () => _letGo(bounds),
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  width: 30,
+                  height: 30,
+                  child: Semantics(
+                    label: 'Resize Vivordo AI',
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (_) => setState(() => _moving = true),
+                      onPanUpdate: (d) =>
+                          setState(() => _box = bounds.resize(_box, d.delta)),
+                      onPanEnd: (_) => _letGo(bounds),
+                      onPanCancel: () => _letGo(bounds),
+                      child: Align(
+                        alignment: const Alignment(.3, .3),
+                        child: Icon(
+                          Icons.south_east_rounded,
+                          size: 14,
+                          color: colors.onSurface.withValues(alpha: .35),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
