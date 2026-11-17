@@ -96,6 +96,59 @@ class DayGridScale {
       (hourHeight * ratio).clamp(min, max);
 }
 
+/// Where each block sits across the timeline when some share time: which
+/// column it is in and how many columns its group has, so blocks that
+/// overlap stand side by side instead of on top of each other, the way a
+/// calendar lays them out. [spans] are start and end minutes, in any
+/// order; the result is in the same order.
+///
+/// Blocks that touch (one ends as the next starts) do not overlap. A group
+/// is a run of blocks linked by overlaps; each takes the first column free
+/// at its start, and the group is as many columns wide as it needed.
+List<({int column, int columns})> dayGridColumns(
+  List<({int start, int end})> spans,
+) {
+  final order = [for (var i = 0; i < spans.length; i++) i]
+    ..sort((a, b) {
+      final byStart = spans[a].start.compareTo(spans[b].start);
+      // The longer of two that start together goes first, on the left.
+      return byStart != 0 ? byStart : spans[b].end.compareTo(spans[a].end);
+    });
+  final column = List.filled(spans.length, 0);
+  final columns = List.filled(spans.length, 1);
+  var group = <int>[];
+  var groupEnd = 0;
+  // When each column of the current group is next free.
+  var free = <int>[];
+  void close() {
+    for (final i in group) {
+      columns[i] = free.length;
+    }
+    group = [];
+    free = [];
+  }
+
+  for (final i in order) {
+    final span = spans[i];
+    if (group.isNotEmpty && span.start >= groupEnd) close();
+    var slot = free.indexWhere((end) => end <= span.start);
+    if (slot < 0) {
+      slot = free.length;
+      free.add(span.end);
+    } else {
+      free[slot] = span.end;
+    }
+    column[i] = slot;
+    group.add(i);
+    if (span.end > groupEnd) groupEnd = span.end;
+  }
+  close();
+  return [
+    for (var i = 0; i < spans.length; i++)
+      (column: column[i], columns: columns[i]),
+  ];
+}
+
 /// Today as a full day by the hour, for an unfolded iPhone Duo: pinch to
 /// zoom in to 30, 15 and 5 minute steps, drop a priority on a time, and
 /// drag a priority's bottom edge to change its length.
@@ -261,6 +314,14 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
     final colors = context.vivordoColors;
     final scale = _scale;
     final time = DateFormat('h:mm a');
+    // Blocks that share time stand side by side.
+    final columns = dayGridColumns([
+      for (final b in widget.blocks)
+        (
+          start: _minutesOf(b.start).clamp(0, 24 * 60),
+          end: _minutesOf(b.end).clamp(0, 24 * 60),
+        ),
+    ]);
     return Container(
       height: _height,
       clipBehavior: Clip.antiAlias,
@@ -313,7 +374,8 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  for (final block in widget.blocks) _block(block, scale, time),
+                  for (final (index, block) in widget.blocks.indexed)
+                    _block(block, scale, time, columns[index]),
                   // Now, across the whole day.
                   Positioned(
                     top: scale.offsetOf(_minutesOf(widget.now)) - 1,
@@ -373,9 +435,9 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
   /// The most of a block's width a chip may take; the title has the rest.
   static const _chipRoom = 184.0;
 
-  Widget _chip(DayGridChip chip) {
+  Widget _chip(DayGridChip chip, {bool narrow = false}) {
     final pill = Container(
-      constraints: const BoxConstraints(maxWidth: _chipRoom - 12),
+      constraints: BoxConstraints(maxWidth: narrow ? 92 : _chipRoom - 12),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: chip.background,
@@ -416,130 +478,168 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _block(DayGridBlock block, DayGridScale scale, DateFormat time) {
+  Widget _block(
+    DayGridBlock block,
+    DayGridScale scale,
+    DateFormat time,
+    ({int column, int columns}) place,
+  ) {
     final start = _minutesOf(block.start).clamp(0, 24 * 60);
     final resizing = _resize?.id == block.id ? _resize : null;
     final minutes =
         resizing?.minutes ?? (_minutesOf(block.end).clamp(0, 24 * 60) - start);
     final end = widget.day.add(Duration(minutes: start + minutes));
     final height = math.max(22.0, scale.offsetOf(minutes));
+    final stacked = place.columns > 1 && block.chip != null && height >= 58;
     return Positioned(
       top: scale.offsetOf(start),
       left: _gutter,
       right: 8,
       height: height,
-      child: Semantics(
-        button: block.onTap != null,
-        label:
-            '${block.title}, ${time.format(block.start)} to ${time.format(end)}',
-        excludeSemantics: true,
-        child: GestureDetector(
-          onTap: block.onTap,
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: block.color.withValues(alpha: .16),
-              borderRadius: BorderRadius.circular(10),
-              border: Border(left: BorderSide(color: block.color, width: 4)),
+      // Its share of the width, in its column, with a hair between
+      // neighbours.
+      child: Align(
+        alignment: Alignment(
+          place.columns == 1 ? 0 : -1 + 2 * place.column / (place.columns - 1),
+          0,
+        ),
+        child: FractionallySizedBox(
+          widthFactor: 1 / place.columns,
+          heightFactor: 1,
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: place.column < place.columns - 1 ? 3 : 0,
             ),
-            child: Stack(
-              children: [
-                // The chip takes the width it needs and the title has the
-                // rest, each on a line of its own so neither wraps.
-                Positioned.fill(
-                  bottom: block.resizable ? 6 : 0,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 2, 6, 0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.topLeft,
-                            child: DefaultTextStyle.merge(
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: context.vivordoColors.textPrimary,
-                                fontSize: 12,
-                                height: 1.25,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(block.title),
-                                  if (height >= 38)
-                                    Text(
-                                      '${time.format(block.start)} – ${time.format(end)}',
+            child: Semantics(
+              button: block.onTap != null,
+              label:
+                  '${block.title}, ${time.format(block.start)} to ${time.format(end)}',
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: block.onTap,
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: block.color.withValues(alpha: .16),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border(
+                      left: BorderSide(color: block.color, width: 4),
+                    ),
+                  ),
+                  child: Stack(
+                    children: [
+                      // The chip takes the width it needs and the title has the
+                      // rest, each on a line of its own so neither wraps.
+                      Positioned.fill(
+                        bottom: block.resizable ? 6 : 0,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 2, 6, 0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: DefaultTextStyle.merge(
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: context.vivordoColors.textPrimary,
+                                      fontSize: 12,
+                                      height: 1.25,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                ],
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(block.title),
+                                        if (height >= 38)
+                                          Text(
+                                            '${time.format(block.start)} – ${time.format(end)}',
+                                          ),
+                                        // In a shared column there is no
+                                        // room beside the title, so the chip
+                                        // goes under it when the block is
+                                        // tall enough.
+                                        if (stacked)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 3,
+                                            ),
+                                            child: _chip(block.chip!),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (block.chip case final chip?
+                                  when !stacked) ...[
+                                const SizedBox(width: 6),
+                                _chip(chip, narrow: place.columns > 1),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (block.resizable)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 16,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onVerticalDragStart: (_) => setState(
+                              () => _resize = (
+                                id: block.id,
+                                minutes: minutes,
+                                dy: 0,
+                                from: minutes,
+                              ),
+                            ),
+                            onVerticalDragUpdate: (d) {
+                              final r = _resize;
+                              if (r == null) return;
+                              final dy = r.dy + d.delta.dy;
+                              setState(
+                                () => _resize = (
+                                  id: r.id,
+                                  minutes: math.min(
+                                    24 * 60 - start,
+                                    scale.resized(r.from, dy),
+                                  ),
+                                  dy: dy,
+                                  from: r.from,
+                                ),
+                              );
+                            },
+                            onVerticalDragEnd: (_) {
+                              final r = _resize;
+                              setState(() => _resize = null);
+                              if (r != null && r.minutes != r.from) {
+                                widget.onResize(r.id, r.minutes);
+                              }
+                            },
+                            onVerticalDragCancel: () =>
+                                setState(() => _resize = null),
+                            child: Center(
+                              child: Container(
+                                width: 28,
+                                height: 3,
+                                decoration: BoxDecoration(
+                                  color: block.color.withValues(alpha: .7),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                        if (block.chip case final chip?) ...[
-                          const SizedBox(width: 6),
-                          _chip(chip),
-                        ],
-                      ],
-                    ),
+                    ],
                   ),
                 ),
-                if (block.resizable)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    height: 16,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragStart: (_) => setState(
-                        () => _resize = (
-                          id: block.id,
-                          minutes: minutes,
-                          dy: 0,
-                          from: minutes,
-                        ),
-                      ),
-                      onVerticalDragUpdate: (d) {
-                        final r = _resize;
-                        if (r == null) return;
-                        final dy = r.dy + d.delta.dy;
-                        setState(
-                          () => _resize = (
-                            id: r.id,
-                            minutes: math.min(
-                              24 * 60 - start,
-                              scale.resized(r.from, dy),
-                            ),
-                            dy: dy,
-                            from: r.from,
-                          ),
-                        );
-                      },
-                      onVerticalDragEnd: (_) {
-                        final r = _resize;
-                        setState(() => _resize = null);
-                        if (r != null && r.minutes != r.from) {
-                          widget.onResize(r.id, r.minutes);
-                        }
-                      },
-                      onVerticalDragCancel: () =>
-                          setState(() => _resize = null),
-                      child: Center(
-                        child: Container(
-                          width: 28,
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: block.color.withValues(alpha: .7),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         ),
