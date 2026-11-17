@@ -1021,19 +1021,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
     unawaited(_loadPatterns());
     try {
       await DailyPriorityService.materializeRecurring(dayStart);
-      await DailyPriorityService.seedFromCalendar(
-        dayStart,
-        events
-            .where((event) => !event.isPriorityLinked)
-            .map((event) => event.priorityCandidate),
-      );
       await DailyPriorityService.materializeRecurring(dayEnd);
-      await DailyPriorityService.seedFromCalendar(
-        dayEnd,
-        tomorrowEvents
-            .where((e) => !e.isPriorityLinked)
-            .map((e) => e.priorityCandidate),
-      );
     } catch (error) {
       debugPrint('Could not generate daily priorities: $error');
     }
@@ -1463,8 +1451,9 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
   }
 
   /// Burnout and training-load alerts opened out to their full card:
-  /// "day|alert|level". They start as one row each; a tap opens one out, and
-  /// the next day, or a new level, it's a row again.
+  /// "day|alert|level". They start as one row each; a tap opens one out
+  /// and its chevron folds it back. The next day, or a new level, it's a
+  /// row again.
   final _alertsExpanded = <String>{};
 
   /// Burnout, training load and Sunday's review, most serious first
@@ -1495,11 +1484,14 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             view: burnout!,
             compact: !_alertsExpanded.contains(burnoutKey),
             onExpand: () => setState(() => _alertsExpanded.add(burnoutKey)),
+            onCollapse: () =>
+                setState(() => _alertsExpanded.remove(burnoutKey)),
           ),
           MyDayAlert.trainingLoad => TrainingLoadAlert(
             view: load!,
             compact: !_alertsExpanded.contains(loadKey),
             onExpand: () => setState(() => _alertsExpanded.add(loadKey)),
+            onCollapse: () => setState(() => _alertsExpanded.remove(loadKey)),
           ),
           MyDayAlert.weeklyReview => WeeklyReviewCard(state: review!),
         },
@@ -4345,16 +4337,6 @@ class _CalendarEvent {
 
   String get timeLabel =>
       isAllDay ? 'All day' : DateFormat('h:mm a').format(start);
-
-  CalendarPriorityCandidate get priorityCandidate => CalendarPriorityCandidate(
-    sourceEventKey: sourceEventKey,
-    title: title,
-    start: start,
-    end: end,
-    isAllDay: isAllDay,
-    isRecurring: isRecurring,
-    attendeeCount: attendeeCount,
-  );
 
   String get durationLabel {
     if (isAllDay) return 'All-day event';

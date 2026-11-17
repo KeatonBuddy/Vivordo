@@ -759,7 +759,7 @@ class _PriorityTile extends StatelessWidget {
       ?effort,
       ?repeatLabel,
     ];
-    final onCalendar = p.source == 'calendar' || p.sourceEventKey != null;
+    final onCalendar = p.sourceEventKey != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
       child: Row(

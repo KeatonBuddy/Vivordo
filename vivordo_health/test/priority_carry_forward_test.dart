@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vivordo_health/src/services/daily_priority_service.dart';
 
 void main() {
+  test('old copies of calendar events are not priorities', () {
+    expect(
+      DailyPriorityService.visibleOnDay(
+        {'source': 'calendar', 'completed': false},
+        '2026-09-10',
+        '2026-09-10',
+      ),
+      isFalse,
+    );
+  });
+
   test(
     'planned day can precede stored due date without changing carry-over rules',
     () {

@@ -135,39 +135,73 @@ class WorkoutExerciseSpan {
   bool contains(DateTime time) => !time.isBefore(start) && !time.isAfter(end);
 }
 
+/// Each exercise as index lists into [exercises], with a superset
+/// exercise joined to the one it was done with (saved just before it).
+List<List<int>> _supersetGroups(List<WorkoutExerciseRecord> exercises) {
+  final groups = <List<int>>[];
+  for (final (index, exercise) in exercises.indexed) {
+    if (exercise.supersetWith case final main?
+        when groups.isNotEmpty && exercises[groups.last.first].name == main) {
+      groups.last.add(index);
+    } else {
+      groups.add([index]);
+    }
+  }
+  return groups;
+}
+
+/// The set times of a group, sorted, drops included; null when a set has
+/// none, empty when the group has no sets.
+List<DateTime>? _setTimes(
+  List<WorkoutExerciseRecord> exercises,
+  List<int> group,
+) {
+  final times = <DateTime>[];
+  for (final set in group.expand((index) => exercises[index].sets)) {
+    if (set.loggedAt == null) return null;
+    times.add(set.loggedAt!);
+    times.addAll(set.drops.map((drop) => drop.loggedAt).nonNulls);
+  }
+  return times..sort();
+}
+
 /// [exercises] in the order they were done, by each one's first set, when
 /// every set has a time; the active workout lists the newest first and a
-/// template its planned order. Exercises without sets go last. Without set
-/// times the saved order stands.
+/// template its planned order. A superset exercise stays after the one it
+/// was done with. Exercises without sets go last. Without set times the
+/// saved order stands.
 List<WorkoutExerciseRecord> workoutExercisesInOrder(
   List<WorkoutExerciseRecord> exercises,
 ) {
-  final timed = <(int, DateTime)>[];
-  for (final (index, exercise) in exercises.indexed) {
-    if (exercise.sets.isEmpty) continue;
-    final times = exercise.sets.map((set) => set.loggedAt).toList();
-    if (times.contains(null)) return exercises;
-    timed.add((
-      index,
-      times.cast<DateTime>().reduce((a, b) => a.isBefore(b) ? a : b),
-    ));
+  final timed = <(List<int>, DateTime)>[];
+  final untimed = <int>[];
+  for (final group in _supersetGroups(exercises)) {
+    final times = _setTimes(exercises, group);
+    if (times == null) return exercises;
+    if (times.isEmpty) {
+      untimed.addAll(group);
+    } else {
+      timed.add((group, times.first));
+    }
   }
   timed.sort((a, b) {
     final byTime = a.$2.compareTo(b.$2);
-    return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
+    return byTime != 0 ? byTime : a.$1.first.compareTo(b.$1.first);
   });
   return [
-    for (final (index, _) in timed) exercises[index],
-    ...exercises.where((exercise) => exercise.sets.isEmpty),
+    for (final (group, _) in timed)
+      for (final index in group) exercises[index],
+    for (final index in untimed) exercises[index],
   ];
 }
 
 /// Where each exercise falls in the workout, from when its sets were
 /// logged. An exercise runs from the end of the one before it (or the start
 /// of the workout) to its last set, so rest before its first set counts
-/// towards it. Null when the times can't place them: a workout saved
-/// before set times were recorded, exercises done alternately (supersets),
-/// or sets all entered at the end, which leaves an exercise under a minute.
+/// towards it; a superset is one span, under the exercise it was done with.
+/// Null when the times can't place them: a workout saved before set times
+/// were recorded, exercises done alternately without being a superset, or
+/// sets all entered at the end, which leaves an exercise under a minute.
 /// Exercises without sets (cardio, sports) aren't placed.
 List<WorkoutExerciseSpan>? workoutExerciseSpans(
   List<WorkoutExerciseRecord> exercises, {
@@ -175,12 +209,10 @@ List<WorkoutExerciseSpan>? workoutExerciseSpans(
   required DateTime end,
 }) {
   final timed = <(int, DateTime, DateTime)>[];
-  for (final (index, exercise) in exercises.indexed) {
-    if (exercise.sets.isEmpty) continue;
-    final times = exercise.sets.map((set) => set.loggedAt).toList();
-    if (times.contains(null)) return null;
-    final sorted = times.cast<DateTime>()..sort();
-    timed.add((index, sorted.first, sorted.last));
+  for (final group in _supersetGroups(exercises)) {
+    final times = _setTimes(exercises, group);
+    if (times == null) return null;
+    if (times.isNotEmpty) timed.add((group.first, times.first, times.last));
   }
   if (timed.isEmpty) return null;
   timed.sort((a, b) => a.$2.compareTo(b.$2));

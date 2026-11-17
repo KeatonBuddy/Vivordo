@@ -133,7 +133,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('42 booked'), findsOneWidget);
-    expect(find.text('Short by 8'), findsOneWidget);
+    expect(find.text("8 over what's left"), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

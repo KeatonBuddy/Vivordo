@@ -12,10 +12,15 @@ class WorkoutSetRecord {
     required this.weightLbs,
     required this.reps,
     this.loggedAt,
+    this.drops = const [],
   });
 
   final double weightLbs;
   final int reps;
+
+  /// Drop set: lighter sets straight after this one, in order. Part of the
+  /// same working set, so they never count as sets or personal bests.
+  final List<WorkoutSetRecord> drops;
 
   /// When its reps were entered, which places each exercise on the heart
   /// rate graph. Null on workouts saved before it was recorded.
@@ -27,7 +32,25 @@ class WorkoutSetRecord {
     // A string, not a Timestamp: this map is also JSON (Vivordo AI's
     // context, the in-progress draft).
     if (loggedAt != null) 'loggedAt': loggedAt!.toUtc().toIso8601String(),
+    if (drops.isNotEmpty) 'drops': [for (final drop in drops) drop.toMap()],
   };
+
+  /// A set map as [toMap] writes it; null without a weight and reps.
+  static WorkoutSetRecord? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final weight = raw['weightLbs'];
+    final reps = raw['reps'];
+    if (weight is! num || reps is! num) return null;
+    return WorkoutSetRecord(
+      weightLbs: weight.toDouble(),
+      reps: reps.toInt(),
+      loggedAt: DateTime.tryParse(raw['loggedAt'] as String? ?? '')?.toLocal(),
+      drops: [
+        for (final drop in raw['drops'] as List? ?? const [])
+          ?WorkoutSetRecord.fromMap(drop),
+      ],
+    );
+  }
 }
 
 class WorkoutExerciseRecord {
@@ -36,6 +59,7 @@ class WorkoutExerciseRecord {
     required this.category,
     required this.sets,
     this.distanceKm,
+    this.supersetWith,
     this.personalBest = false,
     this.personalBestEstimatedOneRepMax,
     this.previousBestEstimatedOneRepMax,
@@ -55,6 +79,10 @@ class WorkoutExerciseRecord {
   final String category;
   final List<WorkoutSetRecord> sets;
   final double? distanceKm;
+
+  /// Done as a superset: one set of this straight after each set of the
+  /// exercise named here, which comes just before it in the workout.
+  final String? supersetWith;
   final bool personalBest;
   final double? personalBestEstimatedOneRepMax;
   final double? previousBestEstimatedOneRepMax;
@@ -74,6 +102,7 @@ class WorkoutExerciseRecord {
     'category': category,
     'sets': sets.map((set) => set.toMap()).toList(growable: false),
     if (distanceKm != null) 'distanceKm': distanceKm,
+    'supersetWith': ?supersetWith,
     'personalBest': personalBest,
     if (personalBestEstimatedOneRepMax != null)
       'personalBestEstimatedOneRepMax': personalBestEstimatedOneRepMax,
@@ -261,20 +290,14 @@ class SavedWorkout {
       final name = rawExercise['name'] as String?;
       final rawSets = rawExercise['sets'] as List? ?? const [];
       calculatedSets += rawSets.length;
-      final sets = <WorkoutSetRecord>[];
-      for (final rawSet in rawSets.whereType<Map>()) {
-        final weight = (rawSet['weightLbs'] as num?)?.toDouble() ?? 0;
-        final reps = (rawSet['reps'] as num?)?.toInt() ?? 0;
-        sets.add(
-          WorkoutSetRecord(
-            weightLbs: weight,
-            reps: reps,
-            loggedAt: DateTime.tryParse(
-              rawSet['loggedAt'] as String? ?? '',
-            )?.toLocal(),
-          ),
-        );
-      }
+      final sets = <WorkoutSetRecord>[
+        for (final rawSet in rawSets.whereType<Map>())
+          WorkoutSetRecord.fromMap(rawSet) ??
+              WorkoutSetRecord(
+                weightLbs: (rawSet['weightLbs'] as num?)?.toDouble() ?? 0,
+                reps: (rawSet['reps'] as num?)?.toInt() ?? 0,
+              ),
+      ];
       if (name != null && name.trim().isNotEmpty) {
         exercises.add(
           WorkoutExerciseRecord(
@@ -282,6 +305,7 @@ class SavedWorkout {
             category: rawExercise['category'] as String? ?? 'Other',
             sets: sets,
             distanceKm: (rawExercise['distanceKm'] as num?)?.toDouble(),
+            supersetWith: rawExercise['supersetWith'] as String?,
             personalBest: rawExercise['personalBest'] == true,
             personalBestEstimatedOneRepMax:
                 (rawExercise['personalBestEstimatedOneRepMax'] as num?)
@@ -568,6 +592,8 @@ class WorkoutService {
       var personalBestCount = 0;
 
       for (final entry in candidates.entries) {
+        // Supersets never count as personal bests.
+        if (isSupersetComparisonKey(entry.key)) continue;
         final candidate = entry.value;
         final previous = currentRecords[entry.key];
         previousRecords[entry.key] = previous;
@@ -588,10 +614,16 @@ class WorkoutService {
       }
 
       final updatedExercises = <Map<String, dynamic>>[];
+      final names = [for (final e in exerciseMaps) e['name'] as String? ?? ''];
+      final supersetWith = [
+        for (final e in exerciseMaps) e['supersetWith'] as String?,
+      ];
       for (var index = 0; index < exerciseMaps.length; index++) {
         final exercise = exerciseMaps[index];
-        final normalizedName = normalizeExerciseName(
-          exercise['name'] as String? ?? '',
+        final normalizedName = exerciseComparisonKey(
+          names,
+          supersetWith,
+          index,
         );
         final candidate = candidates[normalizedName];
         final updated = _withoutPersonalBestMetadata(exercise);
@@ -1260,6 +1292,9 @@ class WorkoutService {
         'completedAt': Timestamp.fromDate(completedAt),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      // Supersets are compared with earlier supersets but never count as
+      // personal bests.
+      if (isSupersetComparisonKey(entry.key)) continue;
       final previousSnapshot = personalBestSnapshots[entry.key];
       // Offline with no copy of the old best: don't claim one, or a weaker
       // lift could overwrite it.
@@ -1363,13 +1398,38 @@ Map<String, dynamic> _circleExerciseSummary(WorkoutExerciseRecord exercise) {
   };
 }
 
+/// The key an exercise's last attempt and personal best are kept under: its
+/// name, marked when it was done in a superset (it has a superset partner
+/// saved after it, or is one), so a superset is only compared with earlier
+/// supersets. [names] and [supersetWith] are the workout's exercises.
+String exerciseComparisonKey(
+  List<String> names,
+  List<String?> supersetWith,
+  int index,
+) {
+  final normalized = normalizeExerciseName(names[index]);
+  final superset =
+      supersetWith[index] != null ||
+      (index + 1 < names.length && supersetWith[index + 1] == names[index]);
+  return superset && normalized.isNotEmpty
+      ? '$normalized$_supersetKeySuffix'
+      : normalized;
+}
+
+const _supersetKeySuffix = ' (superset)';
+
+/// Whether [key] (from [exerciseComparisonKey]) is for a superset.
+bool isSupersetComparisonKey(String key) => key.endsWith(_supersetKeySuffix);
+
 Map<String, _PersonalBestCandidate> _bestCandidatesForExerciseRecords(
   List<WorkoutExerciseRecord> exercises,
 ) {
   final candidates = <String, _PersonalBestCandidate>{};
+  final names = [for (final e in exercises) e.name];
+  final supersetWith = [for (final e in exercises) e.supersetWith];
   for (var index = 0; index < exercises.length; index++) {
     final exercise = exercises[index];
-    final normalizedName = normalizeExerciseName(exercise.name);
+    final normalizedName = exerciseComparisonKey(names, supersetWith, index);
     if (normalizedName.isEmpty) continue;
     final performance = bestPersonalBestPerformance(
       exercise.sets.map((set) => (weightLbs: set.weightLbs, reps: set.reps)),
@@ -1393,10 +1453,14 @@ Map<String, _PersonalBestCandidate> _bestCandidatesForRawExercises(
   List<Map<String, dynamic>> exercises,
 ) {
   final candidates = <String, _PersonalBestCandidate>{};
+  final names = [for (final e in exercises) e['name'] as String? ?? ''];
+  final supersetWith = [
+    for (final e in exercises) e['supersetWith'] as String?,
+  ];
   for (var index = 0; index < exercises.length; index++) {
     final exercise = exercises[index];
-    final exerciseName = (exercise['name'] as String? ?? '').trim();
-    final normalizedName = normalizeExerciseName(exerciseName);
+    final exerciseName = names[index].trim();
+    final normalizedName = exerciseComparisonKey(names, supersetWith, index);
     if (normalizedName.isEmpty) continue;
     final rawSets = exercise['sets'] as List? ?? const [];
     final performance = bestPersonalBestPerformance(

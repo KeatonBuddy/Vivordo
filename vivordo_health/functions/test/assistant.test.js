@@ -362,9 +362,11 @@ test("get_priorities lists the range plus open carry-overs, with ids", async () 
     [`${items("2026-09-24")}/deck`]: {title: "Finalize pitch deck", source: "manual", completed: false, planning: {minutes: 30, effort: "moderate", estimated: true}},
     [`${items("2026-08-01")}/old`]: {title: "Old done thing", source: "manual", completed: true, completedDay: "2026-08-02"},
     [`${items("2026-10-03")}/dentist`]: {title: "Call the dentist", source: "manual", completed: false, reminderTimeMinutes: 540},
-    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "calendar", sourceEventKey: "k", isAllDay: false,
+    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "manual", sourceEventKey: "k", isAllDay: false,
       sourceStart: at("2026-10-02T15:00:00Z"), completed: false},
     [`${items("2026-10-02")}/gone`]: {title: "Dismissed", source: "manual", dismissed: true},
+    // An old copy of a calendar event: no longer a priority.
+    [`${items("2026-10-02")}/copied`]: {title: "Design review", source: "calendar", sourceEventKey: "c", completed: false},
   }});
   const result = await getPriorities(db, "u", {start_date: "2026-10-01", end_date: "2026-10-03"}, -360);
   assert.equal(result, [
@@ -397,7 +399,7 @@ test("propose_priority: creates are checked like the app's PandaPriorityAction",
 test("propose_priority: updates and deletes resolve the exact stored priority", async () => {
   const db = fakeDb({docs: {
     [`${items("2026-09-24")}/deck`]: {title: "Finalize pitch deck", source: "manual"},
-    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "calendar", sourceEventKey: "k"},
+    [`${items("2026-10-02")}/standup`]: {title: "Standup", source: "manual", sourceEventKey: "k"},
     [`${items("2026-10-03")}/a`]: {title: "Gym", source: "manual"},
     [`${items("2026-10-03")}/b`]: {title: "Gym", source: "manual"},
   }});

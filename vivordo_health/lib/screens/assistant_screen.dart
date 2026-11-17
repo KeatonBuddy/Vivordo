@@ -64,6 +64,8 @@ class AssistantScreen extends StatefulWidget {
     this.onOpenScreen,
     this.sheet,
     this.onExpand,
+    this.robotKey,
+    this.robotHidden,
   });
 
   final VoidCallback? onClose;
@@ -76,6 +78,11 @@ class AssistantScreen extends StatefulWidget {
   /// this exchange shows, with a handle to expand to the full thread.
   final ValueListenable<bool>? sheet;
   final VoidCallback? onExpand;
+
+  /// Marks the header robot, and hides it while a copy flies there from
+  /// the robot button as the chat opens.
+  final GlobalKey? robotKey;
+  final ValueListenable<bool>? robotHidden;
 
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
@@ -719,7 +726,15 @@ class _AssistantScreenState extends State<AssistantScreen> {
               icon: const Icon(CupertinoIcons.xmark),
               onPressed: widget.onClose,
             ),
-          const VivordoRobot(size: 40),
+          ValueListenableBuilder<bool>(
+            valueListenable: widget.robotHidden ?? const _AlwaysFalse(),
+            builder: (context, hidden, robot) =>
+                Opacity(opacity: hidden ? 0 : 1, child: robot),
+            child: KeyedSubtree(
+              key: widget.robotKey,
+              child: const VivordoRobot(size: 40),
+            ),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -1353,4 +1368,14 @@ class _Typing extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AlwaysFalse extends ValueListenable<bool> {
+  const _AlwaysFalse();
+  @override
+  bool get value => false;
+  @override
+  void addListener(VoidCallback listener) {}
+  @override
+  void removeListener(VoidCallback listener) {}
 }

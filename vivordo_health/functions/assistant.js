@@ -753,6 +753,8 @@ class ToolInputError extends Error {
  * @return {boolean}
  */
 function visibleOnDay(p, stored, day) {
+  // Events used to be copied in as priorities. Old copies stay hidden.
+  if (p.source === "calendar") return false;
   if (p.dismissed !== true && p.planning?.plannedDay === day) return true;
   if (p.dismissed === true || stored > day) return false;
   if (stored === day) return true;

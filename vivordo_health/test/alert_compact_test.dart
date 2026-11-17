@@ -40,9 +40,14 @@ void main() {
     await tester.tap(find.text('Burnout check'));
     expect(expanded, 1);
 
-    // Opened out: the full card.
-    await tester.pumpWidget(host(BurnoutCard(view: burnout)));
+    // Opened out: the full card, with a way to fold it back.
+    var folded = 0;
+    await tester.pumpWidget(
+      host(BurnoutCard(view: burnout, onCollapse: () => folded++)),
+    );
     expect(find.text(burnout.body), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Show less'));
+    expect(folded, 1);
   });
 
   testWidgets('a training-load alert starts as one row', (tester) async {

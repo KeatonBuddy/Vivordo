@@ -228,7 +228,10 @@ void main() {
       ),
     );
     expect(find.textContaining('−'), findsNothing);
-    expect(find.text('Move "Finalize pitch deck" · Lighter'), findsOneWidget);
+    expect(
+      find.text('Move "Finalize pitch deck" to a lighter day · Lighter'),
+      findsOneWidget,
+    );
     expect(find.text('Lighter'), findsNWidgets(2));
     expect(find.text('Fits peak'), findsOneWidget);
   });

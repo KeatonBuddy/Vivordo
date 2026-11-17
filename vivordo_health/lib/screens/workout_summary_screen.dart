@@ -928,6 +928,17 @@ class _ExerciseSummaryCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (exercise.supersetWith case final main?) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Superset with $main',
+                        style: const TextStyle(
+                          color: _summaryPurple,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -998,6 +1009,14 @@ class _ExerciseSummaryCard extends StatelessWidget {
                     : '—',
               ),
               const SizedBox(height: 8),
+              for (final drop in exercise.sets[index].drops) ...[
+                _SetRow(
+                  set: 'Drop',
+                  weight: _units(context).formatLift(drop.weightLbs),
+                  reps: '${drop.reps}',
+                ),
+                const SizedBox(height: 8),
+              ],
             ],
           ],
         ],
@@ -1106,7 +1125,10 @@ class _HeartRateCardState extends State<_HeartRateCard> {
                     start: widget.start,
                     end: widget.end,
                     spans: spans,
-                    names: [for (final e in widget.exercises) e.name],
+                    names: [
+                      for (var i = 0; i < widget.exercises.length; i++)
+                        _trackName(widget.exercises, i),
+                    ],
                     zoneColors: {
                       for (final zone in WorkoutZone.values)
                         zone: _zoneColor(context, zone),
@@ -1226,7 +1248,7 @@ class _HeartRateCardState extends State<_HeartRateCard> {
         if (span != null)
           Flexible(
             child: Text(
-              widget.exercises[span.index].name,
+              _trackName(widget.exercises, span.index),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -1836,10 +1858,18 @@ class _WorkoutOverview {
               ? 'Strength Workout'
               : 'Workout'
         : workout.displayName;
+    // Drops add to the reps; they're part of the set before them.
     final totalReps = workout.exercises.fold<int>(
       0,
       (total, exercise) =>
-          total + exercise.sets.fold<int>(0, (sum, set) => sum + set.reps),
+          total +
+          exercise.sets.fold<int>(
+            0,
+            (sum, set) =>
+                sum +
+                set.reps +
+                set.drops.fold<int>(0, (dropped, drop) => dropped + drop.reps),
+          ),
     );
     final totalDistance = workout.exercises.fold<double>(
       0,
@@ -1946,6 +1976,14 @@ int _hardMinutes(WorkoutHeartRate heartRate) => _minutes(
 );
 
 /// Each placed exercise's highest reading, by its index in the workout.
+/// An exercise's name on the heart rate track: "Bench Press + Bent-Over
+/// Row" for a superset, whose span sits under the first.
+String _trackName(List<WorkoutExerciseRecord> exercises, int index) {
+  final name = exercises[index].name;
+  final next = exercises.elementAtOrNull(index + 1);
+  return next?.supersetWith == name ? '$name + ${next!.name}' : name;
+}
+
 Map<int, int> _exercisePeaks(
   WorkoutHeartRate? heartRate,
   List<WorkoutExerciseSpan>? spans,

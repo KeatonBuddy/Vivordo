@@ -230,7 +230,11 @@ class BriefFix extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fix = fixes.first;
-    final (_, _, title, _) = _fixText(fix);
+    final (_, _, short, _) = _fixText(fix);
+    // The card's detail line says where; the brief has only this line.
+    final title = fix.kind == DayFixKind.movePriority
+        ? '$short to a lighter day'
+        : short;
     final tag = _fixTag(fix, showNumbers);
     const ink = Color(0xFF26215C);
     return Container(
