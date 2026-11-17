@@ -229,18 +229,30 @@ class _FromFold extends CustomClipper<Rect> {
 
 /// A piece of a screen that animates in when the phone has just been
 /// unfolded: a bar that fills from the left ([DuoUnfoldIn.wipe]) or rises
-/// from its base ([DuoUnfoldIn.rise]). It waits out iOS's fade first, as
+/// from its base ([DuoUnfoldIn.rise]), or anything drawn from a progress
+/// of 0 to 1 ([DuoUnfoldIn.custom]). It waits out iOS's fade first, as
 /// the panes do. At any other time, and with Reduce Motion, it is still.
 class DuoUnfoldIn extends StatefulWidget {
-  const DuoUnfoldIn.wipe({super.key, required this.child})
+  const DuoUnfoldIn.wipe({super.key, required Widget this.child})
     : rises = false,
-      order = 0;
+      order = 0,
+      builder = null;
 
   /// [order] runs 0 to 1 across a row of these, so they rise in turn.
-  const DuoUnfoldIn.rise({super.key, required this.child, this.order = 0})
-    : rises = true;
+  const DuoUnfoldIn.rise({
+    super.key,
+    required Widget this.child,
+    this.order = 0,
+  }) : rises = true,
+       builder = null;
 
-  final Widget child;
+  /// [builder] draws the piece at a progress of 0 (not yet in) to 1.
+  const DuoUnfoldIn.custom({super.key, required this.builder, this.order = 0})
+    : rises = false,
+      child = null;
+
+  final Widget? child;
+  final Widget Function(BuildContext context, double progress)? builder;
   final bool rises;
   final double order;
 
@@ -289,13 +301,17 @@ class _DuoUnfoldInState extends State<DuoUnfoldIn>
     animation: _controller,
     child: widget.child,
     builder: (context, child) {
-      if (_controller.isCompleted) return child!;
+      final custom = widget.builder;
+      if (_controller.isCompleted) {
+        return custom == null ? child! : custom(context, 1);
+      }
       // Still for the first quarter; then each takes about half the
       // run, later ones in a row starting later.
       final begin = .25 + .3 * widget.order.clamp(0.0, 1.0);
       final t = Curves.easeOutCubic.transform(
         ((_controller.value - begin) / .45).clamp(0.0, 1.0),
       );
+      if (custom != null) return custom(context, t);
       return widget.rises
           ? Transform(
               alignment: Alignment.bottomCenter,

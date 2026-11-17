@@ -706,14 +706,18 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                     'calories ${(progress[1] * 100).round()}%, '
                                     'exercise ${(progress[2] * 100).round()}%',
                                 child: ExcludeSemantics(
-                                  child: CustomPaint(
-                                    painter: ActivityRingsPainter(
-                                      move: progress[0],
-                                      exercise: progress[1],
-                                      stand: progress[2],
-                                      moveColor: Colors.white,
-                                      trackColor: Colors.white.withValues(
-                                        alpha: .18,
+                                  // On unfold the rings sweep round to
+                                  // today's values.
+                                  child: DuoUnfoldIn.custom(
+                                    builder: (context, t) => CustomPaint(
+                                      painter: ActivityRingsPainter(
+                                        move: progress[0] * t,
+                                        exercise: progress[1] * t,
+                                        stand: progress[2] * t,
+                                        moveColor: Colors.white,
+                                        trackColor: Colors.white.withValues(
+                                          alpha: .18,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1131,8 +1135,9 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            for (final day in days)
+                            for (final (index, day) in days.indexed)
                               _WeekDayBar(
+                                order: .5 + .5 * index / days.length,
                                 letter: 'MTWTFSS'[day.date.weekday - 1],
                                 fraction: maxMinutes == 0
                                     ? 0
@@ -1357,12 +1362,15 @@ class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
 
 class _WeekDayBar extends StatelessWidget {
   const _WeekDayBar({
+    required this.order,
     required this.letter,
     required this.fraction,
     required this.isToday,
     required this.workout,
   });
 
+  /// Its turn when the bars rise on unfold: 0 first, 1 last.
+  final double order;
   final String letter;
   final double fraction;
   final bool isToday, workout;
@@ -1371,14 +1379,17 @@ class _WeekDayBar extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     mainAxisAlignment: MainAxisAlignment.end,
     children: [
-      Container(
-        width: 16,
-        height: math.max(4, fraction * 60),
-        decoration: BoxDecoration(
-          color: fraction == 0
-              ? context.vivordoColors.input
-              : _purple.withValues(alpha: isToday ? 1 : .55),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+      DuoUnfoldIn.rise(
+        order: order,
+        child: Container(
+          width: 16,
+          height: math.max(4, fraction * 60),
+          decoration: BoxDecoration(
+            color: fraction == 0
+                ? context.vivordoColors.input
+                : _purple.withValues(alpha: isToday ? 1 : .55),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+          ),
         ),
       ),
       const SizedBox(height: 6),
