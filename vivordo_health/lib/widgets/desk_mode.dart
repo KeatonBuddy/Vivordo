@@ -239,42 +239,111 @@ class _StressRing extends StatelessWidget {
   );
 }
 
-/// The rest of today as a strip: now on the left, midnight on the right,
-/// a capsule for each event still ahead.
+/// What is still ahead as a strip: a capsule for each event, named where
+/// it fits, with a gap between neighbours and the hours marked underneath.
 class _StripPainter extends CustomPainter {
   _StripPainter({required this.now, required this.events});
 
   final DateTime now;
   final List<DeskEvent> events;
 
+  static const _soft = Color(0xFFA9A4C8);
+
+  TextPainter _text(String text, TextStyle style, double maxWidth) =>
+      TextPainter(
+        text: TextSpan(text: text, style: style),
+        // Titles follow the app's language; times read left to right.
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: math.max(0, maxWidth));
+
   @override
   void paint(Canvas canvas, Size size) {
-    final end = DateTime(now.year, now.month, now.day + 1);
-    final span = math.max(1, end.difference(now).inMinutes);
+    final window = deskWindow(events, now);
+    final span = math.max(1, window.end.difference(window.start).inMinutes);
     double x(DateTime t) =>
-        (t.difference(now).inMinutes / span).clamp(0.0, 1.0) * size.width;
-    final mid = size.height / 2;
-    canvas.drawLine(
-      Offset(0, mid),
-      Offset(size.width, mid),
-      Paint()
-        ..color = Colors.white.withValues(alpha: .18)
-        ..strokeWidth = 2,
+        (t.difference(window.start).inMinutes / span).clamp(0.0, 1.0) *
+        size.width;
+
+    const labels = 18.0;
+    final lane = Rect.fromLTWH(0, 0, size.width, size.height - labels - 6);
+    final barHeight = math.min(lane.height, 54.0);
+    final top = lane.center.dy - barHeight / 2;
+
+    // Hours: a faint line through the lane and a label under it.
+    final tick = Paint()
+      ..color = Colors.white.withValues(alpha: .08)
+      ..strokeWidth = 1;
+    final every = span > 8 * 60 ? 2 : 1;
+    var hour = DateTime(
+      window.start.year,
+      window.start.month,
+      window.start.day,
+      window.start.hour + 1,
     );
-    final block = Paint()..color = VivordoTheme.brand;
-    final h = math.min(size.height, 34.0);
+    while (hour.isBefore(window.end)) {
+      if (hour.hour % every == 0) {
+        final hx = x(hour);
+        canvas.drawLine(Offset(hx, 0), Offset(hx, lane.bottom), tick);
+        final label = _text(
+          DateFormat('j').format(hour),
+          const TextStyle(color: _soft, fontSize: 11),
+          60,
+        );
+        final lx = (hx - label.width / 2).clamp(0.0, size.width - label.width);
+        label.paint(canvas, Offset(lx, size.height - labels));
+      }
+      hour = hour.add(const Duration(hours: 1));
+    }
+
     for (final e in events) {
-      final left = x(e.start), right = math.max(x(e.end), left + 8);
+      // A hair of space each side, so back-to-back events read as separate.
+      final left = x(e.start) + 2;
+      final right = math.max(x(e.end) - 2, left + 10);
+      final under = !e.start.isAfter(now);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-          Rect.fromLTRB(left, mid - h / 2, right, mid + h / 2),
-          const Radius.circular(8),
+          Rect.fromLTRB(left, top, right, top + barHeight),
+          const Radius.circular(12),
         ),
-        block,
+        Paint()..color = VivordoTheme.brand.withValues(alpha: under ? 1 : .78),
       );
+      final width = right - left - 16;
+      if (width < 34) continue;
+      final title = _text(
+        e.title,
+        const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+        width,
+      );
+      final time = _text(
+        DateFormat('h:mm').format(e.start),
+        TextStyle(color: Colors.white.withValues(alpha: .8), fontSize: 11),
+        width,
+      );
+      final stacked = barHeight >= 40;
+      final textTop =
+          top + (barHeight - title.height - (stacked ? time.height : 0)) / 2;
+      title.paint(canvas, Offset(left + 8, textTop));
+      if (stacked) time.paint(canvas, Offset(left + 8, textTop + title.height));
     }
-    // Now.
-    canvas.drawCircle(Offset(0, mid), 5, Paint()..color = Colors.white);
+
+    // Now, while it is on the strip.
+    if (!now.isBefore(window.start)) {
+      final nx = x(now);
+      canvas.drawLine(
+        Offset(nx, 0),
+        Offset(nx, lane.bottom),
+        Paint()
+          ..color = Colors.white
+          ..strokeWidth = 2,
+      );
+      canvas.drawCircle(Offset(nx, 0), 4, Paint()..color = Colors.white);
+    }
   }
 
   @override

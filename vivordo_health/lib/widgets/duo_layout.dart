@@ -131,18 +131,28 @@ class DuoUnfold {
   static DuoPose _last = DuoPose.none;
   static DateTime? _at;
 
+  /// Counts unfolds. Parts of a screen that were already there when the
+  /// phone opened (kept by a key as the layout changed) listen to this to
+  /// play their opening.
+  static final opened = ValueNotifier<int>(0);
+
   /// Call with the pose on every build of the app's root screen.
   static void track(DuoPose pose) {
     if (_last == DuoPose.closed && pose == DuoPose.openLandscape) {
       _at = DateTime.now();
+      // After this build, which is still laying the panes out.
+      WidgetsBinding.instance.addPostFrameCallback((_) => opened.value++);
     }
     _last = pose;
   }
 
+  /// When the phone last opened, to tell one unfold from the next.
+  static DateTime? get at => _at;
+
   /// True for a moment after the phone opens.
   static bool get justNow =>
       _at != null &&
-      DateTime.now().difference(_at!) < const Duration(milliseconds: 800);
+      DateTime.now().difference(_at!) < const Duration(milliseconds: 1500);
 }
 
 /// The new pane's opening: it is revealed leftward from the fold while
@@ -215,6 +225,100 @@ class _FromFold extends CustomClipper<Rect> {
 
   @override
   bool shouldReclip(_FromFold old) => old.shown != shown;
+}
+
+/// A piece of a screen that animates in when the phone has just been
+/// unfolded: a bar that fills from the left ([DuoUnfoldIn.wipe]) or rises
+/// from its base ([DuoUnfoldIn.rise]). It waits out iOS's fade first, as
+/// the panes do. At any other time, and with Reduce Motion, it is still.
+class DuoUnfoldIn extends StatefulWidget {
+  const DuoUnfoldIn.wipe({super.key, required this.child})
+    : rises = false,
+      order = 0;
+
+  /// [order] runs 0 to 1 across a row of these, so they rise in turn.
+  const DuoUnfoldIn.rise({super.key, required this.child, this.order = 0})
+    : rises = true;
+
+  final Widget child;
+  final bool rises;
+  final double order;
+
+  @override
+  State<DuoUnfoldIn> createState() => _DuoUnfoldInState();
+}
+
+class _DuoUnfoldInState extends State<DuoUnfoldIn>
+    with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+    value: 1,
+  );
+  bool _checked = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_checked) return;
+    _checked = true;
+    if (DuoUnfold.justNow) _play();
+  }
+
+  void _play() {
+    if (mounted && !MediaQuery.disableAnimationsOf(context)) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    DuoUnfold.opened.addListener(_play);
+  }
+
+  @override
+  void dispose() {
+    DuoUnfold.opened.removeListener(_play);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    child: widget.child,
+    builder: (context, child) {
+      if (_controller.isCompleted) return child!;
+      // Still for the first quarter; then each takes about half the
+      // run, later ones in a row starting later.
+      final begin = .25 + .3 * widget.order.clamp(0.0, 1.0);
+      final t = Curves.easeOutCubic.transform(
+        ((_controller.value - begin) / .45).clamp(0.0, 1.0),
+      );
+      return widget.rises
+          ? Transform(
+              alignment: Alignment.bottomCenter,
+              transform: Matrix4.diagonal3Values(1, t, 1),
+              child: child,
+            )
+          : ClipRect(clipper: _FromLeft(t), child: child);
+    },
+  );
+}
+
+/// Shows the left-hand [shown] share of its child.
+class _FromLeft extends CustomClipper<Rect> {
+  const _FromLeft(this.shown);
+
+  final double shown;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(0, 0, size.width * shown, size.height);
+
+  @override
+  bool shouldReclip(_FromLeft old) => old.shown != shown;
 }
 
 /// The pane across the hinge as a place to open screens: a list keeps the

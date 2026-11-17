@@ -2558,9 +2558,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         for (var i = 0; i < effort.hours.length; i++) ...[
                           if (i > 0) const SizedBox(width: 5),
                           Expanded(
-                            child: _effortBar(
-                              hour: effort.hours[i],
-                              scored: scored,
+                            // On unfold the hours rise in turn.
+                            child: DuoUnfoldIn.rise(
+                              order: i / effort.hours.length,
+                              child: _effortBar(
+                                hour: effort.hours[i],
+                                scored: scored,
+                              ),
                             ),
                           ),
                         ],
@@ -2802,19 +2806,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       borderRadius: BorderRadius.circular(5),
                     ),
                   ),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: width * mental / scale,
-                          color: accentPurple,
-                        ),
-                        Container(
-                          width: width * physical / scale,
-                          color: _exerciseGreen,
-                        ),
-                      ],
+                  // On unfold the bar fills from the left.
+                  DuoUnfoldIn.wipe(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: width * mental / scale,
+                            color: accentPurple,
+                          ),
+                          Container(
+                            width: width * physical / scale,
+                            color: _exerciseGreen,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   if (usual != null)
