@@ -3484,27 +3484,43 @@ class _WorkoutExercise {
   /// A new set row, with a superset row under it when there is a superset.
   _WorkoutSet newSet() {
     final index = sets.length;
+    final partners = sets.where((set) => set.partner != null).length;
     return _WorkoutSet(previous: previousSets.elementAtOrNull(index))
       ..partner = superset == null
           ? null
-          : _WorkoutSet(previous: supersetPrevious.elementAtOrNull(index));
+          : _WorkoutSet(previous: supersetPrevious.elementAtOrNull(partners));
   }
 
-  /// Sets or clears the superset, with fresh rows for it under every set.
-  void setSuperset(_ExerciseDefinition? partner) {
+  /// Sets or clears the superset, with fresh rows for it under set [from]
+  /// and every set after it.
+  void setSuperset(_ExerciseDefinition? partner, {int from = 0}) {
     superset = partner;
     supersetPrevious.clear();
-    for (final set in sets) {
-      set.partner = partner == null ? null : _WorkoutSet();
+    for (final (index, set) in sets.indexed) {
+      set.partner = partner == null || index < from ? null : _WorkoutSet();
     }
+  }
+
+  /// Superset rows for set [from] onwards, where they're missing.
+  void addSupersetRows(int from) {
+    for (final set in sets.skip(from)) {
+      set.partner ??= _WorkoutSet();
+    }
+    _previousForPartners();
   }
 
   void applySupersetHistory(List<WorkoutSetRecord> history) {
     supersetPrevious
       ..clear()
       ..addAll(history);
-    for (var i = 0; i < sets.length; i++) {
-      sets[i].partner?.previous ??= history.elementAtOrNull(i);
+    _previousForPartners();
+  }
+
+  /// The superset's last sets, in order, on its rows.
+  void _previousForPartners() {
+    final partners = sets.map((set) => set.partner).nonNulls;
+    for (final (index, partner) in partners.indexed) {
+      partner.previous ??= supersetPrevious.elementAtOrNull(index);
     }
   }
 
@@ -3632,13 +3648,13 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   );
 
-  /// A drop under the last set with anything in it (or the last set),
-  /// about 25% lighter than the row above it.
-  void _addDrop() {
-    final set = exercise.sets.lastWhere(
-      (set) => !set.isEmpty,
-      orElse: () => exercise.sets.last,
-    );
+  /// The + after set [index]: a drop set there, or a superset from there.
+  void _addAfter(int index, String choice) => choice == 'drop'
+      ? _addDrop(exercise.sets[index])
+      : _pickSuperset(from: index);
+
+  /// A drop under [set], about 25% lighter than the row above it.
+  void _addDrop(_WorkoutSet set) {
     final above = double.tryParse(
       (set.drops.isEmpty ? set : set.drops.last).lbs,
     );
@@ -3659,8 +3675,9 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
     onChanged();
   }
 
-  /// The superset exercise, picked on the Add Exercise screen.
-  Future<void> _pickSuperset() async {
+  /// The superset exercise, picked on the Add Exercise screen, for set
+  /// [from] and every set after it.
+  Future<void> _pickSuperset({required int from}) async {
     final picked = await Navigator.of(context).push<List<_ExerciseDefinition>>(
       MaterialPageRoute(
         builder: (_) => _AddExerciseScreen(
@@ -3671,8 +3688,12 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
     );
     final partner = picked?.firstOrNull;
     if (partner == null || !mounted) return;
-    if (partner.name == exercise.superset?.name) return;
-    if (!await _changeSuperset(partner)) return;
+    if (partner.name == exercise.superset?.name) {
+      exercise.addSupersetRows(from);
+      onChanged();
+      return;
+    }
+    if (!await _changeSuperset(partner, from: from)) return;
     try {
       final history = await WorkoutService.loadLatestExerciseSets([
         partner.name,
@@ -3689,7 +3710,10 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
 
   /// Swaps or removes the superset, checking first when its rows have
   /// anything in them. False when the user keeps them.
-  Future<bool> _changeSuperset(_ExerciseDefinition? partner) async {
+  Future<bool> _changeSuperset(
+    _ExerciseDefinition? partner, {
+    int from = 0,
+  }) async {
     final current = exercise.superset;
     final filled = exercise.sets.any((set) => set.partner?.isEmpty == false);
     if (current != null &&
@@ -3708,7 +3732,7 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
       return false;
     }
     if (!mounted) return false;
-    exercise.setSuperset(partner);
+    exercise.setSuperset(partner, from: from);
     onChanged();
     return true;
   }
@@ -3753,6 +3777,20 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                           color: _purple,
                         ),
                       ),
+                    ),
+                  ],
+                  if (exercise.superset case final partner?) ...[
+                    const SizedBox(height: 4),
+                    _SupersetTag(
+                      name: partner.name,
+                      // A swap keeps the rows where they start.
+                      onChange: () => _pickSuperset(
+                        from: math.max(
+                          0,
+                          exercise.sets.indexWhere((s) => s.partner != null),
+                        ),
+                      ),
+                      onRemove: () => _changeSuperset(null),
                     ),
                   ],
                 ],
@@ -3936,9 +3974,12 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
                   onChanged();
                 },
               ),
-            if (index < exercise.sets.length - 1) const Divider(height: 14),
+            _AddAfterSet(
+              setNumber: index + 1,
+              onSelected: (choice) => _addAfter(index, choice),
+            ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           OutlinedButton.icon(
             onPressed: () {
               exercise.sets.add(exercise.newSet());
@@ -3947,32 +3988,6 @@ class _WorkoutExerciseCardState extends State<_WorkoutExerciseCard> {
             icon: const Icon(CupertinoIcons.add),
             label: const Text('Add Set'),
             style: _outlined,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: exercise.sets.isEmpty ? null : _addDrop,
-                  style: _outlined,
-                  child: const Text('Drop set'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: exercise.superset == null
-                    ? OutlinedButton(
-                        onPressed: _pickSuperset,
-                        style: _outlined,
-                        child: const Text('Superset'),
-                      )
-                    : _SupersetButton(
-                        name: exercise.superset!.name,
-                        onChange: _pickSuperset,
-                        onRemove: () => _changeSuperset(null),
-                      ),
-              ),
-            ],
           ),
         ],
       ],
@@ -4116,10 +4131,10 @@ class _WorkoutSetRow extends StatelessWidget {
   );
 }
 
-/// The superset exercise under Add Set: tap the name to change it, ✕ to
-/// remove it.
-class _SupersetButton extends StatelessWidget {
-  const _SupersetButton({
+/// The superset exercise, under the exercise's name: tap to change it, ✕
+/// to remove it.
+class _SupersetTag extends StatelessWidget {
+  const _SupersetTag({
     required this.name,
     required this.onChange,
     required this.onRemove,
@@ -4130,53 +4145,106 @@ class _SupersetButton extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: _purple.withValues(alpha: .12),
-    shape: RoundedRectangleBorder(
-      side: const BorderSide(color: _purple),
-      borderRadius: BorderRadius.circular(12),
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: _purple.withValues(alpha: .14),
+      borderRadius: BorderRadius.circular(99),
     ),
-    clipBehavior: Clip.antiAlias,
-    child: SizedBox(
-      height: 46,
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              onTap: onChange,
-              child: Semantics(
-                button: true,
-                label: 'Superset with $name. Change',
-                excludeSemantics: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _purple,
-                        fontSize: 13,
-                        height: 1.15,
-                        fontWeight: FontWeight.w600,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: InkWell(
+            onTap: onChange,
+            borderRadius: BorderRadius.circular(99),
+            child: Semantics(
+              button: true,
+              label: 'Superset with $name. Change',
+              excludeSemantics: true,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(9, 3, 2, 3),
+                child: Text(
+                  'Superset · $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _purple,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Remove superset',
+          onPressed: onRemove,
+          constraints: const BoxConstraints.tightFor(width: 28, height: 24),
+          padding: EdgeInsets.zero,
+          icon: const Icon(CupertinoIcons.xmark, size: 12, color: _purple),
+        ),
+      ],
+    ),
+  );
+}
+
+/// The line after a set, with a small + between its weight and reps for a
+/// drop set or a superset from that set.
+class _AddAfterSet extends StatelessWidget {
+  const _AddAfterSet({required this.setNumber, required this.onSelected});
+
+  final int setNumber;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 30,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        const Divider(height: 1),
+        // The set row's Previous and Set columns, then the gap between its
+        // two fields, then its ✕.
+        Row(
+          children: [
+            const SizedBox(width: 108),
+            Expanded(
+              child: Center(
+                child: IosPullDownMenu<String>(
+                  tooltip: 'Add to set $setNumber',
+                  onSelected: onSelected,
+                  actions: const [
+                    IosMenuAction(value: 'drop', label: 'Drop set'),
+                    IosMenuAction(value: 'superset', label: 'Superset…'),
+                  ],
+                  child: SizedBox(
+                    width: 44,
+                    height: 30,
+                    child: Center(
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: context.vivordoColors.card,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: _purple, width: 1.3),
+                        ),
+                        child: const Icon(
+                          CupertinoIcons.add,
+                          size: 12,
+                          color: _purple,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Remove superset',
-            onPressed: onRemove,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 46),
-            padding: EdgeInsets.zero,
-            icon: const Icon(CupertinoIcons.xmark, size: 15, color: _purple),
-          ),
-        ],
-      ),
+            const SizedBox(width: 44),
+          ],
+        ),
+      ],
     ),
   );
 }

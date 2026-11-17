@@ -34,7 +34,7 @@ void main() {
     return () => saved;
   }
 
-  testWidgets('Drop set adds a lighter row under the last set done', (
+  testWidgets('the + after a set adds a lighter drop under that set', (
     tester,
   ) async {
     final saved = await pumpCard(tester, {
@@ -45,15 +45,22 @@ void main() {
         {'lbs': '', 'reps': ''},
       ],
     });
-    await tester.tap(find.text('Drop set'));
-    await tester.pump();
-    // About 25% lighter, to the nearest 5 lb, under set 1 (set 2 is empty).
+    Future<void> dropAfter(int set) async {
+      await tester.tap(find.byTooltip('Add to set $set'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Drop set'));
+      await tester.pumpAndSettle();
+    }
+
+    // About 25% lighter, to the nearest 5 lb, then lighter again.
+    await dropAfter(1);
     expect(saved()['sets'][0]['drops'][0]['lbs'], '100');
-    await tester.tap(find.text('Drop set'));
-    await tester.pump();
+    await dropAfter(1);
     expect(saved()['sets'][0]['drops'][1]['lbs'], '75');
-    expect(saved()['sets'][1]['drops'], isNull);
-    expect(find.text('D'), findsNWidgets(2));
+    // Set 2 has no weight yet, so its drop starts empty.
+    await dropAfter(2);
+    expect(saved()['sets'][1]['drops'][0]['lbs'], '');
+    expect(find.text('D'), findsNWidgets(3));
   });
 
   testWidgets('a superset row under every set, removed with its button', (
@@ -71,7 +78,7 @@ void main() {
         },
       ],
     });
-    expect(find.text('Bent-Over Row'), findsOneWidget);
+    expect(find.text('Superset · Bent-Over Row'), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
     await tester.tap(find.text('Add Set'));
     await tester.pump();
@@ -83,7 +90,7 @@ void main() {
     await tester.pump();
     expect(saved()['superset'], isNull);
     expect(saved()['sets'][0]['partner'], isNull);
-    expect(find.text('Superset'), findsOneWidget);
+    expect(find.textContaining('Superset ·'), findsNothing);
     expect(find.text('B'), findsNothing);
   });
 
