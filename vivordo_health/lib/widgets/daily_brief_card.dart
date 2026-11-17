@@ -578,7 +578,7 @@ class _CapacityLeftRow extends StatelessWidget {
     final rows = <(Color?, String)>[
       if (short) ...[
         (_over, '$booked booked'),
-        (null, 'Short by ${-tonight}'),
+        (null, "${-tonight} over what's left"),
       ] else ...[
         (_free, '$tonight free by tonight'),
         (_booked, '$booked booked'),
@@ -588,7 +588,7 @@ class _CapacityLeftRow extends StatelessWidget {
     return Semantics(
       label:
           'Capacity: $left left, started today at ${live.morning}. '
-          '${short ? '$booked booked, short by ${-tonight}' : '$booked booked, $tonight free by tonight'}. '
+          '${short ? '$booked booked, ${-tonight} over what\'s left' : '$booked booked, $tonight free by tonight'}. '
           '$spent spent.',
       child: ExcludeSemantics(
         child: Row(
