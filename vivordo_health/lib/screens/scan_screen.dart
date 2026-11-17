@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -123,7 +124,19 @@ class _ScanScreenState extends State<ScanScreen>
     );
 
     _checkFirstScanStatus();
+
+    // A simulator has no camera, so a result can never be reached there. A
+    // debug build made with --dart-define=SCAN_PREVIEW_BPM=76 opens on that
+    // result instead, to check its layout. Nothing is scanned or saved.
+    // Without the define, and in every release build, this does nothing.
+    if (kDebugMode && _previewBpm > 0) {
+      _finalBpm = _previewBpm.toDouble();
+      _finalQuality = .8;
+      _scanState = ScanState.success;
+    }
   }
+
+  static const _previewBpm = int.fromEnvironment('SCAN_PREVIEW_BPM');
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
