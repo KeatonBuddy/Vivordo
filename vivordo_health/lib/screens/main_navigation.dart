@@ -724,6 +724,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           );
           delay += _preloadGap;
         }
+        // On an iPhone Duo the chat is mounted ahead of its first open as
+        // well, once the tabs are: mounted during the morph out of the
+        // robot, it made that first open jump straight to the window. It
+        // sits shut and unseen, exactly as it does after being closed.
+        _tabPreloadTimers.add(
+          Timer(delay, () {
+            if (!mounted ||
+                _pandaHasBeenOpened ||
+                DuoPose.of(context) == DuoPose.none) {
+              return;
+            }
+            setState(() => _pandaHasBeenOpened = true);
+          }),
+        );
       }),
     );
   }

@@ -610,7 +610,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// The tiles alone on a phone; on an unfolded Duo they keep the right
   /// pane, where the closed phone had them, beside the metric they open.
+  /// Keeps the tiles' state when the phone is folded or unfolded and they
+  /// move between the single column and the right pane. Without it they
+  /// were rebuilt from scratch and listened again to a data stream that had
+  /// already ended, so Metrics sat on its spinner until the tab was left
+  /// and reopened.
+  final _tilesKey = GlobalKey();
+
   Widget _buildPanes(Widget metrics) {
+    metrics = KeyedSubtree(key: _tilesKey, child: metrics);
     if (!DuoPose.of(context).twoPane) return metrics;
     return DuoPanes(
       cover: metrics,
