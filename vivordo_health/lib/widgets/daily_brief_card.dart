@@ -36,7 +36,15 @@ class DailyBriefCard extends StatelessWidget {
     this.onScheduleTap,
     this.capacityLeft,
     this.evening,
+    this.compact = false,
+    this.onOpen,
   });
+
+  /// A one-line strip: the headline and what's left. On an unfolded iPhone
+  /// Duo the timeline has the pane, and a tap ([onOpen]) shows the brief
+  /// in full.
+  final bool compact;
+  final VoidCallback? onOpen;
 
   /// Today's Capacity as it stands, during the day: one ring split into
   /// what's free, booked and spent, in place of the Capacity and Demand
@@ -80,172 +88,243 @@ class DailyBriefCard extends StatelessWidget {
   /// minute, so the sun moves through the day.
   final DateTime? now;
 
-  @override
-  Widget build(BuildContext context) => Container(
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: const Color(0xFFAA91FF).withValues(alpha: .6)),
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
-      ),
+  static final _decoration = BoxDecoration(
+    borderRadius: BorderRadius.circular(20),
+    border: Border.all(color: const Color(0xFFAA91FF).withValues(alpha: .6)),
+    gradient: const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFF5844ED), Color(0xFF3529AD)],
     ),
-    child: Stack(
-      children: [
-        Positioned(
-          right: 0,
-          top: 0,
-          width: 210,
-          height: 180,
-          child: IgnorePointer(
-            child: ExcludeSemantics(
-              child: CustomPaint(
-                painter: _BriefLandscape(
-                  briefSunPosition(now ?? DateTime.now()),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  );
+
+  Widget _buildCompact() {
+    final left = capacityLeft?.left.round() ?? capacityScore;
+    return Semantics(
+      button: true,
+      label: 'Your daily brief. $headline. Show in full',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onOpen,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+          decoration: _decoration,
+          child: Row(
             children: [
-              const Text(
-                'Your daily brief',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                headline,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  height: 1.15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                summary,
-                style: const TextStyle(
-                  color: Color(0xFFF1ECFF),
-                  fontSize: 15,
-                  height: 1.45,
-                ),
-              ),
-              if (action case final action?) ...[
-                const SizedBox(height: 12),
-                action,
-              ],
-              const SizedBox(height: 16),
-              const Divider(color: Colors.white24, height: 1),
-              const SizedBox(height: 16),
-              if (words case final words?)
-                Column(
-                  children: [
-                    _tappable(
-                      _BriefStateRow('Energy', words.energy),
-                      onCapacityTap,
+              if (left != null) ...[
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                  ),
+                  child: Text(
+                    '$left',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(height: 8),
-                    _tappable(
-                      _BriefStateRow(words.loadTitle, words.load),
-                      onScheduleTap,
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your daily brief',
+                      style: TextStyle(
+                        color: Color(0xFFE8E0FF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
-                )
-              else if (capacityLeft case final live?)
-                _tappable(_CapacityLeftRow(live), onCapacityTap)
-              else if (evening case final evening?)
-                _EveningRow(
-                  evening,
-                  onTodayTap: onCapacityTap,
-                  onTomorrowTap: onScheduleTap,
-                )
-              else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final capacity = _tappable(
-                      _BriefScore(
-                        title: 'Capacity',
-                        semanticTitle: 'Daily capacity',
-                        score: capacityScore,
-                        label: capacityLabel,
-                        emptyIcon: capacityEmptyIcon,
-                      ),
-                      onCapacityTap,
-                    );
-                    final schedule = _tappable(
-                      _BriefScore(
-                        title: 'Demand',
-                        semanticTitle: 'Schedule demand',
-                        score: scheduleScore,
-                        label: scheduleLabel,
-                        emptyIcon: scheduleEmptyIcon,
-                      ),
-                      onScheduleTap,
-                    );
-                    if (constraints.maxWidth < 280 ||
-                        MediaQuery.textScalerOf(context).scale(12) > 19) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          capacity,
-                          const SizedBox(height: 12),
-                          schedule,
-                        ],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Expanded(child: capacity),
-                        const SizedBox(width: 10),
-                        Expanded(child: schedule),
-                      ],
-                    );
-                  },
                 ),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: onDetails,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        CupertinoIcons.info,
-                        color: Color(0xFFE8E0FF),
-                        size: 15,
+              ),
+              const Icon(Icons.expand_more_rounded, color: Colors.white70),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => compact
+      ? _buildCompact()
+      : Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: _decoration,
+          child: Stack(
+            children: [
+              Positioned(
+                right: 0,
+                top: 0,
+                width: 210,
+                height: 180,
+                child: IgnorePointer(
+                  child: ExcludeSemantics(
+                    child: CustomPaint(
+                      painter: _BriefLandscape(
+                        briefSunPosition(now ?? DateTime.now()),
                       ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          footer,
-                          style: const TextStyle(
-                            color: Color(0xFFE8E0FF),
-                            fontSize: 12,
-                            height: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your daily brief',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      headline,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        height: 1.15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      summary,
+                      style: const TextStyle(
+                        color: Color(0xFFF1ECFF),
+                        fontSize: 15,
+                        height: 1.45,
+                      ),
+                    ),
+                    if (action case final action?) ...[
+                      const SizedBox(height: 12),
+                      action,
+                    ],
+                    const SizedBox(height: 16),
+                    const Divider(color: Colors.white24, height: 1),
+                    const SizedBox(height: 16),
+                    if (words case final words?)
+                      Column(
+                        children: [
+                          _tappable(
+                            _BriefStateRow('Energy', words.energy),
+                            onCapacityTap,
                           ),
+                          const SizedBox(height: 8),
+                          _tappable(
+                            _BriefStateRow(words.loadTitle, words.load),
+                            onScheduleTap,
+                          ),
+                        ],
+                      )
+                    else if (capacityLeft case final live?)
+                      _tappable(_CapacityLeftRow(live), onCapacityTap)
+                    else if (evening case final evening?)
+                      _EveningRow(
+                        evening,
+                        onTodayTap: onCapacityTap,
+                        onTomorrowTap: onScheduleTap,
+                      )
+                    else
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final capacity = _tappable(
+                            _BriefScore(
+                              title: 'Capacity',
+                              semanticTitle: 'Daily capacity',
+                              score: capacityScore,
+                              label: capacityLabel,
+                              emptyIcon: capacityEmptyIcon,
+                            ),
+                            onCapacityTap,
+                          );
+                          final schedule = _tappable(
+                            _BriefScore(
+                              title: 'Demand',
+                              semanticTitle: 'Schedule demand',
+                              score: scheduleScore,
+                              label: scheduleLabel,
+                              emptyIcon: scheduleEmptyIcon,
+                            ),
+                            onScheduleTap,
+                          );
+                          if (constraints.maxWidth < 280 ||
+                              MediaQuery.textScalerOf(context).scale(12) > 19) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                capacity,
+                                const SizedBox(height: 12),
+                                schedule,
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              Expanded(child: capacity),
+                              const SizedBox(width: 10),
+                              Expanded(child: schedule),
+                            ],
+                          );
+                        },
+                      ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: onDetails,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              CupertinoIcons.info,
+                              color: Color(0xFFE8E0FF),
+                              size: 15,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                footer,
+                                style: const TextStyle(
+                                  color: Color(0xFFE8E0FF),
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ),
-      ],
-    ),
-  );
+        );
 }
 
 enum BriefTone { good, usual, low }

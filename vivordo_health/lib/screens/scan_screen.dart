@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/duo_layout.dart';
+import 'heart_rate_detail_screen.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -728,10 +729,26 @@ class _ScanScreenState extends State<ScanScreen>
                   Expanded(child: _buildFlatHalf()),
                 ],
               )
+            : _twoPane
+            ? DuoPanes(opens: false, cover: page!, extra: _buildLeftPane())
             : page!,
       ),
     );
   }
+
+  bool get _twoPane => DuoPose.of(context).twoPane;
+
+  /// Opened flat, the pane beside the scan: how it works before and during
+  /// a scan, then the Heart Rate screen, where the new reading lands.
+  Widget _buildLeftPane() => _scanState == ScanState.success
+      ? const HeartRateDetailScreen()
+      : SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(24, 48, 0, 120),
+            child: Column(children: _buildHowItWorks()),
+          ),
+        );
 
   /// The flat half in the tabletop pose: where the finger goes, and the way
   /// out. The reading itself is on the standing half above the hinge.
@@ -1234,112 +1251,117 @@ class _ScanScreenState extends State<ScanScreen>
             ],
           ),
         ),
-        const SizedBox(height: 28),
-
-        // ── How it works card ─────────────────────────────────────────
-        Container(
-          key: widget.howItWorksKey,
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: context.vivordoColors.card,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: context.vivordoColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(CupertinoIcons.info, size: 15, color: accentPurple),
-                  SizedBox(width: 6),
-                  Text(
-                    'How it works',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: accentPurple,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildStep(
-                '1',
-                CupertinoIcons.sun_max,
-                _hasTorch ? 'Enable torch' : 'Find bright light',
-                _hasTorch
-                    ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
-                    : 'Find a bright light source and press your fingertip firmly over the lens.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '2',
-                CupertinoIcons.hand_point_right,
-                'Cover the camera and flash',
-                'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '3',
-                CupertinoIcons.heart,
-                'Hold still',
-                'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '4',
-                CupertinoIcons.chart_bar_fill,
-                'Get your results',
-                'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // ── Quick tips ────────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: accentPurple.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
-          ),
-          child: Column(
-            children: [
-              _buildTipRow(
-                CupertinoIcons.hand_raised_slash,
-                'Avoid pressing too hard — light contact works best',
-              ),
-              const SizedBox(height: 10),
-              _buildTipRow(
-                Icons.straighten_outlined,
-                'Keep your hand and phone level',
-              ),
-              const SizedBox(height: 10),
-              _buildTipRow(
-                CupertinoIcons.timer,
-                'After Start Scan, scanning begins when your finger is detected',
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildDisclaimer(),
+        // On an unfolded iPhone Duo these sit in the pane across the hinge.
+        if (!_twoPane) ...[const SizedBox(height: 28), ..._buildHowItWorks()],
       ],
     );
   }
+
+  /// How a scan works, the tips and the disclaimer: under Start Scan on a
+  /// phone, in the left pane on an unfolded iPhone Duo.
+  List<Widget> _buildHowItWorks() => [
+    // ── How it works card ─────────────────────────────────────────
+    Container(
+      key: widget.howItWorksKey,
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.vivordoColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(CupertinoIcons.info, size: 15, color: accentPurple),
+              SizedBox(width: 6),
+              Text(
+                'How it works',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: accentPurple,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildStep(
+            '1',
+            CupertinoIcons.sun_max,
+            _hasTorch ? 'Enable torch' : 'Find bright light',
+            _hasTorch
+                ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
+                : 'Find a bright light source and press your fingertip firmly over the lens.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '2',
+            CupertinoIcons.hand_point_right,
+            'Cover the camera and flash',
+            'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '3',
+            CupertinoIcons.heart,
+            'Hold still',
+            'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '4',
+            CupertinoIcons.chart_bar_fill,
+            'Get your results',
+            'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
+          ),
+        ],
+      ),
+    ),
+
+    const SizedBox(height: 20),
+
+    // ── Quick tips ────────────────────────────────────────────────
+    Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: accentPurple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        children: [
+          _buildTipRow(
+            CupertinoIcons.hand_raised_slash,
+            'Avoid pressing too hard — light contact works best',
+          ),
+          const SizedBox(height: 10),
+          _buildTipRow(
+            Icons.straighten_outlined,
+            'Keep your hand and phone level',
+          ),
+          const SizedBox(height: 10),
+          _buildTipRow(
+            CupertinoIcons.timer,
+            'After Start Scan, scanning begins when your finger is detected',
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 16),
+    _buildDisclaimer(),
+  ];
 
   /// Method and accuracy disclosure App Review expects (guideline 1.4.1).
   Widget _buildDisclaimer() {

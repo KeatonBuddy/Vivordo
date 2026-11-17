@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:foldable/foldable.dart';
 
 export 'package:foldable/foldable.dart' show HingeStatus;
@@ -64,25 +64,42 @@ enum DuoPose {
   /// display and on the inner one in landscape; upright it is a bottom bar.
   bool get trailingTabBar => this == closed || this == openLandscape;
 
+  /// Propped like a tent: the outer display on its side.
+  // ponytail: read from the window alone, so a closed Duo turned sideways
+  // in the hand counts too; add the hinge angle if that needs telling apart.
+  static bool tentOf(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return fromSize(size) == closed && size.width > size.height;
+  }
+
   /// Room for two panes, one each side of the hinge.
   bool get twoPane => this == openLandscape;
 }
 
 /// Two columns with the gutter on the hinge, so nothing sits on the crease.
 ///
+/// Unfolding carries the outer display's screen to the right half, so
+/// [cover] (what the closed phone was showing) takes the right pane and
+/// [extra] (what the open phone adds) takes the left.
+///
 /// [leftInset] is how far this widget's left edge is from the window's
 /// left edge (the page padding), which places the hinge at the window centre.
 class DuoPanes extends StatelessWidget {
   const DuoPanes({
     super.key,
-    required this.left,
-    required this.right,
+    required this.cover,
+    required this.extra,
     this.leftInset = 0,
     this.gutter = 32,
+    this.opens = true,
   });
 
-  final Widget left;
-  final Widget right;
+  final Widget cover;
+  final Widget extra;
+
+  /// Plays the opening when the phone has just been unfolded. Off for
+  /// screens that should hold still: a scan, a workout in progress.
+  final bool opens;
   final double leftInset;
   final double gutter;
 
@@ -95,12 +112,151 @@ class DuoPanes extends StatelessWidget {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: leftWidth, child: left),
+            SizedBox(
+              width: leftWidth,
+              child: opens ? _DuoOpening(child: extra) : extra,
+            ),
             SizedBox(width: gutter),
-            Expanded(child: right),
+            Expanded(child: cover),
           ],
         );
       },
     );
   }
+}
+
+/// When the phone was last unfolded, so the panes that appear with it can
+/// open from the fold instead of popping in.
+class DuoUnfold {
+  static DuoPose _last = DuoPose.none;
+  static DateTime? _at;
+
+  /// Call with the pose on every build of the app's root screen.
+  static void track(DuoPose pose) {
+    if (_last == DuoPose.closed && pose == DuoPose.openLandscape) {
+      _at = DateTime.now();
+    }
+    _last = pose;
+  }
+
+  /// True for a moment after the phone opens.
+  static bool get justNow =>
+      _at != null &&
+      DateTime.now().difference(_at!) < const Duration(milliseconds: 800);
+}
+
+/// The new pane's opening: it is revealed leftward from the fold while
+/// what the closed phone showed stays put on the right. Plays once, when
+/// the panes appear just after an unfold, and not with Reduce Motion.
+class _DuoOpening extends StatefulWidget {
+  const _DuoOpening({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_DuoOpening> createState() => _DuoOpeningState();
+}
+
+class _DuoOpeningState extends State<_DuoOpening>
+    with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+    value: 1,
+  );
+  // Waits while iOS fades the display in, or the reveal plays unseen.
+  late final _reveal = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(.35, 1, curve: Curves.easeOutCubic),
+  );
+  bool _checked = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_checked) return;
+    _checked = true;
+    if (DuoUnfold.justNow && !MediaQuery.disableAnimationsOf(context)) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _reveal.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    child: widget.child,
+    builder: (context, child) {
+      if (_controller.isCompleted) return child!;
+      final t = _reveal.value;
+      return ClipRect(
+        clipper: _FromFold(t),
+        child: Opacity(opacity: t, child: child),
+      );
+    },
+  );
+}
+
+/// Shows the right-hand [shown] share of the pane, growing from the fold.
+class _FromFold extends CustomClipper<Rect> {
+  const _FromFold(this.shown);
+
+  final double shown;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(size.width * (1 - shown), 0, size.width, size.height);
+
+  @override
+  bool shouldReclip(_FromFold old) => old.shown != shown;
+}
+
+/// The pane across the hinge as a place to open screens: a list keeps the
+/// right pane and what it opens takes the left, replacing what was there.
+/// Off a Duo there is no [DuoDetail] above and screens are pushed as usual.
+class DuoDetail extends InheritedWidget {
+  const DuoDetail({super.key, required this.detail, required super.child});
+
+  /// The screen open in the left pane, or null for its home.
+  final ValueNotifier<Widget?> detail;
+
+  static void open(BuildContext context, Widget screen) {
+    final detail = context.getInheritedWidgetOfExactType<DuoDetail>()?.detail;
+    if (detail == null) {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => screen));
+    } else {
+      detail.value = screen;
+    }
+  }
+
+  /// The left pane itself: [home] until something is opened over it. A
+  /// navigator of its own, so the opened screen's back button returns here.
+  static Widget pane(ValueNotifier<Widget?> detail, Widget home) =>
+      ValueListenableBuilder<Widget?>(
+        valueListenable: detail,
+        builder: (context, screen, _) => Navigator(
+          pages: [
+            MaterialPage<void>(key: const ValueKey('home'), child: home),
+            if (screen != null)
+              MaterialPage<void>(key: ObjectKey(screen), child: screen),
+          ],
+          onDidRemovePage: (page) {
+            // Replacing one screen with another also removes a page.
+            if (page is MaterialPage && identical(page.child, detail.value)) {
+              detail.value = null;
+            }
+          },
+        ),
+      );
+
+  @override
+  bool updateShouldNotify(DuoDetail oldWidget) => false;
 }

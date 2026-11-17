@@ -24,8 +24,8 @@ void main() {
           padding: EdgeInsets.only(left: 20, right: 111),
           child: DuoPanes(
             leftInset: 20,
-            left: SizedBox(key: Key('left'), height: 10),
-            right: SizedBox(key: Key('right'), height: 10),
+            extra: SizedBox(key: Key('left'), height: 10),
+            cover: SizedBox(key: Key('right'), height: 10),
           ),
         ),
       ),

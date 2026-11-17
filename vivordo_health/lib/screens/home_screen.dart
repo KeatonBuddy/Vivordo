@@ -1216,77 +1216,64 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: 'Home',
         threshold: 60,
         child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: () async {
-              _refreshHomeCalendarCards();
-              await _hourlyHeartKey.currentState?.refresh(force: true);
-            },
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 160),
-              child: _buildSections(
-                sleepNights: sleepNights,
-                healthExerciseMinutes: healthExerciseMinutes,
-                activeCalories: activeCalories,
-                sleepHours: sleepHours,
-                latestHeartRate: latestHeartRate,
-                top: [
-                  _buildHeader(),
-                  const SizedBox(height: 20),
-                  const FinishSetupCard(),
-                  GestureDetector(
-                    key: widget.rightNowKey,
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _push(const StressDetailScreen()),
-                    child: Selector<ThemeController, bool>(
-                      selector: (_, c) => c.showScoreNumbers,
-                      builder: (context, showNumbers, _) => HomeStressCard(
-                        score: stressScore,
-                        updatedAt: stressUpdatedAt,
-                        usual: stressUsual,
-                        drivers: stressDrivers,
+          child: _buildPage(
+            _buildSections(
+              sleepNights: sleepNights,
+              healthExerciseMinutes: healthExerciseMinutes,
+              activeCalories: activeCalories,
+              sleepHours: sleepHours,
+              latestHeartRate: latestHeartRate,
+              top: [
+                _buildHeader(),
+                const SizedBox(height: 20),
+                const FinishSetupCard(),
+                GestureDetector(
+                  key: widget.rightNowKey,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _push(const StressDetailScreen()),
+                  child: Selector<ThemeController, bool>(
+                    selector: (_, c) => c.showScoreNumbers,
+                    builder: (context, showNumbers, _) => HomeStressCard(
+                      score: stressScore,
+                      updatedAt: stressUpdatedAt,
+                      usual: stressUsual,
+                      drivers: stressDrivers,
+                      steps: steps,
+                      loading: stressLoading,
+                      updating: stressUpdating,
+                      revealScore: widget.revealStress,
+                      onInfoTap: _showStressScoreExplanation,
+                      showWhoopBadge:
+                          sleepIsWhoop ||
+                          latestHeartRate?.source == 'whoop_ble',
+                      showNumbers: showNumbers,
+                      onScanTap: widget.onScanTap,
+                    ),
+                  ),
+                ),
+                _buildCheckIn(checkIn),
+                const SizedBox(height: 12),
+                KeyedSubtree(
+                  key: widget.vitalsKey,
+                  child: _buildVitals(
+                    sleepHours: sleepHours,
+                    heartRate: latestHeartRate?.bpm,
+                    moodScore: moodScore,
+                    loading: metricsLoading,
+                    hrLoading: hrLoading,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                noActivitySource
+                    ? _connectActivityCard()
+                    : _buildActivityCard(
                         steps: steps,
-                        loading: stressLoading,
-                        updating: stressUpdating,
-                        revealScore: widget.revealStress,
-                        onInfoTap: _showStressScoreExplanation,
-                        showWhoopBadge:
-                            sleepIsWhoop ||
-                            latestHeartRate?.source == 'whoop_ble',
-                        showNumbers: showNumbers,
-                        onScanTap: widget.onScanTap,
+                        activeCalories: activeCalories,
+                        exerciseMinutes: exerciseMinutes,
                       ),
-                    ),
-                  ),
-                  _buildCheckIn(checkIn),
-                  const SizedBox(height: 12),
-                  KeyedSubtree(
-                    key: widget.vitalsKey,
-                    child: _buildVitals(
-                      sleepHours: sleepHours,
-                      heartRate: latestHeartRate?.bpm,
-                      moodScore: moodScore,
-                      loading: metricsLoading,
-                      hrLoading: hrLoading,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  noActivitySource
-                      ? _connectActivityCard()
-                      : _buildActivityCard(
-                          steps: steps,
-                          activeCalories: activeCalories,
-                          exerciseMinutes: exerciseMinutes,
-                        ),
-                  const SizedBox(height: 12),
-                  KeyedSubtree(
-                    key: widget.circleKey,
-                    child: _buildCircleCard(),
-                  ),
-                ],
-              ),
+                const SizedBox(height: 12),
+                KeyedSubtree(key: widget.circleKey, child: _buildCircleCard()),
+              ],
             ),
           ),
         ),
@@ -1294,9 +1281,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _refreshHome() async {
+    _refreshHomeCalendarCards();
+    await _hourlyHeartKey.currentState?.refresh(force: true);
+  }
+
+  /// One scrolling pane of the page; [refresh] adds pull-to-refresh.
+  Widget _scroll(Widget child, {double side = 0, bool refresh = false}) {
+    final scroll = SingleChildScrollView(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      padding: EdgeInsets.fromLTRB(side, 16, side, 160),
+      child: child,
+    );
+    return refresh
+        ? RefreshIndicator(onRefresh: _refreshHome, child: scroll)
+        : scroll;
+  }
+
+  /// One scrolling column on a phone. On an unfolded iPhone Duo
+  /// [_buildSections] has already made two panes that scroll on their own.
+  Widget _buildPage(Widget sections) => DuoPose.of(context).twoPane
+      ? Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: sections,
+        )
+      : _scroll(sections, side: 20, refresh: true);
+
   /// The Home sections: [top] (greeting, stress, vitals, activity, Circle)
-  /// and then Your day and Insights. One column on a phone; on an unfolded
-  /// iPhone Duo the day and insights take the pane across the hinge.
+  /// and then Your day and Insights. One column on a phone. On an unfolded
+  /// iPhone Duo what the closed phone showed stays on the right, with
+  /// Insights under Circle, and Your day takes the pane across the hinge.
   Widget _buildSections({
     required List<Widget> top,
     required List<SleepPeriod> sleepNights,
@@ -1365,12 +1381,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     return DuoPanes(
       leftInset: 20,
-      left: Column(crossAxisAlignment: CrossAxisAlignment.start, children: top),
-      right: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        // Level with the stress card, under the greeting.
-        children: [const SizedBox(height: 64), ...day],
+      cover: _scroll(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [...top, day[1]],
+        ),
+        refresh: true,
       ),
+      extra: _scroll(day[0]),
     );
   }
 
@@ -2528,7 +2546,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
             const SizedBox(height: 16),
             SizedBox(
-              height: 60,
+              // Unfolded, Your day has a pane to itself.
+              height: DuoPose.of(context).twoPane ? 130 : 60,
               child: LayoutBuilder(
                 builder: (context, constraints) => Stack(
                   clipBehavior: Clip.none,

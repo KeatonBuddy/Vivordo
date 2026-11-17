@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../src/services/metrics_repository.dart';
 import '../src/utils/sleep_nights.dart' show patternNights, sleepRatings;
+import '../widgets/duo_layout.dart';
 import '../widgets/visible_stream_builder.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals, setEquals;
@@ -466,117 +467,123 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: 'Metrics',
         threshold: 48,
         child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: () =>
-                _refreshHealthMetricsFromHealth(showFeedback: true),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 26),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Large titles stop growing at 1.5x, as in iOS,
-                            // and shrink rather than break mid-word.
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'Metrics',
-                                maxLines: 1,
-                                textScaler: MediaQuery.textScalerOf(
-                                  context,
-                                ).clamp(maxScaleFactor: 1.5),
-                                style: TextStyle(
-                                  fontSize: 34,
-                                  fontWeight: FontWeight.w900,
-                                  color: context.vivordoColors.textPrimary,
-                                  letterSpacing: -1,
+          child: _buildPanes(
+            RefreshIndicator(
+              onRefresh: () =>
+                  _refreshHealthMetricsFromHealth(showFeedback: true),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 26),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Large titles stop growing at 1.5x, as in iOS,
+                              // and shrink rather than break mid-word.
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Metrics',
+                                  maxLines: 1,
+                                  textScaler: MediaQuery.textScalerOf(
+                                    context,
+                                  ).clamp(maxScaleFactor: 1.5),
+                                  style: TextStyle(
+                                    fontSize: 34,
+                                    fontWeight: FontWeight.w900,
+                                    color: context.vivordoColors.textPrimary,
+                                    letterSpacing: -1,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            VisibleStreamBuilder<
-                              QuerySnapshot<Map<String, dynamic>>
-                            >(
-                              stream: _allMetricsStream,
-                              builder: (context, snapshot) {
-                                final style = TextStyle(
-                                  fontSize: 15,
-                                  color: context.vivordoColors.textSecondary,
-                                );
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _lastManualHealthRefresh == null
-                                          ? 'Synced automatically'
-                                          : _manualRefreshLabel().replaceFirst(
-                                              'Updated',
-                                              'Synced',
-                                            ),
-                                      style: style,
-                                    ),
-                                    // Its own line, under the sync time.
-                                    if (_hasVisibleWhoopData(
-                                      snapshot.data,
-                                    )) ...[
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          Text('Data includes', style: style),
-                                          const SizedBox(width: 7),
-                                          const WhoopSourceBadge(compact: true),
-                                        ],
+                              const SizedBox(height: 2),
+                              VisibleStreamBuilder<
+                                QuerySnapshot<Map<String, dynamic>>
+                              >(
+                                stream: _allMetricsStream,
+                                builder: (context, snapshot) {
+                                  final style = TextStyle(
+                                    fontSize: 15,
+                                    color: context.vivordoColors.textSecondary,
+                                  );
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _lastManualHealthRefresh == null
+                                            ? 'Synced automatically'
+                                            : _manualRefreshLabel()
+                                                  .replaceFirst(
+                                                    'Updated',
+                                                    'Synced',
+                                                  ),
+                                        style: style,
                                       ),
+                                      // Its own line, under the sync time.
+                                      if (_hasVisibleWhoopData(
+                                        snapshot.data,
+                                      )) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Text('Data includes', style: style),
+                                            const SizedBox(width: 7),
+                                            const WhoopSourceBadge(
+                                              compact: true,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ],
-                                  ],
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      TextButton.icon(
-                        key: widget.customizeKey,
-                        onPressed: _isLoadingMetricOrder
-                            ? null
-                            : _showLayoutEditor,
-                        icon: const Icon(
-                          CupertinoIcons.slider_horizontal_3,
-                          size: 18,
-                        ),
-                        label: const Text('Customize'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: accentPurple,
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                                  );
+                                },
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _allMetricsStream,
-                    builder: (_, metricsSnap) => _buildMetricsOverview(
-                      metricsSnap.data,
-                      loading:
-                          metricsSnap.connectionState ==
-                          ConnectionState.waiting,
+                        TextButton.icon(
+                          key: widget.customizeKey,
+                          onPressed: _isLoadingMetricOrder
+                              ? null
+                              : _showLayoutEditor,
+                          icon: const Icon(
+                            CupertinoIcons.slider_horizontal_3,
+                            size: 18,
+                          ),
+                          label: const Text('Customize'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: accentPurple,
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 28),
+                    VisibleStreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _allMetricsStream,
+                      builder: (_, metricsSnap) => _buildMetricsOverview(
+                        metricsSnap.data,
+                        loading:
+                            metricsSnap.connectionState ==
+                            ConnectionState.waiting,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -584,6 +591,84 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+
+  /// The metric open in the pane across the hinge on an unfolded iPhone Duo;
+  /// null shows Insights there.
+  final _detail = ValueNotifier<Widget?>(null);
+
+  /// Opens a metric's screen. On an unfolded Duo it takes the other pane,
+  /// replacing the metric that was there, so the tiles stay in view.
+  void _openDetail(Widget screen) {
+    if (DuoPose.of(context).twoPane) {
+      _detail.value = screen;
+    } else {
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => screen));
+    }
+  }
+
+  /// The tiles alone on a phone; on an unfolded Duo they keep the right
+  /// pane, where the closed phone had them, beside the metric they open.
+  Widget _buildPanes(Widget metrics) {
+    if (!DuoPose.of(context).twoPane) return metrics;
+    return DuoPanes(
+      cover: metrics,
+      extra: DuoDetail.pane(
+        _detail,
+        ColoredBox(
+          color: context.vivordoColors.page,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 26, 0, 120),
+            child: _buildInsightsSection(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInsightsSection() => KeyedSubtree(
+    key: widget.insightsKey,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Insights',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+        VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
+          stream: _scoresStream,
+          builder: (context, snapshot) {
+            final scores = snapshot.data ?? _scores;
+            return VisibleStreamBuilder<MetricWindow>(
+              stream: _sleepWindow,
+              builder: (context, window) {
+                final days = window.data?.days;
+                return Selector<ThemeController, bool>(
+                  selector: (_, c) => c.showScoreNumbers,
+                  builder: (context, showNumbers, _) => _buildInsightsCard(
+                    scores == null
+                        ? null
+                        : metricsInsights(
+                            scores,
+                            DateTime.now(),
+                            numbers: showNumbers,
+                            nights: days == null ? null : patternNights(days),
+                            ratings: days == null
+                                ? const {}
+                                : sleepRatings(days),
+                          ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    ),
+  );
 
   Widget _buildMetricsOverview(
     QuerySnapshot<Map<String, dynamic>>? snap, {
@@ -664,51 +749,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 28),
-        KeyedSubtree(
-          key: widget.insightsKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Insights',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 10),
-              VisibleStreamBuilder<Map<String, Map<String, dynamic>>>(
-                stream: _scoresStream,
-                builder: (context, snapshot) {
-                  final scores = snapshot.data ?? _scores;
-                  return VisibleStreamBuilder<MetricWindow>(
-                    stream: _sleepWindow,
-                    builder: (context, window) {
-                      final days = window.data?.days;
-                      return Selector<ThemeController, bool>(
-                        selector: (_, c) => c.showScoreNumbers,
-                        builder: (context, showNumbers, _) =>
-                            _buildInsightsCard(
-                              scores == null
-                                  ? null
-                                  : metricsInsights(
-                                      scores,
-                                      DateTime.now(),
-                                      numbers: showNumbers,
-                                      nights: days == null
-                                          ? null
-                                          : patternNights(days),
-                                      ratings: days == null
-                                          ? const {}
-                                          : sleepRatings(days),
-                                    ),
-                            ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
+        if (!DuoPose.of(context).twoPane) ...[
+          const SizedBox(height: 28),
+          _buildInsightsSection(),
+        ],
         if (snap == null || snap.docs.isEmpty) ...[
           const SizedBox(height: 18),
           _buildEmptyState(),
@@ -735,9 +779,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const PhysicalHealthScreen())),
+        onTap: () => _openDetail(const PhysicalHealthScreen()),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           child: Row(
@@ -957,24 +999,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       icon: _metricIcon(metric),
       color: _metricColor(metric),
       onTap: switch (metric) {
-        'steps' => () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const StepsDetailScreen())),
-        'heart_rate_scan' => () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const HeartRateDetailScreen()),
+        'steps' => () => _openDetail(const StepsDetailScreen()),
+        'heart_rate_scan' => () => _openDetail(const HeartRateDetailScreen()),
+        'active_calories' => () => _openDetail(
+          const ActiveCaloriesDetailScreen(),
         ),
-        'active_calories' => () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const ActiveCaloriesDetailScreen()),
-        ),
-        'exercise_time' => () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const ExerciseDetailScreen())),
-        'mood' => () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const MoodDetailScreen())),
-        'sleep' => () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const SleepDetailScreen())),
+        'exercise_time' => () => _openDetail(const ExerciseDetailScreen()),
+        'mood' => () => _openDetail(const MoodDetailScreen()),
+        'sleep' => () => _openDetail(const SleepDetailScreen()),
         _ => null,
       },
     );

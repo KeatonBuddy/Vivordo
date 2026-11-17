@@ -2,7 +2,9 @@ import 'dart:async';
 import '../widgets/app_tour.dart';
 import '../widgets/chat_reveal.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/desk_mode.dart';
 import '../widgets/duo_layout.dart';
+import '../widgets/floating_chat.dart';
 import '../widgets/launch_splash.dart';
 import '../widgets/vivordo_robot.dart';
 import 'dart:math' as math;
@@ -310,7 +312,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   /// Starts [screen]'s tour if it has one, hasn't been seen, and nothing
   /// else needs the screen right now.
   void _maybeStartTour(String screen) {
-    if (_tourScreen != null ||
+    if (DuoPose.of(context) != DuoPose.none ||
+        _tourScreen != null ||
         _chatOpen ||
         _detailRouteOpen ||
         FitnessWorkoutTimerState.isRunning.value ||
@@ -685,7 +688,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final previousIndex = _selectedIndex;
     _logScreenView(index);
     _tabActivity[previousIndex].value = false;
-    _tabActivity[index].value = !_chatOpen && !_tabHasDetail(index);
+    _tabActivity[index].value = !_chatCoversTab && !_tabHasDetail(index);
     setState(() {
       _loadedTabs.add(index);
       _selectedIndex = index;
@@ -733,6 +736,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     _openChat(sheet: true);
   }
 
+  /// On an unfolded iPhone Duo the chat floats above the screen, which
+  /// stays in use behind it.
+  bool get _chatFloats => DuoPose.of(context).twoPane;
+  bool get _chatCoversTab => _chatOpen && !_chatFloats;
+
   void _openChat({BuildContext? from, bool sheet = false}) {
     if (_chatOpen) return;
     final bubbleBox = from?.findRenderObject() as RenderBox?;
@@ -742,7 +750,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             MediaQuery.sizeOf(context).height - 150,
           )
         : bubbleBox.localToGlobal(bubbleBox.size.center(Offset.zero));
-    _tabActivity[_selectedIndex].value = false;
+    if (!_chatFloats) _tabActivity[_selectedIndex].value = false;
     setState(() {
       _chatRevealOrigin = origin;
       _chatSheet.value = sheet;
@@ -848,7 +856,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final detailOpen = _tabHasDetail(_selectedIndex);
-      _tabActivity[_selectedIndex].value = !detailOpen && !_chatOpen;
+      _tabActivity[_selectedIndex].value = !detailOpen && !_chatCoversTab;
       _insights.select(
         _tabObservers[_selectedIndex].topRoute,
         _screenNames[_selectedIndex],
@@ -883,13 +891,50 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final showNavBar = !keyboardOpen;
     // On iPhone Duo the tab bar is a strip on the trailing edge, as iOS 27.1
     // places its own, and the tabs keep clear of it instead of the bottom.
+    DuoUnfold.track(DuoPose.of(context));
     final rail = DuoPose.of(context).trailingTabBar;
+    // Unfolded, Vivordo AI is a box above both panes, not a full screen.
+    final floating = DuoPose.of(context).twoPane;
     // The closed Duo's status items share that trailing strip and already
     // sit in the safe area, so the tabs keep clear of whichever is wider,
     // not both.
     final railClearance = math.max(
       _navBarClearance,
       MediaQuery.paddingOf(context).right,
+    );
+    // The Vivordo AI button. On a Duo it stands in the rail under the tabs,
+    // without the insight pull-out.
+    final assistantLayer = IgnorePointer(
+      key: _chatLayerKey,
+      ignoring: hideAssistant,
+      child: AnimatedOpacity(
+        opacity: hideForScreen ? 0 : 1,
+        duration: const Duration(milliseconds: 140),
+        child: AnimatedBuilder(
+          animation: _chatRevealController,
+          // Back as the circle shrinks into it, not after.
+          builder: (context, layer) => Opacity(
+            opacity: 1 - (_chatCover() * 5).clamp(0.0, 1.0),
+            child: layer,
+          ),
+          child: AnimatedBuilder(
+            animation: Listenable.merge([
+              _insights,
+              FitnessWorkoutTimerState.isRunning,
+            ]),
+            builder: (context, _) => ContextualInsightBar(
+              insight: rail ? null : _insights.current,
+              suppressed:
+                  hideAssistant || FitnessWorkoutTimerState.isRunning.value,
+              button: (context, waves, cheers) =>
+                  _buildChatButton(waves, cheers),
+              onButtonTap: (from) => _openChat(from: from),
+              lift: _insightLift,
+              onAsk: (_) => _askAbout(_insights.current),
+            ),
+          ),
+        ),
+      ),
     );
     final theme = Theme.of(context);
     // Screens pushed in a tab end above the floating tab bar; the tab pages
@@ -964,6 +1009,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 builder: (context, child) {
                   final p =
                       _chatOpen &&
+                          !floating &&
                           !_chatSheet.value &&
                           !MediaQuery.disableAnimationsOf(context)
                       ? _chatRevealController.value.clamp(0.0, 1.0)
@@ -999,12 +1045,25 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 ),
               ),
             ),
-            if (showNavBar && rail)
+            if (rail)
               Positioned(
+                key: const ValueKey('ai-chat-bubble-layer'),
                 top: 0,
                 bottom: 0,
                 right: _navBarInset,
-                child: Center(child: _buildFloatingNavBar(vertical: true)),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showNavBar) _buildFloatingNavBar(vertical: true),
+                      const SizedBox(height: 12),
+                      SizedBox.square(
+                        dimension: ContextualInsightBar.buttonSize,
+                        child: assistantLayer,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             // A scroll-edge fade: the bar is glass, and text passing right
             // behind and beside it read as clutter. The Duo's rail sits
@@ -1052,46 +1111,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 ),
                 child: _buildFloatingNavBar(),
               ),
-            Positioned(
-              key: const ValueKey('ai-chat-bubble-layer'),
-              right: rail ? _navBarInset + railClearance : _navBarInset,
-              left: _navBarInset,
-              bottom: _navBarInset,
-              child: IgnorePointer(
-                key: _chatLayerKey,
-                ignoring: hideAssistant,
-                child: AnimatedOpacity(
-                  opacity: hideForScreen ? 0 : 1,
-                  duration: const Duration(milliseconds: 140),
-                  child: AnimatedBuilder(
-                    animation: _chatRevealController,
-                    // Back as the circle shrinks into it, not after.
-                    builder: (context, layer) => Opacity(
-                      opacity: 1 - (_chatCover() * 5).clamp(0.0, 1.0),
-                      child: layer,
-                    ),
-                    child: AnimatedBuilder(
-                      animation: Listenable.merge([
-                        _insights,
-                        FitnessWorkoutTimerState.isRunning,
-                      ]),
-                      builder: (context, _) => ContextualInsightBar(
-                        insight: _insights.current,
-                        suppressed:
-                            hideAssistant ||
-                            FitnessWorkoutTimerState.isRunning.value,
-                        button: (context, waves, cheers) =>
-                            _buildChatButton(waves, cheers),
-                        onButtonTap: (from) => _openChat(from: from),
-                        lift: _insightLift,
-                        onAsk: (_) => _askAbout(_insights.current),
-                      ),
-                    ),
-                  ),
-                ),
+            if (!rail)
+              Positioned(
+                key: const ValueKey('ai-chat-bubble-layer'),
+                right: _navBarInset,
+                left: _navBarInset,
+                bottom: _navBarInset,
+                child: assistantLayer,
               ),
-            ),
-            if (_pandaHasBeenOpened && _chatOpen && _chatSheet.value)
+            if (_pandaHasBeenOpened &&
+                _chatOpen &&
+                _chatSheet.value &&
+                !floating)
               Positioned.fill(
                 child: GestureDetector(
                   onTap: _closeChat,
@@ -1101,7 +1132,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   ),
                 ),
               ),
-            if (_pandaHasBeenOpened)
+            if (_pandaHasBeenOpened && floating)
+              FloatingChat(
+                reveal: _chatRevealController,
+                open: _chatOpen,
+                rail: railClearance,
+                child: _persistentChatScreen,
+              )
+            else if (_pandaHasBeenOpened)
               AnimatedPositioned(
                 key: const ValueKey('persistent-ai-chat-layer'),
                 duration: const Duration(milliseconds: 320),
@@ -1161,6 +1199,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   home: _chatLayerKey,
                 ),
               ),
+            // Propped like a tent, the app is a glance screen, not tabs.
+            if (DuoPose.tentOf(context))
+              const Positioned.fill(child: DeskMode()),
             if (_startupSplashMounted)
               Positioned.fill(
                 child: const AbsorbPointer(
@@ -1335,6 +1376,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                   ),
                   Flex(
                     direction: vertical ? Axis.vertical : Axis.horizontal,
+                    // Stood on end, the column is only as wide as its widest
+                    // label unless stretched, and sat left of the lens.
+                    crossAxisAlignment: vertical
+                        ? CrossAxisAlignment.stretch
+                        : CrossAxisAlignment.center,
                     children: [
                       for (final (index, (icon, label)) in items.indexed)
                         Expanded(child: _navItem(icon, label, index)),
