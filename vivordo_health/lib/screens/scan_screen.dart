@@ -12,6 +12,10 @@ import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/duo_layout.dart';
 import 'heart_rate_detail_screen.dart';
+import 'stress_detail_screen.dart';
+import '../src/utils/desk_glance.dart';
+import '../src/utils/home_stress_card_logic.dart' show homeStressLevel;
+import '../widgets/scan_range_scale.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -1513,11 +1517,7 @@ class _ScanScreenState extends State<ScanScreen>
     // are, so the label describes the heart rate (App Review 1.4.1).
     // Plain bands, all one calm colour: 80–100 is a normal resting rate, so
     // nothing here reads as a warning.
-    final heartLabel = bpm < 65
-        ? 'Resting'
-        : bpm < 80
-        ? 'Typical'
-        : 'Higher';
+    final heartLabel = HeartRateBand.of(bpm).label;
     // Status colours here are text on the result cards, so they use the
     // theme's readable status tones.
     final status = context.vivordoColors;
@@ -1606,6 +1606,12 @@ class _ScanScreenState extends State<ScanScreen>
                   ],
                 ),
               ),
+              // Unfolded, the result has room to show where the reading
+              // falls, not only name the range.
+              if (_twoPane) ...[
+                const SizedBox(height: 20),
+                ScanRangeScale(bpm: bpm),
+              ],
             ],
           ),
         ),
@@ -1684,6 +1690,7 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
 
+        if (_twoPane) ...[const SizedBox(height: 12), _buildStressRow()],
         const SizedBox(height: 12),
         _buildDisclaimer(),
         const SizedBox(height: 16),
@@ -1708,6 +1715,69 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// The Stress score this reading counts towards, as Home last had it.
+  /// Shown on an unfolded iPhone Duo; opens the Stress screen.
+  Widget _buildStressRow() {
+    final colors = context.vivordoColors;
+    return ValueListenableBuilder<double?>(
+      valueListenable: DeskGlance.stress,
+      builder: (context, stress, _) => Material(
+        color: colors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: colors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const StressDetailScreen()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.waveform_path_ecg,
+                  size: 20,
+                  color: accentPurple,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stress == null
+                            ? 'Stress score'
+                            : 'Stress ${stress.round()} · ${homeStressLevel(stress)}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'This reading counts towards it.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: colors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
