@@ -3971,6 +3971,113 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
       }
 
+      // What a regular row says about an item, as the one chip its block
+      // on the full-day timeline has room for.
+      DayGridChip? chipFor(AgendaItem<_TimelineItem> entry) {
+        final event = entry.item.event;
+        final priority = entry.item.priority;
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        DayGridChip tinted(
+          String label,
+          IconData icon,
+          ({Color accent, Color fg, Color bg}) style, {
+          VoidCallback? onTap,
+        }) => DayGridChip(
+          label: label,
+          icon: icon,
+          foreground: dark ? style.accent : style.fg,
+          background: dark ? style.accent.withValues(alpha: .18) : style.bg,
+          onTap: onTap,
+        );
+        if (!entry.end.isAfter(now)) {
+          // Done with: how your body took it.
+          final reaction = event == null
+              ? null
+              : _reactions[event.sourceEventKey];
+          final style = reaction == null
+              ? null
+              : bodyReactionStyle(reaction.level);
+          return style == null
+              ? null
+              : tinted(style.label, style.icon, (
+                  accent: style.accent,
+                  fg: style.fg,
+                  bg: style.bg,
+                ));
+        }
+        final fit =
+            fits[event?.sourceEventKey ??
+                'priority:${priority!.reference.path}'];
+        final suggested = fit?.suggestedStart;
+        if (fit != null && fit.kind == EnergyFitKind.clash) {
+          // Short, so the time to move to is never the part cut off.
+          final phase = switch (fit.phase) {
+            EnergyPhase.groggy => 'your groggy start',
+            EnergyPhase.windDown => 'your wind-down',
+            _ => 'your dip',
+          };
+          final canMove =
+              fit.movable &&
+              suggested != null &&
+              (event != null ? !event.isPriorityLinked : !priority!.completed);
+          if (!canMove) {
+            return DayGridChip(
+              label: 'Lands in $phase',
+              foreground: dark ? colors.warning : const Color(0xFF8A5200),
+              background: dark
+                  ? colors.warning.withValues(alpha: .18)
+                  : const Color(0xFFFFF1DC),
+            );
+          }
+          // What is wrong and the tap that fixes it, in one.
+          return DayGridChip(
+            label:
+                'In $phase · Move to ${DateFormat.jm().format(suggested).replaceAll(':00', '')}',
+            foreground: Colors.white,
+            background: MyDayScreen.purple,
+            onTap: () => _openDayFix(
+              DayFix(
+                kind: DayFixKind.energySlot,
+                id: fit.id,
+                title: fit.item.event.title,
+                demandSaved: 0,
+                start: fit.item.event.start,
+                end: fit.item.event.end,
+                newStart: suggested,
+              ),
+              0,
+              _events,
+              snapshot.data ?? const <DailyPriority>[],
+              day: DateUtils.dateOnly(DateTime.now()),
+            ),
+          );
+        }
+        if (fit != null && fit.kind == EnergyFitKind.goodFit) {
+          return DayGridChip(
+            label: 'in ${energyPhasePhrase(fit.phase)} ✓',
+            foreground: colors.success,
+            background: Colors.transparent,
+          );
+        }
+        // A repeating meeting that usually raises or lowers your heart rate.
+        final pattern =
+            event == null || !_cognitiveInput(event).contributesToSchedule
+            ? null
+            : _patterns.bySeries[seriesKeyFor(event.event.recurringEventId)];
+        if (pattern == null) return null;
+        final style = patternStyle(pattern);
+        return tinted(
+          style.tag,
+          style.icon,
+          (accent: style.accent, fg: style.fg, bg: style.bg),
+          onTap: () => showMeetingPatternSheet(
+            context,
+            title: event!.title,
+            pattern: pattern,
+          ),
+        );
+      }
+
       final onlyEvents = earlier.every((i) => i.item.priority == null);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4016,6 +4123,7 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                         entry.item.event == null &&
                         entry.item.priority!.sourceEnd == null &&
                         !entry.item.priority!.completed,
+                    chip: chipFor(entry),
                   ),
               ],
               onDrop: (drag, start) => _placePriority(drag.id, start),

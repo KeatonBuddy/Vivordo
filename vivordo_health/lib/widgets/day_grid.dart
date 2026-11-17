@@ -16,7 +16,11 @@ class DayGridBlock {
     required this.color,
     this.onTap,
     this.resizable = false,
+    this.chip,
   });
+
+  /// What My Day's regular timeline says about it, on the block's right.
+  final DayGridChip? chip;
 
   final String id;
   final String title;
@@ -27,6 +31,25 @@ class DayGridBlock {
 
   /// Its bottom edge can be dragged to change how long it is.
   final bool resizable;
+}
+
+/// The one thing worth saying about a block: that it lands in a low
+/// stretch and where to move it, that it sits in a good one, how your
+/// body reacted to it, or what a repeating meeting usually does. One chip,
+/// so it still fits a half-hour block; [onTap] makes it a button.
+class DayGridChip {
+  const DayGridChip({
+    required this.label,
+    required this.foreground,
+    required this.background,
+    this.icon,
+    this.onTap,
+  });
+
+  final String label;
+  final Color foreground, background;
+  final IconData? icon;
+  final VoidCallback? onTap;
 }
 
 /// A priority being dragged onto the [DayGrid].
@@ -347,6 +370,52 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
     );
   }
 
+  /// The most of a block's width a chip may take; the title has the rest.
+  static const _chipRoom = 184.0;
+
+  Widget _chip(DayGridChip chip) {
+    final pill = Container(
+      constraints: const BoxConstraints(maxWidth: _chipRoom - 12),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: chip.background,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (chip.icon != null) ...[
+            Icon(chip.icon, size: 11, color: chip.foreground),
+            const SizedBox(width: 3),
+          ],
+          Flexible(
+            child: Text(
+              chip.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: chip.foreground,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (chip.onTap == null) return pill;
+    return Semantics(
+      button: true,
+      label: chip.label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: chip.onTap,
+        child: pill,
+      ),
+    );
+  }
+
   Widget _block(DayGridBlock block, DayGridScale scale, DateFormat time) {
     final start = _minutesOf(block.start).clamp(0, 24 * 60);
     final resizing = _resize?.id == block.id ? _resize : null;
@@ -375,19 +444,45 @@ class _DayGridState extends State<DayGrid> with SingleTickerProviderStateMixin {
             ),
             child: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
-                  child: Text(
-                    height < 38
-                        ? block.title
-                        : '${block.title}\n${time.format(block.start)} – ${time.format(end)}',
-                    maxLines: height < 38 ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: context.vivordoColors.textPrimary,
-                      fontSize: 12,
-                      height: 1.25,
-                      fontWeight: FontWeight.w700,
+                // The chip takes the width it needs and the title has the
+                // rest, each on a line of its own so neither wraps.
+                Positioned.fill(
+                  bottom: block.resizable ? 6 : 0,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 2, 6, 0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.topLeft,
+                            child: DefaultTextStyle.merge(
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: context.vivordoColors.textPrimary,
+                                fontSize: 12,
+                                height: 1.25,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(block.title),
+                                  if (height >= 38)
+                                    Text(
+                                      '${time.format(block.start)} – ${time.format(end)}',
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (block.chip case final chip?) ...[
+                          const SizedBox(width: 6),
+                          _chip(chip),
+                        ],
+                      ],
                     ),
                   ),
                 ),
