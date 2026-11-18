@@ -1901,7 +1901,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     icon: CupertinoIcons.chart_bar_alt_fill,
     title: 'How Your Day works',
     summary:
-        'Each bar is one hour, 7 AM to 10 PM. Taller, warmer bars are busier '
+        'Each bar is one hour, 7 AM to midnight. Taller, warmer bars are busier '
         'hours. Effort and ratings are estimates.',
     items: const [
       AppleInfoItem(

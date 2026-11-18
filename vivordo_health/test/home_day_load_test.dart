@@ -86,21 +86,18 @@ void main() {
     expect(dayLoadLevel(loadAt9(items: [call, priority])), DayLoadLevel.heavy);
   });
 
-  test('bars cover 7 AM to 10 PM, stretched to fit the day', () {
+  test('bars cover 7 AM to midnight, starting earlier to fit the day', () {
     ({DateTime start, DateTime end}) item(DateTime start, DateTime end) =>
         (start: start, end: end);
     final day = at(12);
+    final midnight = DateTime(2026, 9, 30);
 
     final normal = dayLoadRange(day, [item(at(9), at(10))]);
-    expect((normal.from, normal.until), (at(7), at(22)));
+    expect((normal.from, normal.until), (at(7), midnight));
 
-    // A 6:30 AM run and a call ending 10:15 PM pull both edges out to whole
-    // hours.
-    final stretched = dayLoadRange(day, [
-      item(at(6, 30), at(7, 15)),
-      item(at(21, 30), at(22, 15)),
-    ]);
-    expect((stretched.from, stretched.until), (at(6), at(23)));
+    // A 6:30 AM run pulls the start out to its whole hour.
+    final early = dayLoadRange(day, [item(at(6, 30), at(7, 15))]);
+    expect((early.from, early.until), (at(6), midnight));
 
     // Items running over midnight stop at the edges of today; other days
     // are ignored.
