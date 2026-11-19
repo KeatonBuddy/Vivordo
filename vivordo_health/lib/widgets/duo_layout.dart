@@ -28,6 +28,14 @@ class DuoHinge {
       DuoPose.of(context) == DuoPose.openPortrait;
 }
 
+/// Pass as `anchorPoint` when showing an alert or a sheet. While an iPhone
+/// Duo is held partly folded, Flutter keeps these on one half so nothing
+/// lies in the curve (see the FoldableProvider in main.dart); this picks
+/// the trailing half, the side an alert will be on when the phone closes,
+/// as the system's own alerts do. Opened flat, and on every other phone,
+/// it changes nothing.
+const duoTrailingHalf = Offset(double.maxFinite, 0);
+
 /// Where the app is on an iPhone Duo, read from the window size alone.
 ///
 /// Both Duo displays are about 1:1.42 and at least 466 pt across, while every
