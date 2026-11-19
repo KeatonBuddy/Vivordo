@@ -15,6 +15,7 @@ import 'package:vivordo_health/src/services/metrics_service.dart';
 import 'package:vivordo_health/src/services/workout_service.dart';
 import 'package:vivordo_health/src/utils/day_effort.dart';
 import 'package:vivordo_health/src/utils/day_key.dart';
+import 'package:vivordo_health/src/utils/desk_glance.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
 import 'package:vivordo_health/src/utils/watch_action.dart';
@@ -79,6 +80,11 @@ class HomeWidgetService {
             if (_capacityScope != scope) return;
             Map<String, dynamic>? day(String key) =>
                 snapshot.docs.where((d) => d.id == key).firstOrNull?.data();
+            final capacity = day(today)?['capacity'];
+            DeskGlance.capacity.value =
+                capacity is Map && capacity['score'] is num
+                ? (capacity['score'] as num).round()
+                : null;
             try {
               await _channel.invokeMethod<void>('updateSnapshot', {
                 ...capacityWidgetValues(day(today), day(yesterday)),
@@ -198,6 +204,7 @@ class HomeWidgetService {
     List<({DateTime at, double left})> path,
   ) async {
     if (!Platform.isIOS) return;
+    DeskGlance.capacityLeft.value = live.left.round();
     final times = [for (final p in path) p.at.millisecondsSinceEpoch];
     final values = [for (final p in path) p.left.round()];
     final day = DateFormat('yyyy-MM-dd').format(path.first.at);
@@ -550,6 +557,7 @@ class HomeWidgetService {
     List<String> stressDrivers = const [],
   }) async {
     if (!Platform.isIOS) return;
+    DeskGlance.stress.value = stressScore;
     _watchWidgetPriorities();
     _watchCapacity();
     _watchWorkoutTemplates();
@@ -690,6 +698,15 @@ class HomeWidgetService {
       if (seen.add(signature)) compactEvents.add(event);
     }
 
+    DeskGlance.events.value = [
+      for (final e in compactEvents)
+        if (e['isAllDay'] != true)
+          (
+            title: e['title'] as String,
+            start: DateTime.fromMillisecondsSinceEpoch(e['startAt'] as int),
+            end: DateTime.fromMillisecondsSinceEpoch(e['endAt'] as int),
+          ),
+    ];
     final signature = compactEvents
         .map(
           (event) =>

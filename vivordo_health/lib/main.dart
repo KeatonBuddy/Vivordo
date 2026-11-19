@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:foldable/foldable.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:vivordo_health/firebase_options.dart';
@@ -31,6 +32,7 @@ import 'package:vivordo_health/widgets/achievement_unlocked_dialog.dart';
 import 'package:vivordo_health/widgets/apple_ui.dart';
 import 'package:vivordo_health/widgets/launch_splash.dart';
 import 'screens/login_screen.dart';
+import 'widgets/duo_layout.dart';
 import 'screens/signup_screen.dart';
 import 'screens/onboarding_flow_screen.dart';
 import 'screens/email_verification_screen.dart';
@@ -89,6 +91,8 @@ void main() async {
   // debugPrint still prints in release builds, into the device log; the
   // app's messages include account ids and scores.
   if (kReleaseMode) debugPrint = (String? message, {int? wrapWidth}) {};
+  // iPhone Duo hinge; returns at once on every other phone.
+  unawaited(DuoHinge.start());
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseAuth.instance.authStateChanges().listen((user) {
     // Signed in (including at launch): save any check-ins tapped on the Mood
@@ -395,17 +399,24 @@ class _MyAppState extends State<MyApp> {
       navigatorObservers: [PullDownToCloseSheets.observer],
       title: 'Vivordo Health',
       debugShowCheckedModeBanner: false,
-      builder: (context, child) => Actions(
-        actions: {
-          EditableTextTapOutsideIntent:
-              CallbackAction<EditableTextTapOutsideIntent>(
-                onInvoke: (_) {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  return null;
-                },
-              ),
-        },
-        child: PullDownToCloseSheets(child: child ?? const SizedBox.shrink()),
+      // Tells Flutter where the fold is while an iPhone Duo is partly
+      // folded, so alerts, sheets and menus open on one half and nothing
+      // lies in the curve, as the system's own do. Opened flat it reports
+      // no fold and they stay centred; on other phones it does nothing.
+      builder: (context, child) => FoldableProvider(
+        bridgeMode: DisplayFeatureBridgeMode.full,
+        child: Actions(
+          actions: {
+            EditableTextTapOutsideIntent:
+                CallbackAction<EditableTextTapOutsideIntent>(
+                  onInvoke: (_) {
+                    FocusManager.instance.primaryFocus?.unfocus();
+                    return null;
+                  },
+                ),
+          },
+          child: PullDownToCloseSheets(child: child ?? const SizedBox.shrink()),
+        ),
       ),
       theme: VivordoTheme.light,
       darkTheme: VivordoTheme.dark,

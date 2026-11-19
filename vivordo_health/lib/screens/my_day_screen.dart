@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/duo_layout.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -38,6 +39,7 @@ import '../widgets/score_history.dart';
 import '../src/services/planned_demand_service.dart';
 import '../widgets/apple_ui.dart';
 import '../widgets/body_reaction_view.dart';
+import '../widgets/day_grid.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/swipe_to_delete.dart';
 import '../widgets/habit_chips.dart';
@@ -1194,201 +1196,257 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         title: 'My Day',
         threshold: 48,
         child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: () => _loadTodayEvents(forceRefresh: true),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'My Day',
-                            // Large titles stop growing at 1.5x, as in iOS.
-                            textScaler: MediaQuery.textScalerOf(
-                              context,
-                            ).clamp(maxScaleFactor: 1.5),
-                            style: TextStyle(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w800,
-                              color: colors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                            style: TextStyle(color: colors.textSecondary),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Row(
-                      key: widget.actionsKey,
-                      mainAxisSize: MainAxisSize.min,
+          child: _buildPage(
+            head: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const InvitesButton(),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const JournalScreen(),
-                            ),
-                          ),
-                          tooltip: 'Journal',
-                          // Outlined like its neighbours; filled, it looked
-                          // selected.
-                          icon: const Icon(
-                            CupertinoIcons.book,
-                            color: MyDayScreen.purple,
+                        Text(
+                          'My Day',
+                          // Large titles stop growing at 1.5x, as in iOS.
+                          textScaler: MediaQuery.textScalerOf(
+                            context,
+                          ).clamp(maxScaleFactor: 1.5),
+                          style: TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                            color: colors.textPrimary,
                           ),
                         ),
-                        IconButton(
-                          onPressed: _openCalendar,
-                          tooltip: 'Calendar',
-                          icon: const Icon(
-                            CupertinoIcons.calendar,
-                            color: MyDayScreen.purple,
-                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                          style: TextStyle(color: colors.textSecondary),
                         ),
                       ],
                     ),
-                  ],
-                ),
-                if (_calendarLoadError != null) ...[
-                  const SizedBox(height: 10),
+                  ),
                   Row(
+                    key: widget.actionsKey,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        CupertinoIcons.cloud,
-                        size: 16,
-                        color: colors.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          _calendarLoadError!,
-                          style: TextStyle(
-                            color: colors.textSecondary,
-                            fontSize: 12,
+                      const InvitesButton(),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const JournalScreen(),
                           ),
+                        ),
+                        tooltip: 'Journal',
+                        // Outlined like its neighbours; filled, it looked
+                        // selected.
+                        icon: const Icon(
+                          CupertinoIcons.book,
+                          color: MyDayScreen.purple,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _openCalendar,
+                        tooltip: 'Calendar',
+                        icon: const Icon(
+                          CupertinoIcons.calendar,
+                          color: MyDayScreen.purple,
                         ),
                       ),
                     ],
                   ),
                 ],
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: widget.briefKey,
-                  child: _buildDayOutlookCard(timedEvents: timedEvents),
-                ),
-                // What's on now comes straight after the brief: it changes
-                // hour to hour, the alerts below over days.
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: widget.nowKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _SectionLabel('Now'),
-                      const SizedBox(height: 10),
-                      _SectionCard(
-                        child: _buildNowCard(timedEvents, watchItem),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildAlerts(),
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: widget.prioritiesKey,
-                  child: _buildPriorities(),
-                ),
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: widget.timelineKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: _SectionLabel("Today's timeline"),
-                          ),
-                          IconButton(
-                            onPressed: _isLoading ? null : _createGoogleEvent,
-                            tooltip: 'Add event',
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(
-                              CupertinoIcons.add,
-                              color: MyDayScreen.purple,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      _buildTimeline(),
-                      // Which of today's events usually raise or lower your
-                      // heart rate, or how far it is from knowing.
-                      MeetingPatternsRow(
-                        patterns: _patterns,
-                        now: DateTime.now(),
-                        today: todaysPatternMeetings(
-                          patterns: _patterns,
-                          now: DateTime.now(),
-                          events: patternEventsFrom(
-                            _events.map((e) => e.event),
-                          ),
+              ),
+              if (_calendarLoadError != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.cloud,
+                      size: 16,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _calendarLoadError!,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 12,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
-                  valueListenable: _tomorrowPrioritySnapshot,
-                  builder: (context, snapshot, _) => TomorrowPreview(
-                    key: widget.tomorrowKey,
-                    day: _tomorrow,
-                    loading:
-                        _isLoading ||
-                        snapshot.connectionState == ConnectionState.waiting,
-                    error:
-                        _calendarLoadError ??
-                        (snapshot.hasError
-                            ? 'Could not load tomorrow’s priorities.'
-                            : null),
-                    events: _tomorrowEvents
-                        .map(
-                          (e) => TomorrowPreviewEvent(
-                            title: e.title,
-                            start: e.start,
-                            end: e.end,
-                            allDay: e.isAllDay,
-                            onTap: () => _handleEventTap(e),
-                          ),
-                        )
-                        .toList(),
-                    priorities: snapshot.data ?? const [],
-                    onEdit: _editPriority,
-                    onToggle: _togglePriority,
-                    onViewDay: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              MonthCalendarScreen(initialDay: _tomorrow),
-                        ),
-                      );
-                      if (mounted) await _loadTodayEvents();
-                    },
-                  ),
+                    ),
+                  ],
                 ),
               ],
-            ),
+            ],
+            brief: [
+              const SizedBox(height: 18),
+              KeyedSubtree(
+                key: widget.briefKey,
+                child: _buildDayOutlookCard(timedEvents: timedEvents),
+              ),
+            ],
+            now: [
+              // What's on now comes straight after the brief: it changes
+              // hour to hour, the alerts below over days.
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.nowKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _SectionLabel('Now'),
+                    const SizedBox(height: 10),
+                    _SectionCard(child: _buildNowCard(timedEvents, watchItem)),
+                  ],
+                ),
+              ),
+              _buildAlerts(),
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.prioritiesKey,
+                child: _buildPriorities(),
+              ),
+            ],
+            timeline: [
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.timelineKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: _SectionLabel("Today's timeline"),
+                        ),
+                        IconButton(
+                          onPressed: _isLoading ? null : _createGoogleEvent,
+                          tooltip: 'Add event',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(
+                            CupertinoIcons.add,
+                            color: MyDayScreen.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    _buildTimeline(),
+                    // Which of today's events usually raise or lower your
+                    // heart rate, or how far it is from knowing.
+                    MeetingPatternsRow(
+                      patterns: _patterns,
+                      now: DateTime.now(),
+                      today: todaysPatternMeetings(
+                        patterns: _patterns,
+                        now: DateTime.now(),
+                        events: patternEventsFrom(_events.map((e) => e.event)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            tomorrow: [
+              const SizedBox(height: 24),
+              ValueListenableBuilder<AsyncSnapshot<List<DailyPriority>>>(
+                valueListenable: _tomorrowPrioritySnapshot,
+                builder: (context, snapshot, _) => TomorrowPreview(
+                  key: widget.tomorrowKey,
+                  day: _tomorrow,
+                  loading:
+                      _isLoading ||
+                      snapshot.connectionState == ConnectionState.waiting,
+                  error:
+                      _calendarLoadError ??
+                      (snapshot.hasError
+                          ? 'Could not load tomorrow’s priorities.'
+                          : null),
+                  events: _tomorrowEvents
+                      .map(
+                        (e) => TomorrowPreviewEvent(
+                          title: e.title,
+                          start: e.start,
+                          end: e.end,
+                          allDay: e.isAllDay,
+                          onTap: () => _handleEventTap(e),
+                        ),
+                      )
+                      .toList(),
+                  priorities: snapshot.data ?? const [],
+                  onEdit: _editPriority,
+                  onToggle: _togglePriority,
+                  onViewDay: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            MonthCalendarScreen(initialDay: _tomorrow),
+                      ),
+                    );
+                    if (mounted) await _loadTodayEvents();
+                  },
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// One scrolling list on a phone. On an unfolded iPhone Duo the brief and
+  /// the timeline keep the right pane, where the closed phone had them, and
+  /// what is on now, the alerts, priorities and tomorrow take the left;
+  /// each side scrolls on its own.
+  /// Unfolded, the daily brief is a strip until it is tapped open.
+  bool _briefOpen = false;
+
+  Widget _buildPage({
+    required List<Widget> head,
+    required List<Widget> brief,
+    required List<Widget> now,
+    required List<Widget> timeline,
+    required List<Widget> tomorrow,
+  }) {
+    Widget refreshing(Widget child) => RefreshIndicator(
+      onRefresh: () => _loadTodayEvents(forceRefresh: true),
+      child: child,
+    );
+    if (!DuoPose.of(context).twoPane) {
+      return refreshing(
+        ListView(
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
+          children: [...head, ...brief, ...now, ...timeline, ...tomorrow],
+        ),
+      );
+    }
+    return DuoPanes(
+      cover: refreshing(
+        ListView(
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 140),
+          children: [
+            ...head,
+            ...brief,
+            if (_briefOpen)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => setState(() => _briefOpen = false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: MyDayScreen.purple,
+                  ),
+                  child: const Text('Show less'),
+                ),
+              ),
+            ...timeline,
+          ],
+        ),
+      ),
+      extra: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 22, 0, 140),
+        // Each group opens with the gap from the section above it.
+        children: [...now.skip(1), ...tomorrow],
       ),
     );
   }
@@ -1862,6 +1920,8 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
                           );
                     return DailyBriefCard(
                       headline: headline,
+                      compact: DuoPose.of(context).twoPane && !_briefOpen,
+                      onOpen: () => setState(() => _briefOpen = true),
                       action: action,
                       // Last night against the need Home and Capacity use;
                       // nothing about sleep for someone who doesn't track it.
@@ -3698,6 +3758,34 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
 
   /// Events and timed priorities in one list, with the gaps between them.
   /// A priority linked to an event shares that event's row.
+  /// A priority dropped on the full-day timeline starts at [start] today;
+  /// one whose bottom edge was dragged keeps its start and lasts [minutes].
+  Future<void> _placePriority(
+    String path,
+    DateTime? start, {
+    int? minutes,
+  }) async {
+    final p = (_prioritySnapshot.value.data ?? const <DailyPriority>[])
+        .where((p) => p.reference.path == path)
+        .firstOrNull;
+    final at = start ?? p?.sourceStart;
+    if (p == null || at == null) return;
+    try {
+      await DailyPriorityService.editPriority(
+        p,
+        title: p.title,
+        date: DateUtils.dateOnly(at),
+        scheduledAt: at,
+        completed: p.completed,
+        reminderMinutes: p.reminderMinutes,
+        reminderTimeMinutes: p.reminderTimeMinutes,
+        planning: minutes == null ? null : {...p.planning, 'minutes': minutes},
+      );
+    } catch (_) {
+      if (mounted) _showMessage("Couldn't set the time.", error: true);
+    }
+  }
+
   Widget _buildTimeline() => ListenableBuilder(
     listenable: Listenable.merge([
       _prioritySnapshot,
@@ -3883,6 +3971,113 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
         );
       }
 
+      // What a regular row says about an item, as the one chip its block
+      // on the full-day timeline has room for.
+      DayGridChip? chipFor(AgendaItem<_TimelineItem> entry) {
+        final event = entry.item.event;
+        final priority = entry.item.priority;
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        DayGridChip tinted(
+          String label,
+          IconData icon,
+          ({Color accent, Color fg, Color bg}) style, {
+          VoidCallback? onTap,
+        }) => DayGridChip(
+          label: label,
+          icon: icon,
+          foreground: dark ? style.accent : style.fg,
+          background: dark ? style.accent.withValues(alpha: .18) : style.bg,
+          onTap: onTap,
+        );
+        if (!entry.end.isAfter(now)) {
+          // Done with: how your body took it.
+          final reaction = event == null
+              ? null
+              : _reactions[event.sourceEventKey];
+          final style = reaction == null
+              ? null
+              : bodyReactionStyle(reaction.level);
+          return style == null
+              ? null
+              : tinted(style.label, style.icon, (
+                  accent: style.accent,
+                  fg: style.fg,
+                  bg: style.bg,
+                ));
+        }
+        final fit =
+            fits[event?.sourceEventKey ??
+                'priority:${priority!.reference.path}'];
+        final suggested = fit?.suggestedStart;
+        if (fit != null && fit.kind == EnergyFitKind.clash) {
+          // Short, so the time to move to is never the part cut off.
+          final phase = switch (fit.phase) {
+            EnergyPhase.groggy => 'your groggy start',
+            EnergyPhase.windDown => 'your wind-down',
+            _ => 'your dip',
+          };
+          final canMove =
+              fit.movable &&
+              suggested != null &&
+              (event != null ? !event.isPriorityLinked : !priority!.completed);
+          if (!canMove) {
+            return DayGridChip(
+              label: 'Lands in $phase',
+              foreground: dark ? colors.warning : const Color(0xFF8A5200),
+              background: dark
+                  ? colors.warning.withValues(alpha: .18)
+                  : const Color(0xFFFFF1DC),
+            );
+          }
+          // What is wrong and the tap that fixes it, in one.
+          return DayGridChip(
+            label:
+                'In $phase · Move to ${DateFormat.jm().format(suggested).replaceAll(':00', '')}',
+            foreground: Colors.white,
+            background: MyDayScreen.purple,
+            onTap: () => _openDayFix(
+              DayFix(
+                kind: DayFixKind.energySlot,
+                id: fit.id,
+                title: fit.item.event.title,
+                demandSaved: 0,
+                start: fit.item.event.start,
+                end: fit.item.event.end,
+                newStart: suggested,
+              ),
+              0,
+              _events,
+              snapshot.data ?? const <DailyPriority>[],
+              day: DateUtils.dateOnly(DateTime.now()),
+            ),
+          );
+        }
+        if (fit != null && fit.kind == EnergyFitKind.goodFit) {
+          return DayGridChip(
+            label: 'in ${energyPhasePhrase(fit.phase)} ✓',
+            foreground: colors.success,
+            background: Colors.transparent,
+          );
+        }
+        // A repeating meeting that usually raises or lowers your heart rate.
+        final pattern =
+            event == null || !_cognitiveInput(event).contributesToSchedule
+            ? null
+            : _patterns.bySeries[seriesKeyFor(event.event.recurringEventId)];
+        if (pattern == null) return null;
+        final style = patternStyle(pattern);
+        return tinted(
+          style.tag,
+          style.icon,
+          (accent: style.accent, fg: style.fg, bg: style.bg),
+          onTap: () => showMeetingPatternSheet(
+            context,
+            title: event!.title,
+            pattern: pattern,
+          ),
+        );
+      }
+
       final onlyEvents = earlier.every((i) => i.item.priority == null);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3902,50 +4097,88 @@ class _MyDayScreenState extends State<MyDayScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 10),
           ],
-          _SectionCard(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                children: [
-                  if (earlier.isNotEmpty)
-                    _ListAction(
-                      icon: _showEarlier
-                          ? CupertinoIcons.chevron_down
-                          : CupertinoIcons.chevron_right,
-                      label:
-                          '${earlier.length} earlier ${onlyEvents ? (earlier.length == 1 ? 'event' : 'events') : (earlier.length == 1 ? 'item' : 'items')}',
-                      muted: true,
-                      onTap: () => setState(() => _showEarlier = !_showEarlier),
-                    ),
-                  if (_showEarlier)
-                    for (final entry in earlier) itemRow(entry, past: true),
-                  TimelineNowLine(now),
-                  for (final entry in agenda)
-                    switch (entry) {
-                      AgendaItem<_TimelineItem>() => itemRow(entry),
-                      AgendaOpening<_TimelineItem>(:final start, :final end) =>
-                        TimelineOpeningRow(
-                          start: start,
-                          label: end == null
-                              ? 'Open · rest of day'
-                              : 'Open · ${formatSpan(end.difference(start))}',
-                          onPlan: () => _planSlot(start, end),
-                        ),
-                      AgendaBreak<_TimelineItem>(:final minutes) =>
-                        TimelineBreakRow(minutes),
-                    },
-                  if (agenda.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Nothing else on your timeline today.',
-                        style: TextStyle(color: colors.textSecondary),
+          if (DuoPose.of(context).twoPane)
+            // Tall enough to fill the pane once the brief scrolls away.
+            DayGrid(
+              day: today,
+              now: now,
+              height: math.max(320, MediaQuery.sizeOf(context).height - 170),
+              blocks: [
+                for (final entry in items)
+                  DayGridBlock(
+                    id:
+                        entry.item.event?.sourceEventKey ??
+                        entry.item.priority!.reference.path,
+                    title:
+                        entry.item.event?.title ?? entry.item.priority!.title,
+                    start: entry.start,
+                    end: entry.end,
+                    color: entry.item.event?.color ?? timelineDoneGreen,
+                    onTap: entry.item.event != null
+                        ? () => _handleEventTap(entry.item.event!)
+                        : () => _editPriority(entry.item.priority!),
+                    // A priority with its own length; a calendar event's
+                    // times belong to the calendar.
+                    resizable:
+                        entry.item.event == null &&
+                        entry.item.priority!.sourceEnd == null &&
+                        !entry.item.priority!.completed,
+                    chip: chipFor(entry),
+                  ),
+              ],
+              onDrop: (drag, start) => _placePriority(drag.id, start),
+              onResize: (id, minutes) =>
+                  _placePriority(id, null, minutes: minutes),
+            )
+          else
+            _SectionCard(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  children: [
+                    if (earlier.isNotEmpty)
+                      _ListAction(
+                        icon: _showEarlier
+                            ? CupertinoIcons.chevron_down
+                            : CupertinoIcons.chevron_right,
+                        label:
+                            '${earlier.length} earlier ${onlyEvents ? (earlier.length == 1 ? 'event' : 'events') : (earlier.length == 1 ? 'item' : 'items')}',
+                        muted: true,
+                        onTap: () =>
+                            setState(() => _showEarlier = !_showEarlier),
                       ),
-                    ),
-                ],
+                    if (_showEarlier)
+                      for (final entry in earlier) itemRow(entry, past: true),
+                    TimelineNowLine(now),
+                    for (final entry in agenda)
+                      switch (entry) {
+                        AgendaItem<_TimelineItem>() => itemRow(entry),
+                        AgendaOpening<_TimelineItem>(
+                          :final start,
+                          :final end,
+                        ) =>
+                          TimelineOpeningRow(
+                            start: start,
+                            label: end == null
+                                ? 'Open · rest of day'
+                                : 'Open · ${formatSpan(end.difference(start))}',
+                            onPlan: () => _planSlot(start, end),
+                          ),
+                        AgendaBreak<_TimelineItem>(:final minutes) =>
+                          TimelineBreakRow(minutes),
+                      },
+                    if (agenda.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Nothing else on your timeline today.',
+                          style: TextStyle(color: colors.textSecondary),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       );
     },
@@ -4268,6 +4501,52 @@ class _PriorityRow extends StatelessWidget {
                 child: pillBadge,
               ),
             ],
+            // Unfolded, the timeline is across the hinge: drag this onto a
+            // time there.
+            if (DuoPose.of(context).twoPane && !completed)
+              Draggable<DayGridDrag>(
+                // The drop lands at the finger, not the grip's corner.
+                dragAnchorStrategy: pointerDragAnchorStrategy,
+                data: DayGridDrag(
+                  id: priority.reference.path,
+                  title: priority.title,
+                  minutes: priorityMinutes(priority) ?? 30,
+                ),
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 260),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: MyDayScreen.purple,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      priority.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                child: Semantics(
+                  label: 'Drag onto the timeline',
+                  child: const Padding(
+                    padding: EdgeInsets.fromLTRB(10, 8, 0, 8),
+                    child: Icon(
+                      Icons.drag_indicator_rounded,
+                      color: MyDayScreen.muted,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

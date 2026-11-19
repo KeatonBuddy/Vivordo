@@ -13,7 +13,12 @@ import 'package:vivordo_health/widgets/swipe_to_delete.dart';
 // The row never accesses Firestore; this mock only supplies its model reference.
 // ignore: subtype_of_sealed_class, must_be_immutable
 class _Reference extends Mock
-    implements DocumentReference<Map<String, dynamic>> {}
+    implements DocumentReference<Map<String, dynamic>> {
+  // The test window is as wide as an unfolded iPhone Duo, where the row's
+  // drag grip carries the priority's path.
+  @override
+  String get path => 'daily_priorities/day/items/timed';
+}
 
 void main() {
   testWidgets('edit popup loads and saves reminder selection', (tester) async {

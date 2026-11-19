@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
 import '../src/utils/energy_factors.dart';
+import 'duo_layout.dart';
 import '../src/utils/energy_fit.dart';
 import '../src/utils/energy_forecast.dart';
 import '../src/utils/sleep_schedule.dart';
@@ -325,7 +326,13 @@ class _EnergyCurveState extends State<EnergyCurve>
       _breath.stop();
       _breath.value = 0;
     }
-    if (!widget.drawIn || still || _drawnOn == _today()) return;
+    // An unfolded iPhone Duo draws it again as the pane opens.
+    if (DuoUnfold.justNow && _drawnForUnfold != DuoUnfold.at) {
+      _unfolding = true;
+    }
+    if (!widget.drawIn || still || (_drawnOn == _today() && !_unfolding)) {
+      return;
+    }
     // Hidden until it's on screen, then drawn once.
     if (_scroll == null) _draw.value = 0;
     final scroll = Scrollable.maybeOf(context)?.position;
@@ -336,8 +343,31 @@ class _EnergyCurveState extends State<EnergyCurve>
     WidgetsBinding.instance.addPostFrameCallback((_) => _drawWhenSeen());
   }
 
+  bool _unfolding = false;
+
+  /// The unfold the curve was last drawn for, so one unfold draws it once
+  /// however often the card rebuilds while the pane opens.
+  static DateTime? _drawnForUnfold;
+
+  /// The phone has just been unfolded with the curve already on screen.
+  void _unfolded() {
+    if (!mounted || !widget.drawIn || MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
+    if (_drawnForUnfold == DuoUnfold.at) return;
+    _unfolding = true;
+    _draw.value = 0;
+    _drawWhenSeen();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    DuoUnfold.opened.addListener(_unfolded);
+  }
+
   void _drawWhenSeen() {
-    if (!mounted || _drawnOn == _today()) return;
+    if (!mounted || (_drawnOn == _today() && !_unfolding)) return;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) return;
     final middle = box.localToGlobal(box.size.center(Offset.zero)).dy;
@@ -346,11 +376,21 @@ class _EnergyCurveState extends State<EnergyCurve>
     if (middle < 100 || middle > screen - 110) return;
     _drawnOn = _today();
     _scroll?.removeListener(_drawWhenSeen);
-    _draw.forward(from: 0);
+    if (!_unfolding) {
+      _draw.forward(from: 0);
+      return;
+    }
+    // After iOS has faded the display in, and as the hours finish rising.
+    _unfolding = false;
+    _drawnForUnfold = DuoUnfold.at;
+    Future<void>.delayed(const Duration(milliseconds: 700), () {
+      if (mounted) _draw.forward(from: 0);
+    });
   }
 
   @override
   void dispose() {
+    DuoUnfold.opened.removeListener(_unfolded);
     _scroll?.removeListener(_drawWhenSeen);
     _drawCurve.dispose();
     _breathCurve.dispose();

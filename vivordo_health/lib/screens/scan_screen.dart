@@ -5,11 +5,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart'
     show CupertinoActivityIndicator, CupertinoIcons;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/vivordo_theme.dart';
 import '../widgets/apple_ui.dart';
+import '../widgets/duo_layout.dart';
+import 'heart_rate_detail_screen.dart';
+import 'stress_detail_screen.dart';
+import '../src/utils/desk_glance.dart';
+import '../src/utils/home_stress_card_logic.dart' show homeStressLevel;
+import '../widgets/scan_range_scale.dart';
 import '../src/utils/ppg_algorithm.dart';
 import '../src/services/user_service.dart';
 
@@ -117,7 +124,19 @@ class _ScanScreenState extends State<ScanScreen>
     );
 
     _checkFirstScanStatus();
+
+    // A simulator has no camera, so a result can never be reached there. A
+    // debug build made with --dart-define=SCAN_PREVIEW_BPM=76 opens on that
+    // result instead, to check its layout. Nothing is scanned or saved.
+    // Without the define, and in every release build, this does nothing.
+    if (kDebugMode && _previewBpm > 0) {
+      _finalBpm = _previewBpm.toDouble();
+      _finalQuality = .8;
+      _scanState = ScanState.success;
+    }
   }
+
+  static const _previewBpm = int.fromEnvironment('SCAN_PREVIEW_BPM');
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -715,70 +734,165 @@ class _ScanScreenState extends State<ScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.vivordoColors.page,
-      body: CollapsingTitle(
-        title: 'Scan',
-        threshold: 84,
-        child: SafeArea(
+      // On an iPhone Duo set down half open, the page stands up on the top
+      // half and the hand rests on the flat half, with nothing on the hinge.
+      body: ValueListenableBuilder<HingeStatus?>(
+        valueListenable: DuoHinge.status,
+        child: _buildPage(),
+        builder: (context, _, page) => DuoHinge.tabletopOf(context)
+            ? Column(
+                children: [
+                  Expanded(child: page!),
+                  Expanded(child: _buildFlatHalf()),
+                ],
+              )
+            : _twoPane
+            ? DuoPanes(opens: false, cover: page!, extra: _buildLeftPane())
+            : page!,
+      ),
+    );
+  }
+
+  bool get _twoPane => DuoPose.of(context).twoPane;
+
+  /// Opened flat, the pane beside the scan: how it works before and during
+  /// a scan, then the Heart Rate screen, where the new reading lands.
+  Widget _buildLeftPane() => _scanState == ScanState.success
+      ? const HeartRateDetailScreen()
+      : SafeArea(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
+            padding: const EdgeInsets.fromLTRB(24, 48, 0, 120),
+            child: Column(children: _buildHowItWorks()),
+          ),
+        );
+
+  /// The flat half in the tabletop pose: where the finger goes, and the way
+  /// out. The reading itself is on the standing half above the hinge.
+  Widget _buildFlatHalf() {
+    final colors = context.vivordoColors;
+    final scanning =
+        _scanState == ScanState.scanning || _scanState == ScanState.processing;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 48),
-                Row(
-                  children: [
-                    // The tab's name, the size of the other tabs' titles.
-                    Expanded(
-                      child: Text(
-                        'Scan',
-                        textScaler: MediaQuery.textScalerOf(
-                          context,
-                        ).clamp(maxScaleFactor: 1.5),
-                        style: const TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
+                const Icon(Icons.fingerprint, color: accentPurple, size: 32),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    scanning
+                        ? 'Keep your finger still on the camera'
+                        : 'Rest your fingertip on the rear camera, behind the standing half',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
-                    IconButton(
-                      key: widget.helpKey,
-                      tooltip: 'Show tutorial',
-                      onPressed: _showScannerTutorial,
-                      icon: const Icon(
-                        CupertinoIcons.question_circle,
-                        color: accentPurple,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '15-second bpm scan',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: context.vivordoColors.textSecondary,
                   ),
                 ),
-                const SizedBox(height: 40),
-                if (!_hasTorch && _scanState != ScanState.initializing) ...[
-                  _buildNoTorchWarning(),
-                  const SizedBox(height: 16),
-                ],
-                if (_showTutorial && _scanState == ScanState.idle) ...[
-                  _buildFirstScanTutorial(),
-                  const SizedBox(height: 20),
-                ],
-                if (_scanState == ScanState.initializing) _buildInitializing(),
-                if (_scanState == ScanState.idle) _buildIdle(),
-                if (_scanState == ScanState.scanning) _buildScanning(),
-                if (_scanState == ScanState.processing) _buildProcessing(),
-                if (_scanState == ScanState.success) _buildSuccess(),
-                if (_scanState == ScanState.error) _buildError(),
-                const SizedBox(height: 120),
               ],
             ),
+            const SizedBox(height: 10),
+            Text(
+              'The reading stays up on the other half. Breathe out slowly while it runs.',
+              style: TextStyle(fontSize: 14, color: colors.textSecondary),
+            ),
+            const Spacer(),
+            if (scanning || _scanArmed)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _reset,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accentPurple,
+                    minimumSize: const Size.fromHeight(52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPage() {
+    return CollapsingTitle(
+      title: 'Scan',
+      threshold: 84,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 48),
+              Row(
+                children: [
+                  // The tab's name, the size of the other tabs' titles.
+                  Expanded(
+                    child: Text(
+                      'Scan',
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: 1.5),
+                      style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: widget.helpKey,
+                    tooltip: 'Show tutorial',
+                    onPressed: _showScannerTutorial,
+                    icon: const Icon(
+                      CupertinoIcons.question_circle,
+                      color: accentPurple,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '15-second bpm scan',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: context.vivordoColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 40),
+              if (!_hasTorch && _scanState != ScanState.initializing) ...[
+                _buildNoTorchWarning(),
+                const SizedBox(height: 16),
+              ],
+              if (_showTutorial && _scanState == ScanState.idle) ...[
+                _buildFirstScanTutorial(),
+                const SizedBox(height: 20),
+              ],
+              if (_scanState == ScanState.initializing) _buildInitializing(),
+              if (_scanState == ScanState.idle) _buildIdle(),
+              if (_scanState == ScanState.scanning) _buildScanning(),
+              if (_scanState == ScanState.processing) _buildProcessing(),
+              if (_scanState == ScanState.success) _buildSuccess(),
+              if (_scanState == ScanState.error) _buildError(),
+              const SizedBox(height: 120),
+            ],
           ),
         ),
       ),
@@ -1154,112 +1268,117 @@ class _ScanScreenState extends State<ScanScreen>
             ],
           ),
         ),
-        const SizedBox(height: 28),
-
-        // ── How it works card ─────────────────────────────────────────
-        Container(
-          key: widget.howItWorksKey,
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: context.vivordoColors.card,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: context.vivordoColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(CupertinoIcons.info, size: 15, color: accentPurple),
-                  SizedBox(width: 6),
-                  Text(
-                    'How it works',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: accentPurple,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildStep(
-                '1',
-                CupertinoIcons.sun_max,
-                _hasTorch ? 'Enable torch' : 'Find bright light',
-                _hasTorch
-                    ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
-                    : 'Find a bright light source and press your fingertip firmly over the lens.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '2',
-                CupertinoIcons.hand_point_right,
-                'Cover the camera and flash',
-                'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '3',
-                CupertinoIcons.heart,
-                'Hold still',
-                'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
-              ),
-              const SizedBox(height: 14),
-              _buildStep(
-                '4',
-                CupertinoIcons.chart_bar_fill,
-                'Get your results',
-                'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        // ── Quick tips ────────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: accentPurple.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
-          ),
-          child: Column(
-            children: [
-              _buildTipRow(
-                CupertinoIcons.hand_raised_slash,
-                'Avoid pressing too hard — light contact works best',
-              ),
-              const SizedBox(height: 10),
-              _buildTipRow(
-                Icons.straighten_outlined,
-                'Keep your hand and phone level',
-              ),
-              const SizedBox(height: 10),
-              _buildTipRow(
-                CupertinoIcons.timer,
-                'After Start Scan, scanning begins when your finger is detected',
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildDisclaimer(),
+        // On an unfolded iPhone Duo these sit in the pane across the hinge.
+        if (!_twoPane) ...[const SizedBox(height: 28), ..._buildHowItWorks()],
       ],
     );
   }
+
+  /// How a scan works, the tips and the disclaimer: under Start Scan on a
+  /// phone, in the left pane on an unfolded iPhone Duo.
+  List<Widget> _buildHowItWorks() => [
+    // ── How it works card ─────────────────────────────────────────
+    Container(
+      key: widget.howItWorksKey,
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: context.vivordoColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.vivordoColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(CupertinoIcons.info, size: 15, color: accentPurple),
+              SizedBox(width: 6),
+              Text(
+                'How it works',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: accentPurple,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildStep(
+            '1',
+            CupertinoIcons.sun_max,
+            _hasTorch ? 'Enable torch' : 'Find bright light',
+            _hasTorch
+                ? 'Tap Start Scan to turn on the flash and illuminate your fingertip.'
+                : 'Find a bright light source and press your fingertip firmly over the lens.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '2',
+            CupertinoIcons.hand_point_right,
+            'Cover the camera and flash',
+            'Gently place your fingertip over the rear camera and flash, then use your other hand to cover the entire camera and flash module. No need to press hard.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '3',
+            CupertinoIcons.heart,
+            'Hold still',
+            'After pressing Start Scan, keep steady for 15 seconds. Scanning begins when your finger is detected.',
+          ),
+          const SizedBox(height: 14),
+          _buildStep(
+            '4',
+            CupertinoIcons.chart_bar_fill,
+            'Get your results',
+            'Your heart rate is calculated and saved automatically, and counts towards your stress score.',
+          ),
+        ],
+      ),
+    ),
+
+    const SizedBox(height: 20),
+
+    // ── Quick tips ────────────────────────────────────────────────
+    Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: accentPurple.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accentPurple.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        children: [
+          _buildTipRow(
+            CupertinoIcons.hand_raised_slash,
+            'Avoid pressing too hard — light contact works best',
+          ),
+          const SizedBox(height: 10),
+          _buildTipRow(
+            Icons.straighten_outlined,
+            'Keep your hand and phone level',
+          ),
+          const SizedBox(height: 10),
+          _buildTipRow(
+            CupertinoIcons.timer,
+            'After Start Scan, scanning begins when your finger is detected',
+          ),
+        ],
+      ),
+    ),
+    const SizedBox(height: 16),
+    _buildDisclaimer(),
+  ];
 
   /// Method and accuracy disclosure App Review expects (guideline 1.4.1).
   Widget _buildDisclaimer() {
@@ -1411,11 +1530,7 @@ class _ScanScreenState extends State<ScanScreen>
     // are, so the label describes the heart rate (App Review 1.4.1).
     // Plain bands, all one calm colour: 80–100 is a normal resting rate, so
     // nothing here reads as a warning.
-    final heartLabel = bpm < 65
-        ? 'Resting'
-        : bpm < 80
-        ? 'Typical'
-        : 'Higher';
+    final heartLabel = HeartRateBand.of(bpm).label;
     // Status colours here are text on the result cards, so they use the
     // theme's readable status tones.
     final status = context.vivordoColors;
@@ -1504,6 +1619,12 @@ class _ScanScreenState extends State<ScanScreen>
                   ],
                 ),
               ),
+              // Unfolded, the result has room to show where the reading
+              // falls, not only name the range.
+              if (_twoPane) ...[
+                const SizedBox(height: 20),
+                ScanRangeScale(bpm: bpm),
+              ],
             ],
           ),
         ),
@@ -1582,6 +1703,7 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
 
+        if (_twoPane) ...[const SizedBox(height: 12), _buildStressRow()],
         const SizedBox(height: 12),
         _buildDisclaimer(),
         const SizedBox(height: 16),
@@ -1606,6 +1728,69 @@ class _ScanScreenState extends State<ScanScreen>
           ),
         ),
       ],
+    );
+  }
+
+  /// The Stress score this reading counts towards, as Home last had it.
+  /// Shown on an unfolded iPhone Duo; opens the Stress screen.
+  Widget _buildStressRow() {
+    final colors = context.vivordoColors;
+    return ValueListenableBuilder<double?>(
+      valueListenable: DeskGlance.stress,
+      builder: (context, stress, _) => Material(
+        color: colors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: colors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const StressDetailScreen()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.waveform_path_ecg,
+                  size: 20,
+                  color: accentPurple,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stress == null
+                            ? 'Stress score'
+                            : 'Stress ${stress.round()} · ${homeStressLevel(stress)}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        'This reading counts towards it.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  CupertinoIcons.chevron_right,
+                  size: 16,
+                  color: colors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

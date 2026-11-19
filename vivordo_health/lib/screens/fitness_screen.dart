@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../widgets/visible_stream_builder.dart';
 import '../widgets/contextual_insight_bar.dart';
+import '../widgets/duo_layout.dart';
 import '../src/services/active_workout_navigation.dart';
 import '../widgets/workout_rest_timer.dart';
 import '../widgets/training_load_card.dart';
@@ -277,146 +278,178 @@ class _FitnessScreenState extends State<FitnessScreen> {
         title: 'Fitness',
         threshold: 48,
         child: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 150),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // At large text the actions go under the title, so the
-                // title keeps the width.
-                Builder(
-                  builder: (context) {
-                    final title = Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Fitness',
-                          // Large titles stop growing at 1.5x, as in iOS.
-                          textScaler: MediaQuery.textScalerOf(
-                            context,
-                          ).clamp(maxScaleFactor: 1.5),
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w800,
-                            color: colors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                          style: TextStyle(color: colors.textSecondary),
-                        ),
-                      ],
-                    );
-                    final actions = Row(
-                      key: widget.actionsKey,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: _WorkoutStreakPill(),
-                        ),
-                        IconButton(
-                          onPressed: _openGoals,
-                          tooltip: 'Goals',
-                          icon: const Icon(
-                            CupertinoIcons.scope,
-                            color: _purple,
-                          ),
-                        ),
-                      ],
-                    );
-                    return MediaQuery.textScalerOf(context).scale(34) > 46
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [title, actions],
-                          )
-                        : Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: title),
-                              actions,
-                            ],
-                          );
-                  },
-                ),
-                const SizedBox(height: 18),
-                KeyedSubtree(
-                  key: widget.ringsKey,
-                  child: _TodayActivityRings(onTap: _openMonthlyRings),
-                ),
-                const SizedBox(height: 12),
-                ValueListenableBuilder<bool>(
-                  key: widget.buttonsKey,
-                  valueListenable: FitnessWorkoutTimerState.isRunning,
-                  builder: (context, isWorkoutRunning, _) => Row(
+          child: _buildPage(
+            today: [
+              // At large text the actions go under the title, so the
+              // title keeps the width.
+              Builder(
+                builder: (context) {
+                  final title = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: FilledButton.icon(
-                            onPressed: _startWorkout,
-                            icon: Icon(
-                              isWorkoutRunning && _activeWorkoutDraft != null
-                                  ? CupertinoIcons.timer
-                                  : Icons.fitness_center_rounded,
-                            ),
-                            label: _WorkoutButtonLabel(
-                              draft: isWorkoutRunning
-                                  ? _activeWorkoutDraft
-                                  : null,
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _purple,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
+                      Text(
+                        'Fitness',
+                        // Large titles stop growing at 1.5x, as in iOS.
+                        textScaler: MediaQuery.textScalerOf(
+                          context,
+                        ).clamp(maxScaleFactor: 1.5),
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: colors.textPrimary,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      SizedBox(
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat('EEEE, MMMM d').format(DateTime.now()),
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ],
+                  );
+                  final actions = Row(
+                    key: widget.actionsKey,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: _WorkoutStreakPill(),
+                      ),
+                      IconButton(
+                        onPressed: _openGoals,
+                        tooltip: 'Goals',
+                        icon: const Icon(CupertinoIcons.scope, color: _purple),
+                      ),
+                    ],
+                  );
+                  return MediaQuery.textScalerOf(context).scale(34) > 46
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [title, actions],
+                        )
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: title),
+                            actions,
+                          ],
+                        );
+                },
+              ),
+              const SizedBox(height: 18),
+              KeyedSubtree(
+                key: widget.ringsKey,
+                child: _TodayActivityRings(onTap: _openMonthlyRings),
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder<bool>(
+                key: widget.buttonsKey,
+                valueListenable: FitnessWorkoutTimerState.isRunning,
+                builder: (context, isWorkoutRunning, _) => Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
                         height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: _logActivity,
-                          icon: const Icon(CupertinoIcons.add),
-                          label: const Text(
-                            'Log activity',
-                            style: TextStyle(fontWeight: FontWeight.w800),
+                        child: FilledButton.icon(
+                          onPressed: _startWorkout,
+                          icon: Icon(
+                            isWorkoutRunning && _activeWorkoutDraft != null
+                                ? CupertinoIcons.timer
+                                : Icons.fitness_center_rounded,
                           ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _purple,
-                            side: BorderSide(
-                              color: _purple.withValues(alpha: .45),
-                            ),
+                          label: _WorkoutButtonLabel(
+                            draft: isWorkoutRunning
+                                ? _activeWorkoutDraft
+                                : null,
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _purple,
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: 52,
+                      child: OutlinedButton.icon(
+                        onPressed: _logActivity,
+                        icon: const Icon(CupertinoIcons.add),
+                        label: const Text(
+                          'Log activity',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _purple,
+                          side: BorderSide(
+                            color: _purple.withValues(alpha: .45),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const _SuggestRoutineRow(),
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: widget.weekKey,
-                  child: _ThisWeekCard(strengthGoals: _strengthGoals),
-                ),
-                const _TrainingLoadSection(),
-                const SizedBox(height: 24),
-                KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
-                const SizedBox(height: 24),
-                KeyedSubtree(
-                  key: widget.bodyKey,
-                  child: _BodyCard(_recentDays),
-                ),
-              ],
-            ),
+              ),
+              const _SuggestRoutineRow(),
+            ],
+            week: [
+              const SizedBox(height: 24),
+              KeyedSubtree(
+                key: widget.weekKey,
+                child: _ThisWeekCard(strengthGoals: _strengthGoals),
+              ),
+              const _TrainingLoadSection(),
+            ],
+            rest: [
+              const SizedBox(height: 24),
+              KeyedSubtree(key: widget.recentKey, child: const _RecentFeed()),
+              const SizedBox(height: 24),
+              KeyedSubtree(key: widget.bodyKey, child: _BodyCard(_recentDays)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  final _detail = ValueNotifier<Widget?>(null);
+
+  /// One scrolling column on a phone. On an unfolded iPhone Duo today's
+  /// activity, the buttons, Recent and Body keep the right pane, where the
+  /// closed phone had them; the week takes the left, and a recent workout
+  /// opens over it.
+  Widget _buildPage({
+    required List<Widget> today,
+    required List<Widget> week,
+    required List<Widget> rest,
+  }) {
+    Widget scroll(List<Widget> children, {double right = 18}) =>
+        SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(18, 22, right, 150),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
+        );
+    if (!DuoPose.of(context).twoPane) {
+      return scroll([...today, ...week, ...rest]);
+    }
+    return DuoDetail(
+      detail: _detail,
+      child: DuoPanes(
+        cover: scroll([...today, ...rest]),
+        extra: DuoDetail.pane(
+          _detail,
+          ColoredBox(
+            color: context.vivordoColors.page,
+            // The week opens with the gap from the section above it.
+            child: scroll(week.skip(1).toList(), right: 0),
           ),
         ),
       ),
@@ -458,8 +491,20 @@ class _FitnessScreenState extends State<FitnessScreen> {
     if (mounted) setState(() {});
   }
 
-  void _openMonthlyRings() =>
+  void _openMonthlyRings() {
+    if (!DuoPose.of(context).twoPane) {
       showAppleSheet<void>(context, builder: (_) => const MonthlyRingsSheet());
+      return;
+    }
+    // Unfolded, it takes the pane across the hinge; Done returns the week.
+    _detail.value = Material(
+      color: context.vivordoColors.page,
+      child: const Align(
+        alignment: Alignment.topCenter,
+        child: MonthlyRingsSheet(),
+      ),
+    );
+  }
 }
 
 class _TodayActivityRings extends StatefulWidget {
@@ -661,14 +706,18 @@ class _TodayActivityRingsState extends State<_TodayActivityRings>
                                     'calories ${(progress[1] * 100).round()}%, '
                                     'exercise ${(progress[2] * 100).round()}%',
                                 child: ExcludeSemantics(
-                                  child: CustomPaint(
-                                    painter: ActivityRingsPainter(
-                                      move: progress[0],
-                                      exercise: progress[1],
-                                      stand: progress[2],
-                                      moveColor: Colors.white,
-                                      trackColor: Colors.white.withValues(
-                                        alpha: .18,
+                                  // On unfold the rings sweep round to
+                                  // today's values.
+                                  child: DuoUnfoldIn.custom(
+                                    builder: (context, t) => CustomPaint(
+                                      painter: ActivityRingsPainter(
+                                        move: progress[0] * t,
+                                        exercise: progress[1] * t,
+                                        stand: progress[2] * t,
+                                        moveColor: Colors.white,
+                                        trackColor: Colors.white.withValues(
+                                          alpha: .18,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1086,8 +1135,9 @@ class _ThisWeekCardState extends State<_ThisWeekCard> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            for (final day in days)
+                            for (final (index, day) in days.indexed)
                               _WeekDayBar(
+                                order: .5 + .5 * index / days.length,
                                 letter: 'MTWTFSS'[day.date.weekday - 1],
                                 fraction: maxMinutes == 0
                                     ? 0
@@ -1312,12 +1362,15 @@ class _TrainingLoadSectionState extends State<_TrainingLoadSection> {
 
 class _WeekDayBar extends StatelessWidget {
   const _WeekDayBar({
+    required this.order,
     required this.letter,
     required this.fraction,
     required this.isToday,
     required this.workout,
   });
 
+  /// Its turn when the bars rise on unfold: 0 first, 1 last.
+  final double order;
   final String letter;
   final double fraction;
   final bool isToday, workout;
@@ -1326,14 +1379,17 @@ class _WeekDayBar extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     mainAxisAlignment: MainAxisAlignment.end,
     children: [
-      Container(
-        width: 16,
-        height: math.max(4, fraction * 60),
-        decoration: BoxDecoration(
-          color: fraction == 0
-              ? context.vivordoColors.input
-              : _purple.withValues(alpha: isToday ? 1 : .55),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+      DuoUnfoldIn.rise(
+        order: order,
+        child: Container(
+          width: 16,
+          height: math.max(4, fraction * 60),
+          decoration: BoxDecoration(
+            color: fraction == 0
+                ? context.vivordoColors.input
+                : _purple.withValues(alpha: isToday ? 1 : .55),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+          ),
         ),
       ),
       const SizedBox(height: 6),
@@ -1717,13 +1773,8 @@ class _RecentWorkoutRow extends StatelessWidget {
     return '${minutes}m ${remainingSeconds}s';
   }
 
-  Future<void> _showSummary(BuildContext context) {
-    return Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => WorkoutSummaryScreen(workout: workout),
-      ),
-    );
-  }
+  void _showSummary(BuildContext context) =>
+      DuoDetail.open(context, WorkoutSummaryScreen(workout: workout));
 }
 
 String _recentDayLabel(DateTime date) {
@@ -2726,6 +2777,22 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   Widget build(BuildContext context) {
     final colors = context.vivordoColors;
     final busy = saving || savingTemplate;
+    final twoPane = DuoPose.of(context).twoPane;
+    // Counts as part of the set fields, so adjusting rest while typing a
+    // weight or reps keeps the keyboard up; any other tap still closes it.
+    final rest = TextFieldTapRegion(
+      child: WorkoutRestTimer(
+        onDeadlineChanged: (deadline) =>
+            NotificationService().updateRestTimerNotification(deadline),
+        loadPreset: ActiveWorkoutStorage.readRestPreset,
+        onPresetChanged: (seconds) => unawaited(
+          ActiveWorkoutStorage.writeRestPreset(seconds).catchError(
+            (Object error) =>
+                debugPrint('Could not save rest timer preset: $error'),
+          ),
+        ),
+      ),
+    );
     return Scaffold(
       backgroundColor: colors.page,
       appBar: AppBar(
@@ -2770,24 +2837,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
           const SizedBox(width: 6),
         ],
       ),
-      // Counts as part of the set fields, so adjusting rest while typing a
-      // weight or reps keeps the keyboard up; any other tap still closes it.
-      bottomNavigationBar: TextFieldTapRegion(
-        child: WorkoutRestTimer(
-          onDeadlineChanged: (deadline) =>
-              NotificationService().updateRestTimerNotification(deadline),
-          loadPreset: ActiveWorkoutStorage.readRestPreset,
-          onPresetChanged: (seconds) => unawaited(
-            ActiveWorkoutStorage.writeRestPreset(seconds).catchError(
-              (Object error) =>
-                  debugPrint('Could not save rest timer preset: $error'),
-            ),
-          ),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-        children: [
+      // Unfolded, the rest bar stays under the timer on the right.
+      bottomNavigationBar: twoPane ? null : rest,
+      body: _buildBody(
+        rest,
+        top: [
           Container(
             padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
             decoration: BoxDecoration(
@@ -2915,6 +2969,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ],
             ),
           ),
+        ],
+        exerciseCards: [
           if (exercises.isNotEmpty) ...[
             const SizedBox(height: 6),
             const _SectionHeader('Exercises'),
@@ -2956,6 +3012,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
             const SizedBox(height: 10),
           ],
+        ],
+        actions: [
           const SizedBox(height: 12),
           SizedBox(
             height: 52,
@@ -2986,6 +3044,41 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// One list on a phone. On an unfolded iPhone Duo the timer, the add
+  /// buttons and the rest bar keep the right pane, where the closed phone
+  /// had them, and the exercises take the left.
+  Widget _buildBody(
+    Widget rest, {
+    required List<Widget> top,
+    required List<Widget> exerciseCards,
+    required List<Widget> actions,
+  }) {
+    if (!DuoPose.of(context).twoPane) {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+        children: [...top, ...exerciseCards, ...actions],
+      );
+    }
+    return DuoPanes(
+      opens: false,
+      cover: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(0, 8, 18, 24),
+              children: [...top, ...actions],
+            ),
+          ),
+          rest,
+        ],
+      ),
+      extra: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 8, 0, 24),
+        children: exerciseCards,
       ),
     );
   }

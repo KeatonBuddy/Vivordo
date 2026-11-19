@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../theme/vivordo_theme.dart';
+import 'duo_layout.dart';
 
 /// Apple-style building blocks shared across the app: alerts, action sheets,
 /// toasts, form and info sheets, and small controls. Use these instead of
@@ -214,6 +215,7 @@ Future<T?> showAppleAlert<T>(
   required List<AppleAlertAction<T>> actions,
 }) => showDialog<T>(
   context: context,
+  anchorPoint: duoTrailingHalf,
   // An iOS alert stays until a button is tapped.
   barrierDismissible: false,
   builder: (dialogContext) => AppleAlert(
@@ -341,6 +343,7 @@ Future<T?> showAppleActionSheet<T>(
   String cancelLabel = 'Cancel',
 }) => showCupertinoModalPopup<T>(
   context: context,
+  anchorPoint: duoTrailingHalf,
   builder: (sheetContext) => CupertinoTheme(
     data: CupertinoThemeData(
       brightness: Theme.of(context).brightness,
@@ -544,6 +547,7 @@ Future<T?> showAppleSheet<T>(
   bool isDismissible = true,
 }) => showModalBottomSheet<T>(
   context: context,
+  anchorPoint: duoTrailingHalf,
   // Above the tab bar and the Vivordo AI bubble, like an iOS sheet.
   useRootNavigator: true,
   isScrollControlled: true,
