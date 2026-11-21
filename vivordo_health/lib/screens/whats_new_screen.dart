@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:vivordo_health/theme/vivordo_theme.dart';
 
-/// Release notes shown once to existing users after the My Day refresh.
+/// Release notes shown once to existing users after an update (1.2).
 class WhatsNewScreen extends StatelessWidget {
   const WhatsNewScreen({super.key, required this.onDismiss});
 
@@ -10,46 +10,46 @@ class WhatsNewScreen extends StatelessWidget {
 
   static const _features = <_WhatsNewFeature>[
     _WhatsNewFeature(
-      icon: CupertinoIcons.speedometer,
-      colors: [Color(0xFF7667F4), Color(0xFF4935F5)],
-      title: 'Your day at a glance',
-      description:
-          'See today’s schedule load, scheduled time and longest opening instantly.',
-    ),
-    _WhatsNewFeature(
-      icon: CupertinoIcons.clock,
-      colors: [Color(0xFF77D36B), Color(0xFF37A84B)],
-      title: 'Know what’s next',
-      description:
-          'Find your current opening and upcoming events from Google Calendar.',
-    ),
-    _WhatsNewFeature(
-      icon: CupertinoIcons.checkmark_circle_fill,
-      colors: [Color(0xFF66D46A), Color(0xFF27A94B)],
-      title: 'Independent daily priorities',
-      description:
-          'Use smart calendar suggestions or add your own, then check them off as you go.',
-    ),
-    _WhatsNewFeature(
-      icon: CupertinoIcons.list_bullet_indent,
+      icon: CupertinoIcons.chart_bar_alt_fill,
       colors: [Color(0xFF76A7FF), Color(0xFF3478F6)],
-      title: 'A connected timeline',
+      title: 'Months of your health at a glance',
       description:
-          'Follow the day in order, open events directly and jump into the full calendar.',
+          'Steps, sleep, heart rate, mood and more now go back 6 months and a year, with a calendar for every month.',
     ),
     _WhatsNewFeature(
-      icon: CupertinoIcons.add,
+      icon: CupertinoIcons.person_2_fill,
       colors: [Color(0xFFA697FF), Color(0xFF6752EF)],
-      title: 'Add plans without leaving My Day',
+      title: 'Invite friends to plans',
       description:
-          'Create calendar events or scheduled and repeating priorities in a few taps.',
+          'Add Circle friends to any event, even a repeating one. They see how it fits their day before they answer.',
     ),
     _WhatsNewFeature(
-      icon: CupertinoIcons.book_fill,
-      colors: [Color(0xFF43D7C8), Color(0xFF00AFA1)],
-      title: 'Reflect in the moment',
+      icon: CupertinoIcons.mic_fill,
+      colors: [Color(0xFF7667F4), Color(0xFF4935F5)],
+      title: 'Talk to Vivordo AI',
       description:
-          'Your journal stays close by with the same private writing experience.',
+          'Tap the mic and say it. Your words turn into text on your iPhone, ready to check before you send.',
+    ),
+    _WhatsNewFeature(
+      icon: Icons.fitness_center_rounded,
+      colors: [Color(0xFFFFB067), Color(0xFFF27A1A)],
+      title: 'Drop sets and supersets',
+      description:
+          'Add a drop set, or pair another exercise as a superset, from any set in your workout.',
+    ),
+    _WhatsNewFeature(
+      icon: CupertinoIcons.moon_fill,
+      colors: [Color(0xFF43D7C8), Color(0xFF00AFA1)],
+      title: 'See when sleep runs short',
+      description:
+          'Sleep now counts your short nights over the last two weeks, and tells you when you’ve caught up.',
+    ),
+    _WhatsNewFeature(
+      icon: CupertinoIcons.square_split_2x1,
+      colors: [Color(0xFF77D36B), Color(0xFF37A84B)],
+      title: 'Made for iPhone Duo',
+      description:
+          'Open it up for two panes side by side, or stand it up for a desk view of your day.',
     ),
   ];
 
@@ -117,7 +117,7 @@ class WhatsNewScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Your day, redesigned',
+                    'What’s new in Vivordo',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.textPrimary,
@@ -129,7 +129,7 @@ class WhatsNewScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'A clearer way to plan what matters and move through your schedule.',
+                    'More history, friends in your plans, and a new way to talk to Vivordo AI.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: colors.textSecondary,
@@ -151,7 +151,7 @@ class WhatsNewScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(99),
                       ),
                       child: const Text(
-                        'My Day update',
+                        'Version 1.2',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 15,
@@ -192,7 +192,7 @@ class WhatsNewScreen extends StatelessWidget {
                         ],
                         const SizedBox(height: 10),
                         Text(
-                          'Built to help you spend less time organizing and more time doing.',
+                          'Thanks for growing with Vivordo.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: colors.textSecondary,

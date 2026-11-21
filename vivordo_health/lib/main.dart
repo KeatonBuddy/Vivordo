@@ -50,7 +50,7 @@ import 'screens/paywall_screen.dart';
 
 // Change this identifier whenever a new release should display a fresh
 // What's New screen. It is stored per user in Firestore.
-const _whatsNewReleaseId = 'my_day_refresh_2026_08';
+const _whatsNewReleaseId = 'release_1_2_2026_11';
 
 // Global navigator key for notification navigation
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
