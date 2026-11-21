@@ -38,8 +38,8 @@ final class WatchSnapshotBridge: NSObject, WCSessionDelegate {
     "siriMeetingPatterns",
     // My Day
     "dashboardPriorities", "dashboardPrioritiesDay",
-    // Workouts: saved workouts with last time's sets
-    "watchWorkouts",
+    // Workouts: saved workouts with last time's sets, and Settings → Units
+    "watchWorkouts", "watchLiftUnit", "watchDistanceUnit",
   ]
 
   /// Called on the main queue once something done on the watch has been queued.

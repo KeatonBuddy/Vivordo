@@ -140,7 +140,14 @@ void main() async {
           initialData: FirebaseAuth.instance.currentUser,
         ),
         ChangeNotifierProxyProvider<User?, ThemeController>(
-          create: (_) => ThemeController(),
+          create: (_) {
+            final controller = ThemeController();
+            // The Watch shows workouts in the same units.
+            void publish() => HomeWidgetService.publishUnits(controller.units);
+            controller.addListener(publish);
+            publish();
+            return controller;
+          },
           update: (_, user, controller) =>
               (controller ?? ThemeController())..bindUser(user),
         ),

@@ -18,6 +18,7 @@ import 'package:vivordo_health/src/utils/day_key.dart';
 import 'package:vivordo_health/src/utils/desk_glance.dart';
 import 'package:vivordo_health/src/utils/mood_widget_values.dart';
 import 'package:vivordo_health/src/utils/training_load_view.dart';
+import 'package:vivordo_health/src/utils/units.dart';
 import 'package:vivordo_health/src/utils/watch_action.dart';
 
 class HomeWidgetService {
@@ -98,6 +99,27 @@ class HomeWidgetService {
           onError: (Object error) =>
               debugPrint('Widget Capacity unavailable: $error'),
         );
+  }
+
+  static Map<String, String>? _watchUnits;
+
+  /// Settings → Units for the Apple Watch's workouts. Lift weight is saved
+  /// in lb and distance in km whatever the choice; the watch converts them
+  /// for show and entry.
+  static void publishUnits(Units units) {
+    if (!Platform.isIOS) return;
+    final values = {
+      'watchLiftUnit': units.liftWeight.name,
+      'watchDistanceUnit': units.distance.name,
+    };
+    if (mapEquals(values, _watchUnits)) return;
+    _watchUnits = values;
+    _channel.invokeMethod<void>('updateSnapshot', values).catchError((
+      Object error,
+    ) {
+      _watchUnits = null;
+      debugPrint('Watch units update failed: $error');
+    });
   }
 
   static final List<StreamSubscription<Object?>> _watchWorkoutSubscriptions =

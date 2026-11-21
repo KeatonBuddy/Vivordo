@@ -152,6 +152,7 @@ private struct HeartRateLine: View {
 }
 
 private struct StrengthView: View {
+  private let units = WatchUnits.current
   @EnvironmentObject private var workout: WorkoutSession
   let onLog: () -> Void
   let onAdd: () -> Void
@@ -205,13 +206,14 @@ private struct StrengthView: View {
   }
 
   private func lastLine(_ e: WorkoutSession.Exercise) -> String {
-    if let set = e.sets.last { return "Last set \(pounds(set.weight)) lb × \(set.reps)" }
-    if let set = e.last.first { return "Last time \(pounds(set.weight)) lb × \(set.reps)" }
+    if let set = e.sets.last { return "Last set \(units.weight(set.weight)) \(units.weightUnit) × \(set.reps)" }
+    if let set = e.last.first { return "Last time \(units.weight(set.weight)) \(units.weightUnit) × \(set.reps)" }
     return "First time"
   }
 }
 
 private struct CardioView: View {
+  private let units = WatchUnits.current
   @EnvironmentObject private var workout: WorkoutSession
 
   var body: some View {
@@ -224,8 +226,8 @@ private struct CardioView: View {
             Text(clock(elapsed))
               .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
               .foregroundStyle(workout.paused ? calorie : Color(red: 0.94, green: 0.82, blue: 0.38))
-            metric(String(format: "%.2f", workout.km), "km", size: 28)
-            metric(pace(elapsed), workout.kind == .cycle ? "km/h avg" : "/km avg", size: 22)
+            metric(String(format: "%.2f", units.distance(workout.km)), units.distanceUnit, size: 28)
+            metric(pace(elapsed), workout.kind == .cycle ? units.speedUnit + " avg" : "/" + units.distanceUnit + " avg", size: 22)
           }
         }
         HeartRateLine()
@@ -244,9 +246,10 @@ private struct CardioView: View {
   }
 
   private func pace(_ elapsed: TimeInterval) -> String {
-    guard workout.km > 0.05 else { return "--" }
-    if workout.kind == .cycle { return String(format: "%.1f", workout.km / (elapsed / 3600)) }
-    return clock(elapsed / workout.km)
+    let distance = units.distance(workout.km)
+    guard distance > 0.05 else { return "--" }
+    if workout.kind == .cycle { return String(format: "%.1f", distance / (elapsed / 3600)) }
+    return clock(elapsed / distance)
   }
 }
 
@@ -267,6 +270,7 @@ private struct ZoneBar: View {
 
 /// Weight and reps, prefilled from this workout's last set or last time's.
 private struct LogSetView: View {
+  private let units = WatchUnits.current
   @EnvironmentObject private var workout: WorkoutSession
   let onDone: () -> Void
   private enum Field { case weight, reps }
@@ -280,11 +284,12 @@ private struct LogSetView: View {
     // No ScrollView: the crown turns the numbers, not the page.
     VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 6) {
-          box("Weight", pounds(weight), "lb", selected: focus == .weight)
+          box("Weight", amount(weight), units.weightUnit, selected: focus == .weight)
             .onTapGesture { focus = .weight }
             .focusable()
             .focused($focus, equals: .weight)
-            .digitalCrownRotation($weight, from: 0, through: 1000, by: 5, sensitivity: .medium,
+            .digitalCrownRotation($weight, from: 0, through: units.kg ? 500 : 1000, by: units.kg ? 2.5 : 5,
+                                  sensitivity: .medium,
                                   isContinuous: false, isHapticFeedbackEnabled: true)
           box("Reps", "\(Int(reps))", "reps", selected: focus == .reps)
             .onTapGesture { focus = .reps }
@@ -294,12 +299,12 @@ private struct LogSetView: View {
                                   isContinuous: false, isHapticFeedbackEnabled: true)
         }
         if let set = exercise?.last.first {
-          Text("\(exercise?.name ?? "") · last \(pounds(set.weight)) × \(set.reps)").font(.caption2)
+          Text("\(exercise?.name ?? "") · last \(units.weight(set.weight)) × \(set.reps)").font(.caption2)
             .foregroundStyle(WatchPalette.secondary)
             .lineLimit(2)
         }
         Button("Log set · rest \(clock(TimeInterval(WorkoutSession.restSeconds)))") {
-          workout.logSet(weight: weight, reps: Int(reps))
+          workout.logSet(weight: units.pounds(weight), reps: Int(reps))
           onDone()
         }
         .font(.footnote.weight(.semibold))
@@ -318,7 +323,7 @@ private struct LogSetView: View {
         ?? (exercise.last.indices.contains(index) ? exercise.last[index] : exercise.last.first)
           .map { (weight: $0.weight, reps: $0.reps) }
       if let previous {
-        weight = previous.weight
+        weight = units.shown(previous.weight)
         reps = Double(previous.reps)
       }
     }
@@ -439,6 +444,7 @@ private struct WorkoutControlsView: View {
 // MARK: Summary
 
 private struct WorkoutSummaryView: View {
+  private let units = WatchUnits.current
   @EnvironmentObject private var workout: WorkoutSession
   let summary: WorkoutSession.Summary
 
@@ -463,7 +469,7 @@ private struct WorkoutSummaryView: View {
           tile(summary.averageHeartRate.map(String.init) ?? "–", "Avg bpm")
           tile(summary.maxHeartRate.map(String.init) ?? "–", "Max bpm")
           if summary.kind.isCardio {
-            tile(String(format: "%.2f", summary.km), "km")
+            tile(String(format: "%.2f", units.distance(summary.km)), units.distanceUnit)
           } else {
             tile("\(summary.sets)", summary.sets == 1 ? "Set" : "Sets")
           }
@@ -525,6 +531,41 @@ private func clock(_ seconds: TimeInterval) -> String {
     : String(format: "%d:%02d", s / 60, s % 60)
 }
 
-private func pounds(_ weight: Double) -> String {
-  weight.rounded() == weight ? String(Int(weight)) : String(format: "%.1f", weight)
+private func amount(_ value: Double) -> String {
+  value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+}
+
+/// Settings → Units from the phone (`watchLiftUnit`, `watchDistanceUnit`).
+/// Lift weight is kept in lb and distance in km, as on the phone; these
+/// convert only what's shown and entered. lb and km until the phone sends.
+struct WatchUnits {
+  let kg: Bool
+  let miles: Bool
+
+  static var current: WatchUnits {
+    let defaults = UserDefaults(suiteName: WatchSnapshot.appGroup)
+    return WatchUnits(
+      kg: defaults?.string(forKey: "watchLiftUnit") == "kg",
+      miles: defaults?.string(forKey: "watchDistanceUnit") == "mi"
+    )
+  }
+
+  private static let kgPerLb = 0.45359237
+  private static let kmPerMile = 1.609344
+
+  var weightUnit: String { kg ? "kg" : "lb" }
+  var distanceUnit: String { miles ? "mi" : "km" }
+  var speedUnit: String { miles ? "mph" : "km/h" }
+
+  /// A saved lb weight in the shown unit, to the nearest 0.5 kg.
+  func shown(_ pounds: Double) -> Double {
+    kg ? (pounds * Self.kgPerLb * 2).rounded() / 2 : pounds
+  }
+
+  func weight(_ pounds: Double) -> String { amount(shown(pounds)) }
+
+  /// An entered weight back to lb for saving.
+  func pounds(_ entered: Double) -> Double { kg ? entered / Self.kgPerLb : entered }
+
+  func distance(_ km: Double) -> Double { miles ? km / Self.kmPerMile : km }
 }
