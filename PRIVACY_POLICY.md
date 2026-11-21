@@ -1,6 +1,6 @@
 # Vivordo Privacy Policy
 
-**Last updated: November 9, 2026**
+**Last updated: November 21, 2026**
 
 ## Introduction
 
@@ -111,6 +111,7 @@ Vivordo AI uses Anthropic's Claude and asks for your consent before sending anyt
 - **Estimating priorities.** When you leave a priority's effort or duration blank, Vivordo sends only the priority's title to Anthropic to estimate them. Estimates are saved with the priority and labelled as estimated; values you enter yourself are never replaced.
 - **Chat history.** Your messages and Vivordo AI's replies, including suggested changes and charts, are stored in your account so the conversation is still there when you come back, and earlier messages from the same conversation are sent with each new one. If you send a message from an insight card, that insight's title is stored with it. Chat history is kept until you delete your account or ask us to delete it.
 - **Remembering context.** Vivordo AI saves short facts you share in chat—such as what stresses you, what helps, patterns you notice, life context, and preferences—and a short summary of each conversation. It sends them with later messages so it doesn't lose track of what you've told it. Nothing is saved from a conversation about a crisis. You can see and delete each saved fact and summary, or forget everything, on Vivordo AI's Memory page; they're also deleted when you delete your account.
+- **Talking instead of typing.** If you tap the microphone in Vivordo AI, your iPhone turns what you say into text with Apple's on-device speech recognition. The audio stays on your iPhone and is not recorded, saved, or sent to Vivordo, Apple, or Anthropic; only the text you choose to send is handled as a chat message, as described above. Vivordo asks for microphone and speech recognition access the first time you tap the microphone, and you can turn either off in iOS Settings at any time. If your iPhone can't recognize speech on the device, Vivordo doesn't fall back to sending audio anywhere and dictation is unavailable.
 - **Your energy forecast.** With each chat message, Vivordo sends a short summary of today's energy forecast: your predicted energy windows and bedtime, last night's sleep against your sleep need, any sleep debt, and the titles and times of planned items that fall in a low-energy window. The app works this out on your device from the sleep and calendar information described above.
 
 If you don't give consent, Vivordo AI is unavailable and events and priorities are not sent to Anthropic. You can withdraw consent in Profile under Vivordo AI. Your choice is saved to your account, along with when you made it and which version of this disclosure it covers, so Vivordo's servers refuse AI requests on every device once you withdraw.
