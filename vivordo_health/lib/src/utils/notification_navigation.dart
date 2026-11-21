@@ -14,7 +14,8 @@
     (tab: 0, push: '/circle/challenges'),
   'circle' => (tab: 0, push: '/circle'),
   'fitness' => (tab: 3, push: null),
-  'calendar' => (tab: 1, push: null),
+  // The weekly review reminder says my_day; server pushes say calendar.
+  'calendar' || 'my_day' => (tab: 1, push: null),
   'invites' => (tab: 1, push: '/invites'),
   _ => (tab: 0, push: null),
 };

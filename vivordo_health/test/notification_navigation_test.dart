@@ -7,6 +7,8 @@ void main() {
     expect(notificationDestination('ai_chat'), (tab: 5, push: null));
     expect(notificationDestination('fitness'), (tab: 3, push: null));
     expect(notificationDestination('calendar'), (tab: 1, push: null));
+    // The weekly review reminder.
+    expect(notificationDestination('my_day'), (tab: 1, push: null));
   });
 
   test('unknown notification destinations safely open Home', () {
